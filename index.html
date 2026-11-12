@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MenuiPro</title>
+<meta name="description" content="Concevoir un meuble, savoir combien de feuilles acheter, couper, percer et faire le devis.">
+<meta name="theme-color" content="#1f5fbf">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=JetBrains+Mono:wght@500&display=swap">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<header><div class="wrap">
+  <h1>🪚 MenuiPro · atelier</h1>
+  <span class="tag" id="count-tag">MenuiPro</span>
+</div></header>
+<nav class="appnav" aria-label="Sections"><div class="wrap" id="appnav"></div></nav>
+
+<main id="v-concevoir">
+<div class="wrap">
+  <section class="catalog" aria-label="Catalogue de meubles">
+    <div class="cathead">
+      <h2>Choisir un meuble</h2>
+      <input class="search" id="search" type="search" placeholder="🔎 Chercher : armoire, lit, cuisine…" autocomplete="off">
+    </div>
+    <div class="rooms" id="rooms"></div>
+    <div class="meubles" id="meubles"></div>
+  </section>
+</div>
+
+<div class="wrap layout">
+  <section class="panel" aria-label="Configurer le meuble">
+    <div class="current" id="current"></div>
+    <div class="label">Les cotes (en cm)</div>
+    <div class="dims" id="dims"></div>
+    <div class="label" id="optsLabel">Les options</div>
+    <div id="opts" style="display:grid;gap:10px"></div>
+    <div class="label">La couleur du mélaminé</div>
+    <div class="swatches" id="swatches"></div>
+    <div class="label">Le panneau</div>
+    <div class="field"><label for="panSel">Panneau du caisson</label><select id="panSel"></select></div>
+    <label class="check"><input type="checkbox" id="rot" checked> Pièces tournables (mélaminé uni)</label>
+    <p class="note">Feuilles de 244 × 122 cm, 1 cm de bord retiré. Découpe en guillotine : chaque coupe traverse la feuille.</p>
+  </section>
+
+  <section class="results" aria-label="Résultats">
+    <div class="kpis" id="kpis"></div>
+    <div class="panel">
+      <h2>Le meuble en 3D</h2>
+      <div class="view3d" id="view3d">
+        <span class="hint3d" id="hint3d">👆 Touchez une porte</span>
+        <div class="tools">
+          <button class="btn" id="openBtn" type="button" aria-pressed="false">🚪 Ouvrir</button>
+          <button class="btn" id="holesBtn" type="button" aria-pressed="false">🔩 Perçages</button>
+          <button class="btn" id="resetCam" type="button">🎯 Recentrer</button>
+        </div>
+      </div>
+      <p class="note">Touchez une porte ou un tiroir pour l'ouvrir. Glissez pour tourner, pincez pour zoomer. La 3D est construite avec les mêmes pièces que la découpe.</p>
+    </div>
+    <div class="panel">
+      <h2>Plan de découpe</h2>
+      <div class="tabs" id="sheetTabs"></div>
+      <div class="plan" id="plan"></div>
+      <div class="legend" id="sheetInfo"></div>
+      <div class="keys" id="keys"></div>
+      <div class="exports">
+        <button class="btn primary" id="zipBtn" type="button">📦 Fichiers CNC (toutes les feuilles)</button>
+        <button class="btn" id="svgBtn" type="button">⬇️ SVG de cette feuille</button>
+      </div>
+      <p class="status" id="expStatus" role="status"></p>
+      <details id="expFallback" hidden><summary>Copier le fichier à la main</summary><p class="note" id="expFbNote"></p><textarea class="copy" id="expText" readonly></textarea></details>
+      <p class="note">Le pack CNC contient, pour chaque feuille, un fichier DXF et un SVG en millimètres (calques DECOUPE et perçages), plus la liste de débit en CSV. Cotes finies : la compensation de fraise se règle dans le logiciel de la CNC.</p>
+    </div>
+    <div class="panel">
+      <h2>🛒 Liste d'achat</h2>
+      <div class="banner" id="buyBanner" hidden></div>
+      <div class="lines" id="buy"></div>
+      <div class="total"><span>Total matériel</span><b id="buyTotal">—</b></div>
+      <div class="actions">
+        <a class="btn primary" id="waBtn" target="_blank" rel="noopener">📲 Commander sur WhatsApp</a>
+        <button class="btn" type="button" id="copyOrder">📋 Copier la commande</button>
+      </div>
+      <p class="status" id="orderStatus" role="status"></p>
+      <textarea class="copy" id="orderText" readonly hidden></textarea>
+      <div class="sub">Outils à préparer</div>
+      <div class="kit" id="tools"></div>
+    </div>
+    <div class="panel" id="devisPanel">
+      <h2>💰 Devis pour le client</h2>
+      <div class="grid2">
+        <div class="field"><label for="dClient">Nom du client</label><input id="dClient" type="text" autocomplete="off" placeholder="Ex. Mme Ndiaye"></div>
+        <div class="field"><label for="dTel">Téléphone du client</label><input id="dTel" type="tel" inputmode="tel" autocomplete="off"></div>
+        <div class="field"><label for="dJours">Jours de travail</label><input id="dJours" type="number" min="0.5" step="0.5"></div>
+        <div class="field"><label for="dPose">Transport et pose (FCFA)</label><input id="dPose" type="number" min="0" step="1000"></div>
+      </div>
+      <div class="breakdown" id="dBreak"></div>
+      <div class="total"><span>Prix pour le client</span><span class="bigprice" id="dPrix">—</span></div>
+      <div class="actions">
+        <button class="btn primary" type="button" id="dImg">🖼️ Image du devis</button>
+        <button class="btn" type="button" id="dCopy">📋 Copier le texte</button>
+        <button class="btn" type="button" id="dSave">💾 Enregistrer le projet</button>
+      </div>
+      <p class="status" id="dStatus" role="status"></p>
+      <textarea class="copy" id="dText" readonly hidden></textarea>
+      <p class="note">Les jours sont estimés d'après le nombre de pièces, de perçages, de portes et de tiroirs ; modifiez-les si besoin. Tarif et marge se règlent dans « Mon atelier ».</p>
+    </div>
+    <div class="panel">
+      <h2>Liste de débit</h2>
+      <div class="tablewrap"><table id="debit"></table></div>
+    </div>
+  </section>
+</div>
+</main>
+
+<main id="v-projets" hidden><div class="wrap view">
+  <div class="cathead"><h2>📁 Mes projets</h2><button class="btn primary" type="button" id="newProj">➕ Nouveau meuble</button></div>
+  <div class="projects" id="projList"></div>
+</div></main>
+
+<main id="v-catalogue" hidden><div class="wrap view">
+  <h2>🏪 Catalogue et prix de la quincaillerie</h2>
+  <div class="banner" id="exBanner" hidden>Ces prix sont des <b>exemples</b>. Remplacez-les par les vrais prix de la quincaillerie avant de faire un devis.</div>
+  <section class="panel"><h2>La quincaillerie</h2>
+    <div class="grid2">
+      <div class="field"><label for="bNom">Nom</label><input id="bNom" type="text" autocomplete="off" placeholder="Ex. Quincaillerie du marché"></div>
+      <div class="field"><label for="bWa">Numéro WhatsApp</label><input id="bWa" type="tel" inputmode="tel" autocomplete="off" placeholder="77 000 00 00"></div>
+      <div class="field"><label for="bCom">Commune</label><input id="bCom" type="text" autocomplete="off" placeholder="Ex. Pikine"></div>
+    </div>
+  </section>
+  <section class="panel"><h2>Panneaux (prix de la feuille 244 × 122)</h2>
+    <div class="tablewrap"><table class="ptable" id="panTable"></table></div>
+    <div class="actions"><button class="btn" type="button" id="addPan">➕ Ajouter un panneau</button></div>
+  </section>
+  <section class="panel"><h2>Accessoires et quincaillerie</h2>
+    <div class="tablewrap"><table class="ptable" id="artTable"></table></div>
+  </section>
+  <div class="actions"><button class="btn" type="button" id="fillEx">🧪 Remplir avec des prix d'exemple</button><button class="btn" type="button" id="resetCat">↺ Remettre les prix à zéro</button></div>
+  <p class="note">Les prix sont enregistrés sur ce téléphone. Ils servent à chiffrer la liste d'achat et le devis.</p>
+</div></main>
+
+<main id="v-atelier" hidden><div class="wrap view">
+  <h2>⚙️ Mon atelier</h2>
+  <section class="panel form">
+    <div class="grid2">
+      <div class="field"><label for="aNom">Nom de l'atelier</label><input id="aNom" type="text" autocomplete="off" placeholder="Ex. Menuiserie Baye Fall"></div>
+      <div class="field"><label for="aTel">Téléphone</label><input id="aTel" type="tel" inputmode="tel" autocomplete="off" placeholder="77 000 00 00"></div>
+      <div class="field"><label for="aJour">Prix d'une journée de travail (FCFA)</label><input id="aJour" type="number" min="0" step="1000"></div>
+      <div class="field"><label for="aMarge">Marge sur le devis (%)</label><input id="aMarge" type="number" min="0" max="200" step="1"></div>
+      <div class="field"><label for="aValid">Devis valable (jours)</label><input id="aValid" type="number" min="1" max="90" step="1"></div>
+      <div class="field"><label for="aKerf">Trait de scie (mm)</label><input id="aKerf" type="number" min="0" max="10" step="0.5"></div>
+    </div>
+    <p class="note">Ces réglages apparaissent sur chaque devis. Ils restent enregistrés sur ce téléphone.</p>
+  </section>
+</div></main>
+
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>
