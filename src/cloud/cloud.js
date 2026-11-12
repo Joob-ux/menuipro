@@ -18,7 +18,10 @@ const MESSAGES = {
   "code_inconnu": "Ce code de quincaillerie n'existe pas. Vérifiez les 6 caractères.",
   "non_connecte": "Connectez-vous d'abord.",
   "Failed to fetch": "Pas de connexion Internet. Réessayez plus tard.",
-  "Password should be at least 6 characters": "Le code PIN doit avoir 6 chiffres."
+  "Password should be at least 6 characters": "Le code PIN doit avoir 6 chiffres.",
+  "reserve_admin": "Réservé à l'administrateur.",
+  "Email not confirmed": "Compte pas encore activé : l'option « Confirm email » doit être désactivée dans Supabase.",
+  "row-level security policy for table \"commandes\"": "Commande impossible : la quincaillerie est suspendue ou vous n'y êtes pas rattaché."
 };
 export const message = e => { const m = (e && (e.message || e.error_description)) || String(e); for (const k in MESSAGES) if (m.includes(k)) return MESSAGES[k]; return "Erreur : " + m; };
 const ok = ({ data, error }) => { if (error) throw error; return data; };
@@ -59,3 +62,7 @@ export async function envoyerCommande(c) { return ok(await sb.from("commandes").
 export async function mesCommandes(uid) { return ok(await sb.from("commandes").select("id,meuble,total,statut,created_at").eq("menuisier_id", uid).order("created_at", { ascending: false }).limit(30)); }
 export async function commandesRecues(qid) { return ok(await sb.from("commandes").select("id,meuble,lignes,total,statut,created_at,profils(nom,telephone)").eq("quincaillerie_id", qid).order("created_at", { ascending: false }).limit(50)); }
 export async function changerStatut(id, statut) { return ok(await sb.from("commandes").update({ statut }).eq("id", id)); }
+
+/* ---------- Administration ---------- */
+export async function adminVue() { return ok(await sb.rpc("admin_vue")); }
+export async function adminAbonnement(id, actif, jusqu, note) { return ok(await sb.rpc("admin_abonnement", { p_quinc: id, p_actif: actif, p_jusqu: jusqu || null, p_note: note || null })); }

@@ -458,6 +458,7 @@ let lastKey="";setInterval(()=>{const c=cfg();const k=st.id+c.L+c.H+c.P;if(k!==l
 
 /* ===================== COMPTE ET SYNCHRONISATION ===================== */
 function estQuinc(){return !!(ME&&ME.profil&&ME.profil.role==="quincaillerie")}
+function estAdmin(){return !!(ME&&ME.profil&&ME.profil.role==="admin")}
 function lectureSeule(){return !!(ME&&ME.quinc&&!estQuinc())}
 let toastT=null;
 function toast(msg,err){const t=$("toast");t.textContent=msg;t.className="toast"+(err?" err":"");t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,3500)}
@@ -495,7 +496,7 @@ function appliquerCompte(){
   const a=ME.profil&&ME.profil.atelier;
   if(a&&Object.keys(a).length){AT={...AT,...a};if(a.kerf)st.kerf=a.kerf;try{localStorage.setItem("menuipro-atelier",JSON.stringify(AT))}catch(e){}}
   else pousserAtelier();
-  $("count-tag").textContent="👤 "+(ME.profil&&ME.profil.nom||"Connecté");
+  $("count-tag").textContent=(estAdmin()?"🛡️ ":"👤 ")+(ME.profil&&ME.profil.nom||"Connecté");
   renderPanSel();if(lastCtx)compute();
   synchroniserProjets();
 }
@@ -539,10 +540,12 @@ async function renderCompte(){
   const p=ME.profil||{},q=ME.quinc,parts=[];
   let armedOut=false;const out=el("button",{type:"button",class:"btn"},"🚪 Se déconnecter");
   out.onclick=async()=>{if(!armedOut){armedOut=true;out.textContent="Touchez encore pour vous déconnecter";return}await cloud.deconnecter();ME=null;$("count-tag").textContent="MenuiPro";toast("Déconnecté");renderCompte()};
-  parts.push(el("section",{class:"panel"},el("h2",{},"👤 "+(p.nom||"Mon compte")),el("p",{class:"note"},"📱 "+(p.telephone||"")+" · "+(estQuinc()?"Quincaillerie":"Menuisier")),el("div",{class:"actions"},out)));
+  parts.push(el("section",{class:"panel"},el("h2",{},(estAdmin()?"🛡️ ":"👤 ")+(p.nom||"Mon compte")),el("p",{class:"note"},"📱 "+(p.telephone||"")+" · "+(estAdmin()?"Administrateur":estQuinc()?"Quincaillerie":"Menuisier")),el("div",{class:"actions"},out)));
+  if(estAdmin()){box.replaceChildren(...parts,...await vueAdmin());return}
+  if(q&&q.actif===false)parts.push(el("div",{class:"banner"},estQuinc()?"⚠️ Votre abonnement est suspendu : vos menuisiers ne peuvent plus vous envoyer de commandes. Contactez MenuiPro.":"⚠️ "+q.nom+" est suspendue pour le moment : les commandes sont indisponibles."));
   if(estQuinc()&&q){
     const copy=el("button",{type:"button",class:"btn"},"📋 Copier le code");copy.onclick=async()=>{try{await navigator.clipboard.writeText(q.code);toast("Code copié")}catch(e){toast("Code : "+q.code)}};
-    parts.push(el("section",{class:"panel"},el("h2",{},"🏪 "+q.nom),el("p",{},"Code à donner à vos menuisiers :"),el("div",{class:"bigprice",style:"letter-spacing:.15em"},q.code),el("div",{class:"actions"},copy,el("a",{class:"btn",href:"#catalogue"},"🏷️ Gérer mes prix")),el("p",{class:"note"},"Chaque menuisier qui entre ce code reçoit vos prix et peut vous envoyer ses commandes.")));
+    parts.push(el("section",{class:"panel"},el("h2",{},"🏪 "+q.nom),q.abonnement_jusqu?el("p",{class:"note"},"Abonnement valable jusqu'au "+new Date(q.abonnement_jusqu).toLocaleDateString("fr-FR")):null,el("p",{},"Code à donner à vos menuisiers :"),el("div",{class:"bigprice",style:"letter-spacing:.15em"},q.code),el("div",{class:"actions"},copy,el("a",{class:"btn",href:"#catalogue"},"🏷️ Gérer mes prix")),el("p",{class:"note"},"Chaque menuisier qui entre ce code reçoit vos prix et peut vous envoyer ses commandes.")));
     const list=el("div",{class:"lines"},el("p",{class:"note"},"⏳ Chargement des commandes…"));
     parts.push(el("section",{class:"panel"},el("h2",{},"📥 Commandes reçues"),list));
     box.replaceChildren(...parts);
@@ -581,6 +584,42 @@ async function renderCompte(){
     el("div",{class:"actions"},el("button",{type:"button",class:"btn",onclick:async()=>{if((qn.value||"").trim().length<2){st2.className="status err";st2.textContent="Entrez le nom de la quincaillerie.";return}st2.textContent="⏳";try{await cloud.creerQuincaillerie(qn.value,qw.value,qc.value);ME=await cloud.chargerCompte();appliquerCompte();pousserCatalogue();toast("✅ Quincaillerie créée");renderCompte()}catch(e){st2.className="status err";st2.textContent=cloud.message(e)}}},"Créer ma quincaillerie")),st2,
     el("p",{class:"note"},"Vous recevrez un code à donner à vos menuisiers. Vos prix actuels deviendront le catalogue partagé.")));
   box.replaceChildren(...parts);
+}
+/* ----- Administration ----- */
+async function vueAdmin(){
+  let v;
+  try{v=await cloud.adminVue()}catch(e){return [el("p",{class:"status err"},cloud.message(e))]}
+  const T=v.totaux,dt=d=>d?new Date(d).toLocaleDateString("fr-FR"):"—";
+  const kp=(val,lab,main)=>el("div",{class:"kpi"+(main?" main":"")},el("div",{class:"v"},val),el("div",{class:"k"},lab));
+  const kpis=el("div",{class:"kpis"},kp(T.quincailleries_actives+" / "+T.quincailleries,"quincailleries actives",true),kp(T.menuisiers,"menuisiers ("+T.menuisiers_rattaches+" rattachés)"),kp(T.commandes,"commandes ("+T.commandes_30j+" sur 30 jours)"),kp(fmt(T.montant_commandes)+" F","commandés ("+fmt(T.montant_30j)+" F sur 30 j)"),kp(T.projets,"projets enregistrés"));
+  const search=el("input",{class:"search",id:"adminSearch",type:"search",placeholder:"🔎 Chercher un nom, une commune, un numéro…",autocomplete:"off"});
+  const qBody=el("tbody",{}),mBody=el("tbody",{});
+  const expire=d=>d&&new Date(d)<new Date();
+  const drawQ=f=>qBody.replaceChildren(...v.quincailleries.filter(q=>!f||[q.nom,q.commune,q.code,q.proprietaire,q.tel_proprietaire].join(" ").toLowerCase().includes(f)).map(q=>{
+    const date=el("input",{type:"date",style:"min-width:140px"});date.value=q.abonnement_jusqu||"";
+    const note=el("input",{type:"text",placeholder:"Note",style:"min-width:120px;text-align:left;font-family:var(--body)"});note.value=q.note_admin||"";
+    const st2=el("span",{class:"note"});
+    const saveQ=async(actif)=>{st2.textContent="⏳";try{await cloud.adminAbonnement(q.id,actif,date.value,note.value);q.actif=actif;q.abonnement_jusqu=date.value||null;q.note_admin=note.value;st2.textContent="✅";drawQ(search.value.trim().toLowerCase())}catch(e){st2.textContent=cloud.message(e)}};
+    const statut=el("button",{type:"button",class:"chip "+(q.actif?"livre":"commande"),title:q.actif?"Suspendre":"Réactiver",onclick:()=>saveQ(!q.actif)},q.actif?"✅ Active":"⛔ Suspendue");
+    return el("tr",{},el("td",{},el("b",{},q.nom),el("div",{class:"note"},[q.commune,q.whatsapp].filter(Boolean).join(" · "))),
+      el("td",{},q.proprietaire||"—",el("div",{class:"note"},q.tel_proprietaire||"")),el("td",{class:"n"},q.code),
+      el("td",{class:"n"},String(q.menuisiers)),el("td",{class:"n"},String(q.commandes)),el("td",{class:"n"},fmt(q.montant)+" F"),
+      el("td",{},date,expire(q.abonnement_jusqu)?el("div",{class:"note",style:"color:var(--warn);font-weight:700"},"expiré"):null),el("td",{},note),
+      el("td",{},statut,el("button",{type:"button",class:"btn",style:"margin-left:6px",onclick:()=>saveQ(q.actif)},"💾"),st2));
+  }));
+  const drawM=f=>mBody.replaceChildren(...v.menuisiers.filter(m=>!f||[m.nom,m.telephone,m.quincaillerie].join(" ").toLowerCase().includes(f)).map(m=>el("tr",{},
+    el("td",{},el("b",{},m.nom||"—")),el("td",{class:"n"},m.telephone||"—"),el("td",{},m.quincaillerie||el("span",{class:"note"},"aucune")),
+    el("td",{class:"n"},String(m.projets)),el("td",{class:"n"},String(m.commandes)),el("td",{class:"n"},dt(m.cree)),el("td",{class:"n"},dt(m.derniere_activite)))));
+  search.addEventListener("input",()=>{const f=search.value.trim().toLowerCase();drawQ(f);drawM(f)});
+  drawQ("");drawM("");
+  const th=(...h)=>el("thead",{},el("tr",{},h.map(x=>el("th",{},x))));
+  return [
+    el("section",{class:"panel"},el("h2",{},"🛡️ Vue d'ensemble"),kpis,el("div",{class:"actions"},el("button",{type:"button",class:"btn",onclick:()=>renderCompte()},"🔄 Actualiser")),search),
+    el("section",{class:"panel"},el("h2",{},"🏪 Quincailleries ("+v.quincailleries.length+")"),el("p",{class:"note"},"Réglez la date de fin d'abonnement puis 💾. Touchez le statut pour suspendre ou réactiver : une quincaillerie suspendue ne reçoit plus de commandes."),
+      el("div",{class:"tablewrap"},el("table",{},th("Quincaillerie","Propriétaire","Code","Menuisiers","Commandes","Montant","Abonnement jusqu'au","Note","Statut"),qBody))),
+    el("section",{class:"panel"},el("h2",{},"🪚 Menuisiers ("+v.menuisiers.length+")"),
+      el("div",{class:"tablewrap"},el("table",{},th("Nom","Téléphone","Quincaillerie","Projets","Commandes","Inscrit le","Dernière activité"),mBody)))
+  ];
 }
 if(cloud.actif)cloud.chargerCompte().then(c=>{ME=c;if(c)appliquerCompte();if(!$("v-compte").hidden)renderCompte()}).catch(()=>{});
 

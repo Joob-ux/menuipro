@@ -3,7 +3,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { readFileSync } from "node:fs";
 
 const db = new PGlite();
-const migration = ["20261112000000_init.sql", "20261112000100_durcissement.sql", "20261112000200_performance.sql"].map(f => readFileSync(new URL("../migrations/" + f, import.meta.url), "utf8")).join("\n");
+const migration = ["20261112000000_init.sql", "20261112000100_durcissement.sql", "20261112000200_performance.sql", "20261112000300_administration.sql"].map(f => readFileSync(new URL("../migrations/" + f, import.meta.url), "utf8")).join("\n");
 let ok = 0, ko = 0;
 const check = (cond, label) => { if (cond) { ok++; console.log("  ✅ " + label); } else { ko++; console.log("  ❌ " + label); } };
 const expectError = async (fn, label, msg) => { try { await fn(); check(false, label + " (aurait dû être refusé)"); } catch (e) { check(!msg || String(e.message).includes(msg), label + " → refusé : " + e.message.split("\n")[0]); } };
@@ -85,5 +85,26 @@ check((await as(U.bob, `select * from public.profils`)).rows.length === 1, "Bob 
 console.log("\nFonctions internes");
 await expectError(() => as(U.ali, `select public.ma_quincaillerie()`), "ma_quincaillerie n'est plus exposée dans l'API");
 await expectError(() => as(U.ali, `select public.nouveau_profil()`), "nouveau_profil ne peut pas être appelée");
+console.log("\nAdministration");
+await db.query(`insert into auth.users (id, raw_user_meta_data) values ($1, $2)`, ["55555555-5555-5555-5555-555555555555", { telephone: "221770000000", nom: "Admin" }]);
+const ADMIN = "55555555-5555-5555-5555-555555555555";
+await expectError(() => as(ADMIN, `update public.profils set role = 'admin' where id = auth.uid()`), "personne ne peut se nommer admin depuis l'application", "modification_interdite");
+await expectError(() => as(U.ali, `select public.admin_vue()`), "un menuisier n'a pas accès à la vue admin", "reserve_admin");
+await expectError(() => as(U.quinc, `select public.admin_vue()`), "une quincaillerie non plus", "reserve_admin");
+await expectError(() => as(null, `select public.admin_vue()`), "un visiteur non plus");
+await db.exec(`select set_config('menuipro.autorise','oui',false); update public.profils set role='admin' where id='${ADMIN}'; select set_config('menuipro.autorise','',false);`);
+const v = (await as(ADMIN, `select public.admin_vue() as v`)).rows[0].v;
+check(v.totaux.quincailleries === 2 && v.totaux.menuisiers === 2 && v.totaux.commandes === 1, "l'admin voit les totaux (2 quincailleries, 2 menuisiers, 1 commande)");
+const qa = v.quincailleries.find(x => x.nom === "Quincaillerie Test");
+check(qa && qa.menuisiers === 1 && qa.commandes === 1 && qa.montant === 116400, "l'admin voit par quincaillerie : menuisiers, commandes, montant");
+check(v.menuisiers.find(m => m.nom === "Ali Menuiserie")?.quincaillerie === "Quincaillerie Test", "l'admin voit chaque menuisier et sa quincaillerie");
+await expectError(() => as(U.quinc, `update public.quincailleries set actif = true, abonnement_jusqu = '2030-01-01' where id = $1`, [q.id]), "une quincaillerie ne peut pas prolonger son abonnement elle-même", "modification_interdite");
+await as(ADMIN, `select public.admin_abonnement($1, false, '2026-12-31', 'impayé')`, [q.id]);
+check((await as(U.quinc, `select actif from public.quincailleries`)).rows[0].actif === false, "l'admin suspend une quincaillerie");
+await expectError(() => as(U.ali, `insert into public.commandes (quincaillerie_id, meuble, lignes) values ($1, 'x', '[]')`, [q.id]), "une quincaillerie suspendue ne reçoit plus de commandes");
+await as(ADMIN, `select public.admin_abonnement($1, true, '2026-12-31', null)`, [q.id]);
+check(!!(await as(U.ali, `insert into public.commandes (quincaillerie_id, meuble, lignes) values ($1, 'x', '[]') returning id`, [q.id])).rows[0], "après réactivation, les commandes reprennent");
+await expectError(() => as(U.ali, `select public.admin_abonnement($1, true)`, [q.id]), "un menuisier ne peut pas toucher aux abonnements", "reserve_admin");
+
 console.log(`\nRésultat : ${ok} réussis, ${ko} échoués`);
 process.exit(ko ? 1 : 0);
