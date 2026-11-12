@@ -2,33 +2,33 @@
 // ou enregistrés par l'administrateur), sinon lues en français par le téléphone.
 import * as cloud from "./cloud/cloud.js";
 
-// Clé → [icône, texte français]. Le texte wolof est dans outils/voix_wolof_adia.ipynb (même clés).
+// Clé → [icône, texte français, texte wolof à lire]. Même texte wolof dans outils/voix_wolof_adia.ipynb.
 export const PHRASES = {
-  bienvenue: ["👋", "Bienvenue sur MenuiPro. Choisis le meuble que tu veux fabriquer."],
-  choisir: ["🪑", "Touche l'image du meuble."],
-  cotes: ["📏", "Écris la largeur, la hauteur et la profondeur, en centimètres."],
-  options: ["➕", "Appuie sur plus ou moins pour changer les tiroirs, les portes et les étagères."],
-  resultat: ["🟫", "Ici, tu vois combien de feuilles ou de barres de bois il faut acheter."],
-  vue3d: ["🧊", "Touche une porte ou un tiroir pour l'ouvrir. Tourne le meuble avec ton doigt."],
-  plan: ["✂️", "Voici le plan de découpe. Chaque rectangle est une pièce à couper."],
-  achat: ["🛒", "Voici tout ce qu'il faut acheter, avec le prix."],
-  commander: ["📲", "Appuie sur le bouton vert pour envoyer la commande sur WhatsApp."],
-  devis: ["💰", "Écris le nom du client, puis envoie-lui le devis en image."],
-  debit: ["📋", "La liste de débit donne la taille de chaque pièce."],
-  bois: ["🪵", "Pour le bois massif, l'application calcule les planches, chevrons et madriers à acheter."],
-  cnc: ["🤖", "Ce bouton prépare les fichiers pour la machine à commande numérique."],
-  projets: ["📁", "Ici, tu retrouves tous tes meubles enregistrés."],
-  catalogue: ["🏪", "Ici, on met les prix des panneaux, du bois et des accessoires."],
-  atelier: ["⚙️", "Écris ton nom, ton téléphone et ton prix de la journée."],
-  compte: ["👤", "Connecte-toi avec ton numéro de téléphone et ton code à six chiffres."],
-  code_quinc: ["🔢", "Écris le code donné par ta quincaillerie."],
-  ecoute: ["🎙️", "Je t'écoute. Dis-moi le meuble et ses mesures, puis touche encore le micro."],
-  compris: ["👍", "D'accord. Voici ton meuble."],
-  modifie: ["🔁", "C'est changé."],
-  pas_compris: ["🤔", "Je n'ai pas compris. Répète doucement, s'il te plaît."],
-  limite: ["⛔", "Tu as beaucoup parlé aujourd'hui. Réessaie demain."],
-  enregistre: ["✅", "C'est enregistré."],
-  erreur: ["⚠️", "Il y a un problème. Vérifie et réessaie."]
+  bienvenue: ["👋", "Bienvenue sur MenuiPro. Choisis le meuble que tu veux fabriquer.", "Dalal ak jàmm ci MenuiPro. Tànnal meuble bi nga bëgg defar."],
+  choisir: ["🪑", "Touche l'image du meuble.", "Bësal nataalu meuble bi."],
+  cotes: ["📏", "Écris la largeur, la hauteur et la profondeur, en centimètres.", "Bindal yaatuwaay bi, kawewaay bi ak xóotaay bi, ci centimètre."],
+  options: ["➕", "Appuie sur plus ou moins pour changer les tiroirs, les portes et les étagères.", "Bësal plus walla moins ngir soppi tiroir yi, bunt yi ak étagère yi."],
+  resultat: ["🟫", "Ici, tu vois combien de feuilles ou de barres de bois il faut acheter.", "Fii nga ciy gis ñaata feuille walla ñaata barre bant nga wara jënd."],
+  vue3d: ["🧊", "Touche une porte ou un tiroir pour l'ouvrir. Tourne le meuble avec ton doigt.", "Bësal bunt walla tiroir ngir ubbi ko. Wëndeelal meuble bi ak sa baaraam."],
+  plan: ["✂️", "Voici le plan de découpe. Chaque rectangle est une pièce à couper.", "Lii mooy plan découpe bi. Bépp rectangle, ab pièce la boo wara dagg."],
+  achat: ["🛒", "Voici tout ce qu'il faut acheter, avec le prix.", "Lii mooy lépp lu nga wara jënd, ak njëgam."],
+  commander: ["📲", "Appuie sur le bouton vert pour envoyer la commande sur WhatsApp.", "Bësal bouton bu wert bi ngir yónne commande bi ci WhatsApp."],
+  devis: ["💰", "Écris le nom du client, puis envoie-lui le devis en image.", "Bindal turu client bi, te yónne ko devis bi ci nataal."],
+  debit: ["📋", "La liste de débit donne la taille de chaque pièce.", "Liste débit bi dafay wax taille bu pièce bu nekk."],
+  bois: ["🪵", "Pour le bois massif, l'application calcule les planches, chevrons et madriers à acheter.", "Ci bant bu dëgër, appli bi dafay xayma planche, chevron ak madrier yi nga wara jënd."],
+  cnc: ["🤖", "Ce bouton prépare les fichiers pour la machine à commande numérique.", "Bouton bii dafay waajal fichier yi ngir machine CNC bi."],
+  projets: ["📁", "Ici, tu retrouves tous tes meubles enregistrés.", "Fii nga ciy gis sa meuble yépp yoo denc."],
+  catalogue: ["🏪", "Ici, on met les prix des panneaux, du bois et des accessoires.", "Fii lañuy bind njëgu panneau yi, bant yi ak accessoire yi."],
+  atelier: ["⚙️", "Écris ton nom, ton téléphone et ton prix de la journée.", "Bindal sa tur, sa nimero telefon ak sa njëgu bés."],
+  compte: ["👤", "Connecte-toi avec ton numéro de téléphone et ton code à six chiffres.", "Duggal ak sa nimero telefon ak sa code bu am juróom benni chiffre."],
+  code_quinc: ["🔢", "Écris le code donné par ta quincaillerie.", "Bindal code bi sa quincaillerie jox la."],
+  ecoute: ["🎙️", "Je t'écoute. Dis-moi le meuble et ses mesures, puis touche encore le micro.", "Maa ngi lay déglu. Waxal meuble bi ak ay mesuram, te bësaatal micro bi."],
+  compris: ["👍", "D'accord. Voici ton meuble.", "Waaw. Meuble bi a ngi."],
+  modifie: ["🔁", "C'est changé.", "Soppi nañu ko."],
+  pas_compris: ["🤔", "Je n'ai pas compris. Répète doucement, s'il te plaît.", "Dégguma. Waxaatal ndànk, bu la neexee."],
+  limite: ["⛔", "Tu as beaucoup parlé aujourd'hui. Réessaie demain.", "Wax nga lu bare tey. Jéemaatal suba."],
+  enregistre: ["✅", "C'est enregistré.", "Denc nañu ko."],
+  erreur: ["⚠️", "Il y a un problème. Vérifie et réessaie.", "Am na jafe-jafe. Saytul te jéemaat."]
 };
 
 let dispo = {}; // clé → version du fichier audio wolof

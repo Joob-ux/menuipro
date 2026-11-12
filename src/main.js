@@ -776,7 +776,7 @@ async function sectionVoix(){
     try{if(blob.size>2*1024*1024)throw new Error("Fichier trop lourd (2 Mo maximum).");await cloud.adminEnvoyerVoix(cle,blob);await chargerVoix();st3.className="status ok";st3.textContent="✅ « "+cle+" » enregistré.";dessiner()}
     catch(e){st3.className="status err";st3.textContent=cloud.message(e)}};
   let rec=null;
-  const ligne=(cle,[ic,fr])=>{
+  const ligne=(cle,[ic,fr,wo])=>{
     const ok=aUnAudio(cle);
     const ecouter=el("button",{type:"button",class:"btn","aria-label":"Écouter",onclick:()=>parler(cle,null,"wo")},"▶️");ecouter.disabled=!ok;
     const micro=el("button",{type:"button",class:"btn"},"🎙️ Enregistrer");
@@ -793,7 +793,7 @@ async function sectionVoix(){
     const fichier=el("input",{type:"file",accept:"audio/*",hidden:"hidden"});fichier.onchange=()=>{if(fichier.files[0])envoyer(cle,fichier.files[0])};
     const imp=el("button",{type:"button",class:"btn",onclick:()=>fichier.click()},"📁");
     return el("div",{class:"voixrow"},el("span",{style:"font-size:26px","aria-hidden":"true"},ic),
-      el("div",{},el("b",{},fr),el("div",{class:"note"},(ok?"✅ audio wolof prêt":"⏳ pas encore d'audio wolof")+" · "+cle)),
+      el("div",{},el("b",{style:"font-size:18px"},"🗣️ "+wo),el("div",{class:"note"},fr),el("div",{class:"note"},(ok?"✅ audio wolof prêt":"⏳ pas encore d'audio wolof")+" · "+cle)),
       el("div",{class:"acts"},ecouter,micro,imp,fichier));
   };
   const dessiner=()=>{const n=Object.keys(PHRASES).filter(aUnAudio).length;
