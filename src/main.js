@@ -765,7 +765,7 @@ $("micBtn").onclick=async()=>{
     }catch(e){bulle("⚠️",e.message);if(e.action)parler(e.action.reponse);else parler("erreur")}
     finally{btn.classList.remove("wait");btn.textContent="🎙️";setTimeout(()=>{if(!micRec)$("micBulle").hidden=true},12000)}
   };
-  r.start();micRec=r;btn.classList.add("rec");btn.textContent="⏹️";bulle("🔴 0 s","Parlez maintenant.");parler("ecoute");
+  r.start(1000);micRec=r;btn.classList.add("rec");btn.textContent="⏹️";bulle("🔴 0 s","Parlez maintenant.");parler("ecoute");
 };
 
 /* ----- Console : voix en wolof ----- */
