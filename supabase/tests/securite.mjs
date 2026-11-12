@@ -3,7 +3,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { readFileSync } from "node:fs";
 
 const db = new PGlite();
-const migration = ["20261112000000_init.sql", "20261112000100_durcissement.sql", "20261112000200_performance.sql", "20261112000300_administration.sql"].map(f => readFileSync(new URL("../migrations/" + f, import.meta.url), "utf8")).join("\n");
+const migration = ["20261112000000_init.sql", "20261112000100_durcissement.sql", "20261112000200_performance.sql", "20261112000300_administration.sql", "20261112000400_comptes_par_admin.sql"].map(f => readFileSync(new URL("../migrations/" + f, import.meta.url), "utf8")).join("\n");
 let ok = 0, ko = 0;
 const check = (cond, label) => { if (cond) { ok++; console.log("  ✅ " + label); } else { ko++; console.log("  ❌ " + label); } };
 const expectError = async (fn, label, msg) => { try { await fn(); check(false, label + " (aurait dû être refusé)"); } catch (e) { check(!msg || String(e.message).includes(msg), label + " → refusé : " + e.message.split("\n")[0]); } };
@@ -13,8 +13,8 @@ await db.exec(`
   create schema auth;
   create table auth.users (id uuid primary key, raw_user_meta_data jsonb default '{}'::jsonb);
   create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
-  create role anon nologin; create role authenticated nologin;
-  grant usage on schema public, auth to anon, authenticated;
+  create role anon nologin; create role authenticated nologin; create role service_role nologin;
+  grant usage on schema public, auth to anon, authenticated, service_role;
   alter default privileges in schema public grant all on tables to anon, authenticated;
   alter default privileges in schema public grant all on functions to anon, authenticated;
   grant execute on function auth.uid() to anon, authenticated;
@@ -105,6 +105,19 @@ await expectError(() => as(U.ali, `insert into public.commandes (quincaillerie_i
 await as(ADMIN, `select public.admin_abonnement($1, true, '2026-12-31', null)`, [q.id]);
 check(!!(await as(U.ali, `insert into public.commandes (quincaillerie_id, meuble, lignes) values ($1, 'x', '[]') returning id`, [q.id])).rows[0], "après réactivation, les commandes reprennent");
 await expectError(() => as(U.ali, `select public.admin_abonnement($1, true)`, [q.id]), "un menuisier ne peut pas toucher aux abonnements", "reserve_admin");
+
+console.log("\nComptes créés par l'administrateur");
+await expectError(() => as(ADMIN, `select public.svc_configurer_compte($1, 'admin')`, [U.bob]), "même l'admin ne peut pas appeler directement la fonction serveur");
+await expectError(() => as(U.ali, `select public.svc_configurer_compte($1, 'admin')`, [U.ali]), "un menuisier ne peut pas se nommer admin par cette fonction");
+const asService = async (sql, params = []) => { await db.exec("set role service_role"); try { return await db.query(sql, params); } finally { await db.exec("reset role"); } };
+await db.exec("grant all on all tables in schema public to service_role");
+await db.query(`insert into auth.users (id, raw_user_meta_data) values ('66666666-6666-6666-6666-666666666666', '{"telephone":"221771230000","nom":"Nouvelle Quinc"}')`);
+const r1 = (await asService(`select public.svc_configurer_compte('66666666-6666-6666-6666-666666666666', 'quincaillerie', 'Quinc Rufisque', '771230000', 'Rufisque') as r`)).rows[0].r;
+check(r1.code && r1.code.length === 6, "le serveur crée une quincaillerie avec son code (" + r1.code + ")");
+await db.query(`insert into auth.users (id, raw_user_meta_data) values ('77777777-7777-7777-7777-777777777777', '{"telephone":"221771230001","nom":"Nouveau Menuisier"}')`);
+const r2 = (await asService(`select public.svc_configurer_compte('77777777-7777-7777-7777-777777777777', 'menuisier', null, null, null, $1) as r`, [r1.code])).rows[0].r;
+check(r2.quincaillerie === "Quinc Rufisque", "le serveur crée un menuisier déjà rattaché à sa quincaillerie");
+check((await as("77777777-7777-7777-7777-777777777777", `select nom from public.quincailleries`)).rows[0]?.nom === "Quinc Rufisque", "ce menuisier voit tout de suite les prix de sa quincaillerie");
 
 console.log(`\nRésultat : ${ok} réussis, ${ko} échoués`);
 process.exit(ko ? 1 : 0);

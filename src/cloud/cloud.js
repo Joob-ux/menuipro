@@ -66,3 +66,22 @@ export async function changerStatut(id, statut) { return ok(await sb.from("comma
 /* ---------- Administration ---------- */
 export async function adminVue() { return ok(await sb.rpc("admin_vue")); }
 export async function adminAbonnement(id, actif, jusqu, note) { return ok(await sb.rpc("admin_abonnement", { p_quinc: id, p_actif: actif, p_jusqu: jusqu || null, p_note: note || null })); }
+
+/* Création de comptes et réinitialisation de PIN : passe par la fonction serveur « admin-comptes » */
+const ERREURS_ADMIN = {
+  deja_inscrit: "Ce numéro a déjà un compte.", telephone_invalide: "Numéro de téléphone invalide.",
+  pin_invalide: "Le code PIN doit avoir exactement 6 chiffres.", code_inconnu: "Ce code de quincaillerie n'existe pas.",
+  compte_inconnu: "Aucun compte avec ce numéro.", reserve_admin: "Réservé à l'administrateur.",
+  nom_quincaillerie_manquant: "Entrez le nom de la quincaillerie.", non_connecte: "Reconnectez-vous."
+};
+async function appelAdmin(corps) {
+  const { data, error } = await sb.functions.invoke("admin-comptes", { body: corps });
+  if (error) {
+    let code = error.message;
+    try { const b = await error.context.json(); code = b.erreur || code; } catch (e) { /* réponse sans JSON */ }
+    throw new Error(ERREURS_ADMIN[code] || ("Erreur : " + code));
+  }
+  return data;
+}
+export const adminCreerCompte = c => appelAdmin({ action: "creer", ...c });
+export const adminNouveauPin = (telephone, pin) => appelAdmin({ action: "pin", telephone, pin });

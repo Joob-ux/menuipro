@@ -613,8 +613,48 @@ async function vueAdmin(){
   search.addEventListener("input",()=>{const f=search.value.trim().toLowerCase();drawQ(f);drawM(f)});
   drawQ("");drawM("");
   const th=(...h)=>el("thead",{},el("tr",{},h.map(x=>el("th",{},x))));
+  /* ----- Créer un compte ----- */
+  const genPin=()=>String(100000+crypto.getRandomValues(new Uint32Array(1))[0]%900000);
+  let type="quincaillerie";
+  const cTel=el("input",{id:"acTel",type:"tel",inputmode:"tel",placeholder:"77 000 00 00"}),cNom=el("input",{id:"acNom",type:"text",placeholder:"Nom de la personne"});
+  const cPin=el("input",{id:"acPin",type:"text",inputmode:"numeric",maxlength:"6",style:"letter-spacing:.2em;font-weight:700"});cPin.value=genPin();
+  const qNom=el("input",{id:"acQNom",type:"text",placeholder:"Nom de la quincaillerie"}),qWa=el("input",{id:"acQWa",type:"tel",inputmode:"tel",placeholder:"WhatsApp"}),qCom=el("input",{id:"acQCom",type:"text",placeholder:"Commune"});
+  const qSel=el("select",{id:"acQSel"},el("option",{value:""},"— Aucune pour l'instant —"),...v.quincailleries.map(q=>el("option",{value:q.code},q.nom+(q.commune?" ("+q.commune+")":""))));
+  const blocQ=el("div",{class:"grid2"},el("div",{class:"field"},el("label",{for:"acQNom"},"Quincaillerie"),qNom),el("div",{class:"field"},el("label",{for:"acQWa"},"WhatsApp"),qWa),el("div",{class:"field"},el("label",{for:"acQCom"},"Commune"),qCom));
+  const blocM=el("div",{class:"field"},el("label",{for:"acQSel"},"Rattacher à la quincaillerie"),qSel);
+  const typeSeg=el("div",{class:"seg"});
+  const drawType=()=>{typeSeg.replaceChildren(...[["quincaillerie","🏪 Quincaillerie"],["menuisier","🪚 Menuisier"],["admin","🛡️ Administrateur"]].map(([k,l])=>el("button",{type:"button","aria-pressed":String(type===k),onclick:()=>{type=k;drawType()}},l)));blocQ.hidden=type!=="quincaillerie";blocM.hidden=type!=="menuisier"};
+  drawType();
+  const res=el("div",{class:"form"}),cSt=el("p",{class:"status",role:"status"});
+  const creer=el("button",{type:"button",class:"btn primary"},"➕ Créer le compte");
+  creer.onclick=async()=>{
+    cSt.className="status";cSt.textContent="⏳ Création…";res.replaceChildren();creer.disabled=true;
+    try{
+      const r=await cloud.adminCreerCompte({type,telephone:cTel.value,pin:cPin.value.trim(),nom:cNom.value,quincaillerie:qNom.value,whatsapp:qWa.value,commune:qCom.value,code:qSel.value});
+      cSt.className="status ok";cSt.textContent="✅ Compte créé";
+      const msg=["Bonjour"+(cNom.value?" "+cNom.value.trim():"")+", votre compte MenuiPro est prêt.","Application : https://menuipro.onrender.com","Numéro : "+r.telephone.replace(/^221/,""),"Code PIN : "+cPin.value.trim(),r.code?"Code à donner à vos menuisiers : "+r.code:"",r.quincaillerie&&type==="menuisier"?"Quincaillerie : "+r.quincaillerie:"","Ouvrez l'onglet 👤 Compte puis « Me connecter »."].filter(Boolean).join("\n");
+      const ta=el("textarea",{class:"copy",readonly:"readonly"});ta.value=msg;
+      const wa=el("a",{class:"btn primary",target:"_blank",rel:"noopener",href:"https://wa.me/"+r.telephone+"?text="+encodeURIComponent(msg)},"📲 Envoyer sur WhatsApp");
+      const cp=el("button",{type:"button",class:"btn"},"📋 Copier");cp.onclick=()=>copyText(msg,cSt,ta);
+      res.replaceChildren(el("div",{class:"banner"},"À transmettre à la personne :"),ta,el("div",{class:"actions"},wa,cp));
+      cTel.value="";cNom.value="";qNom.value="";qWa.value="";qCom.value="";cPin.value=genPin();
+    }catch(e){cSt.className="status err";cSt.textContent=e.message}
+    finally{creer.disabled=false}
+  };
+  const creation=el("section",{class:"panel form"},el("h2",{},"➕ Créer un compte"),typeSeg,
+    el("div",{class:"grid2"},el("div",{class:"field"},el("label",{for:"acTel"},"📱 Numéro"),cTel),el("div",{class:"field"},el("label",{for:"acNom"},"Nom"),cNom),
+      el("div",{class:"field"},el("label",{for:"acPin"},"🔑 Code PIN (6 chiffres)"),cPin)),
+    blocQ,blocM,el("div",{class:"actions"},creer,el("button",{type:"button",class:"btn",onclick:()=>{cPin.value=genPin()}},"🎲 Autre code PIN")),cSt,res,
+    el("p",{class:"note"},"Le compte est utilisable tout de suite. Transmettez le numéro et le code PIN à la personne, de préférence de vive voix ou par WhatsApp."));
+  /* ----- Réinitialiser un code PIN ----- */
+  const rTel=el("input",{id:"arTel",type:"tel",inputmode:"tel",placeholder:"77 000 00 00"}),rPin=el("input",{id:"arPin",type:"text",inputmode:"numeric",maxlength:"6",style:"letter-spacing:.2em;font-weight:700"});rPin.value=genPin();
+  const rSt=el("p",{class:"status",role:"status"});
+  const reset=el("button",{type:"button",class:"btn"},"🔑 Changer le code PIN");
+  reset.onclick=async()=>{rSt.className="status";rSt.textContent="⏳";reset.disabled=true;try{await cloud.adminNouveauPin(rTel.value,rPin.value.trim());rSt.className="status ok";rSt.textContent="✅ Nouveau code PIN : "+rPin.value.trim()+" (à transmettre)";rPin.value=genPin()}catch(e){rSt.className="status err";rSt.textContent=e.message}finally{reset.disabled=false}};
+  const reinit=el("section",{class:"panel form"},el("h2",{},"🔑 Code PIN oublié"),el("div",{class:"grid2"},el("div",{class:"field"},el("label",{for:"arTel"},"📱 Numéro du compte"),rTel),el("div",{class:"field"},el("label",{for:"arPin"},"Nouveau code PIN"),rPin)),el("div",{class:"actions"},reset),rSt);
   return [
     el("section",{class:"panel"},el("h2",{},"🛡️ Vue d'ensemble"),kpis,el("div",{class:"actions"},el("button",{type:"button",class:"btn",onclick:()=>renderCompte()},"🔄 Actualiser")),search),
+    creation,reinit,
     el("section",{class:"panel"},el("h2",{},"🏪 Quincailleries ("+v.quincailleries.length+")"),el("p",{class:"note"},"Réglez la date de fin d'abonnement puis 💾. Touchez le statut pour suspendre ou réactiver : une quincaillerie suspendue ne reçoit plus de commandes."),
       el("div",{class:"tablewrap"},el("table",{},th("Quincaillerie","Propriétaire","Code","Menuisiers","Commandes","Montant","Abonnement jusqu'au","Note","Statut"),qBody))),
     el("section",{class:"panel"},el("h2",{},"🪚 Menuisiers ("+v.menuisiers.length+")"),
