@@ -3,7 +3,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { readFileSync } from "node:fs";
 
 const db = new PGlite();
-const migration = readFileSync(new URL("../migrations/20261112000000_init.sql", import.meta.url), "utf8");
+const migration = ["20261112000000_init.sql", "20261112000100_durcissement.sql", "20261112000200_performance.sql"].map(f => readFileSync(new URL("../migrations/" + f, import.meta.url), "utf8")).join("\n");
 let ok = 0, ko = 0;
 const check = (cond, label) => { if (cond) { ok++; console.log("  ✅ " + label); } else { ko++; console.log("  ❌ " + label); } };
 const expectError = async (fn, label, msg) => { try { await fn(); check(false, label + " (aurait dû être refusé)"); } catch (e) { check(!msg || String(e.message).includes(msg), label + " → refusé : " + e.message.split("\n")[0]); } };
@@ -82,5 +82,8 @@ console.log("\nProfils");
 check((await as(U.quinc, `select nom from public.profils order by nom`)).rows.length === 2, "la quincaillerie voit son profil et celui de ses menuisiers (pas Bob)");
 check((await as(U.bob, `select * from public.profils`)).rows.length === 1, "Bob ne voit que son propre profil");
 
+console.log("\nFonctions internes");
+await expectError(() => as(U.ali, `select public.ma_quincaillerie()`), "ma_quincaillerie n'est plus exposée dans l'API");
+await expectError(() => as(U.ali, `select public.nouveau_profil()`), "nouveau_profil ne peut pas être appelée");
 console.log(`\nRésultat : ${ok} réussis, ${ko} échoués`);
 process.exit(ko ? 1 : 0);

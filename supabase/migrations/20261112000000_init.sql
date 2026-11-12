@@ -68,7 +68,7 @@ language sql stable security definer set search_path = public as $$
 $$;
 
 -- ---------- Triggers ----------
-create or replace function public.maj_updated_at() returns trigger language plpgsql as $$
+create or replace function public.maj_updated_at() returns trigger language plpgsql set search_path = public as $$
 begin new.updated_at = now(); return new; end $$;
 create trigger t_quincailleries_maj before update on public.quincailleries for each row execute function public.maj_updated_at();
 create trigger t_projets_maj before update on public.projets for each row execute function public.maj_updated_at();
@@ -85,7 +85,7 @@ end $$;
 create trigger t_nouveau_profil after insert on auth.users for each row execute function public.nouveau_profil();
 
 -- Le rôle et la quincaillerie d'un profil ne changent que par les fonctions prévues
-create or replace function public.proteger_profil() returns trigger language plpgsql as $$
+create or replace function public.proteger_profil() returns trigger language plpgsql set search_path = public as $$
 begin
   if (new.role is distinct from old.role or new.quincaillerie_id is distinct from old.quincaillerie_id
       or new.telephone is distinct from old.telephone or new.id is distinct from old.id)
@@ -97,7 +97,7 @@ end $$;
 create trigger t_proteger_profil before update on public.profils for each row execute function public.proteger_profil();
 
 -- Le propriétaire et le code d'une quincaillerie ne changent pas
-create or replace function public.proteger_quincaillerie() returns trigger language plpgsql as $$
+create or replace function public.proteger_quincaillerie() returns trigger language plpgsql set search_path = public as $$
 begin
   if new.owner_id is distinct from old.owner_id or new.code is distinct from old.code or new.id is distinct from old.id then
     raise exception 'modification_interdite';
@@ -107,7 +107,7 @@ end $$;
 create trigger t_proteger_quincaillerie before update on public.quincailleries for each row execute function public.proteger_quincaillerie();
 
 -- La quincaillerie ne modifie que le statut d'une commande
-create or replace function public.proteger_commande() returns trigger language plpgsql as $$
+create or replace function public.proteger_commande() returns trigger language plpgsql set search_path = public as $$
 begin
   if new.lignes is distinct from old.lignes or new.total is distinct from old.total or new.meuble is distinct from old.meuble
      or new.menuisier_id is distinct from old.menuisier_id or new.quincaillerie_id is distinct from old.quincaillerie_id
