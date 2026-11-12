@@ -773,7 +773,7 @@ async function sectionVoix(){
   const dispo=await chargerVoix().catch(()=>({}));
   const st3=el("p",{class:"status",role:"status"}),liste=el("div",{});
   const envoyer=async(cle,blob)=>{st3.className="status";st3.textContent="⏳ Envoi de « "+cle+" »…";
-    try{if(blob.size>2*1024*1024)throw new Error("Fichier trop lourd (2 Mo maximum).");await cloud.adminEnvoyerVoix(cle,blob);await chargerVoix();st3.className="status ok";st3.textContent="✅ « "+cle+" » enregistré.";dessiner()}
+    try{if(!blob.size)throw new Error("Enregistrement vide : touchez 🎙️, attendez une seconde, parlez, puis touchez ⏹️.");if(blob.size>2*1024*1024)throw new Error("Fichier trop lourd (2 Mo maximum).");await cloud.adminEnvoyerVoix(cle,blob);await chargerVoix();st3.className="status ok";st3.textContent="✅ « "+cle+" » enregistré.";dessiner()}
     catch(e){st3.className="status err";st3.textContent=cloud.message(e)}};
   let rec=null;
   const ligne=(cle,[ic,fr,wo])=>{
@@ -785,9 +785,9 @@ async function sectionVoix(){
       if(rec){st3.className="status err";st3.textContent="Terminez d'abord l'enregistrement en cours.";return}
       if(!window.MediaRecorder||!navigator.mediaDevices){st3.className="status err";st3.textContent="Ce navigateur ne peut pas enregistrer : importez un fichier audio (note vocale WhatsApp, mp3…).";return}
       try{const flux=await navigator.mediaDevices.getUserMedia({audio:true});const r=new MediaRecorder(flux),morceaux=[];
-        r.ondataavailable=e=>morceaux.push(e.data);
+        r.ondataavailable=e=>{if(e.data&&e.data.size)morceaux.push(e.data)};
         r.onstop=()=>{flux.getTracks().forEach(t=>t.stop());rec=null;micro.textContent="🎙️ Enregistrer";envoyer(cle,new Blob(morceaux,{type:r.mimeType||"audio/webm"}))};
-        r.start();rec={cle,r};micro.textContent="⏹️ Arrêter";st3.className="status";st3.textContent="🔴 Parlez maintenant, puis touchez « Arrêter ».";
+        r.start(1000);rec={cle,r};micro.textContent="⏹️ Arrêter";st3.className="status";st3.textContent="🔴 Parlez maintenant, puis touchez « Arrêter ».";
       }catch(e){st3.className="status err";st3.textContent="Micro refusé ou indisponible."}
     };
     const fichier=el("input",{type:"file",accept:"audio/*",hidden:"hidden"});fichier.onchange=()=>{if(fichier.files[0])envoyer(cle,fichier.files[0])};
