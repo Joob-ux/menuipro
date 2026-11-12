@@ -85,3 +85,19 @@ async function appelAdmin(corps) {
 }
 export const adminCreerCompte = c => appelAdmin({ action: "creer", ...c });
 export const adminNouveauPin = (telephone, pin) => appelAdmin({ action: "pin", telephone, pin });
+
+/* ---------- Voix (fichiers audio publics, bucket « voix ») ---------- */
+// Liste des audios disponibles : { clé: version } (la version évite l'ancien fichier en cache).
+export async function listeVoix() {
+  const { data, error } = await sb.storage.from("voix").list("wo", { limit: 200 });
+  if (error) throw error;
+  const r = {};
+  (data || []).forEach(f => { if (f.name && !f.name.startsWith(".")) r[f.name] = Date.parse(f.updated_at || f.created_at || 0) || 1; });
+  return r;
+}
+export const urlVoix = (cle, v) => URL_SB + "/storage/v1/object/public/voix/wo/" + encodeURIComponent(cle) + "?v=" + v;
+export async function adminEnvoyerVoix(cle, blob) {
+  const type = String(blob.type || "audio/mpeg").split(";")[0] || "audio/mpeg";
+  return ok(await sb.storage.from("voix").upload("wo/" + cle, blob, { upsert: true, contentType: type, cacheControl: "3600" }));
+}
+export async function adminSupprimerVoix(cle) { return ok(await sb.storage.from("voix").remove(["wo/" + cle])); }

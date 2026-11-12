@@ -15,7 +15,7 @@
 </head>
 <body>
 <header><div class="wrap">
-  <h1>🪚 MenuiPro · atelier</h1>
+  <h1 data-voix="bienvenue">🪚 MenuiPro · atelier</h1>
   <span class="tag" id="count-tag">MenuiPro</span>
 </div></header>
 <nav class="appnav" aria-label="Sections"><div class="wrap" id="appnav"></div></nav>
@@ -24,7 +24,7 @@
 <div class="wrap">
   <section class="catalog" aria-label="Catalogue de meubles">
     <div class="cathead">
-      <h2>Choisir un meuble</h2>
+      <h2 data-voix="choisir">Choisir un meuble</h2>
       <input class="search" id="search" type="search" placeholder="🔎 Chercher : armoire, lit, cuisine…" autocomplete="off">
     </div>
     <div class="rooms" id="rooms"></div>
@@ -35,9 +35,9 @@
 <div class="wrap layout">
   <section class="panel" aria-label="Configurer le meuble">
     <div class="current" id="current"></div>
-    <div class="label">Les cotes (en cm)</div>
+    <div class="label" data-voix="cotes">Les cotes (en cm)</div>
     <div class="dims" id="dims"></div>
-    <div class="label" id="optsLabel">Les options</div>
+    <div class="label" id="optsLabel" data-voix="options">Les options</div>
     <div id="opts" style="display:grid;gap:10px"></div>
     <div class="label">La couleur du mélaminé</div>
     <div class="swatches" id="swatches"></div>
@@ -50,7 +50,7 @@
   <section class="results" aria-label="Résultats">
     <div class="kpis" id="kpis"></div>
     <div class="panel">
-      <h2>Le meuble en 3D</h2>
+      <h2 data-voix="vue3d">Le meuble en 3D</h2>
       <div class="view3d" id="view3d">
         <span class="hint3d" id="hint3d">👆 Touchez une porte</span>
         <div class="tools">
@@ -62,7 +62,7 @@
       <p class="note">Touchez une porte ou un tiroir pour l'ouvrir. Glissez pour tourner, pincez pour zoomer. La 3D est construite avec les mêmes pièces que la découpe.</p>
     </div>
     <div class="panel">
-      <h2>Plan de découpe</h2>
+      <h2 data-voix="plan">Plan de découpe</h2>
       <div class="tabs" id="sheetTabs"></div>
       <div class="plan" id="plan"></div>
       <div class="legend" id="sheetInfo"></div>
@@ -76,7 +76,7 @@
       <p class="note">Le pack CNC contient, pour chaque feuille, un fichier DXF et un SVG en millimètres (calques DECOUPE et perçages), plus la liste de débit en CSV. Cotes finies : la compensation de fraise se règle dans le logiciel de la CNC.</p>
     </div>
     <div class="panel">
-      <h2>🛒 Liste d'achat</h2>
+      <h2 data-voix="achat">🛒 Liste d'achat</h2>
       <div class="banner" id="buyBanner" hidden></div>
       <div class="lines" id="buy"></div>
       <div class="total"><span>Total matériel</span><b id="buyTotal">—</b></div>
@@ -90,7 +90,7 @@
       <div class="kit" id="tools"></div>
     </div>
     <div class="panel" id="devisPanel">
-      <h2>💰 Devis pour le client</h2>
+      <h2 data-voix="devis">💰 Devis pour le client</h2>
       <div class="grid2">
         <div class="field"><label for="dClient">Nom du client</label><input id="dClient" type="text" autocomplete="off" placeholder="Ex. Mme Ndiaye"></div>
         <div class="field"><label for="dTel">Téléphone du client</label><input id="dTel" type="tel" inputmode="tel" autocomplete="off"></div>
@@ -109,7 +109,7 @@
       <p class="note">Les jours sont estimés d'après le nombre de pièces, de perçages, de portes et de tiroirs ; modifiez-les si besoin. Tarif et marge se règlent dans « Mon atelier ».</p>
     </div>
     <div class="panel">
-      <h2>Liste de débit</h2>
+      <h2 data-voix="debit">Liste de débit</h2>
       <div class="tablewrap"><table id="debit"></table></div>
     </div>
   </section>
@@ -117,12 +117,12 @@
 </main>
 
 <main id="v-projets" hidden><div class="wrap view">
-  <div class="cathead"><h2>📁 Mes projets</h2><button class="btn primary" type="button" id="newProj">➕ Nouveau meuble</button></div>
+  <div class="cathead"><h2 data-voix="projets">📁 Mes projets</h2><button class="btn primary" type="button" id="newProj">➕ Nouveau meuble</button></div>
   <div class="projects" id="projList"></div>
 </div></main>
 
 <main id="v-catalogue" hidden><div class="wrap view">
-  <h2>🏪 Catalogue et prix de la quincaillerie</h2>
+  <h2 data-voix="catalogue">🏪 Catalogue et prix de la quincaillerie</h2>
   <div class="banner" id="roBanner" hidden></div>
   <div class="banner" id="ownBanner" hidden>🔄 Vous êtes la quincaillerie : chaque prix modifié ici est envoyé automatiquement à tous vos menuisiers.</div>
   <div class="banner" id="exBanner" hidden>Ces prix sont des <b>exemples</b>. Remplacez-les par les vrais prix de la quincaillerie avant de faire un devis.</div>
@@ -137,7 +137,7 @@
     <div class="tablewrap"><table class="ptable" id="panTable"></table></div>
     <div class="actions"><button class="btn" type="button" id="addPan">➕ Ajouter un panneau</button></div>
   </section>
-  <section class="panel"><h2>🪵 Bois massif (prix de la barre)</h2>
+  <section class="panel"><h2 data-voix="bois">🪵 Bois massif (prix de la barre)</h2>
     <p class="note">Planches, chevrons, madriers… utilisés pour les portes, fenêtres, chaises, canapés, lits superposés et le lambris.</p>
     <div class="tablewrap"><table class="ptable" id="secTable"></table></div>
   </section>
@@ -149,7 +149,7 @@
 </div></main>
 
 <main id="v-atelier" hidden><div class="wrap view">
-  <h2>⚙️ Mon atelier</h2>
+  <h2 data-voix="atelier">⚙️ Mon atelier</h2>
   <section class="panel form">
     <div class="grid2">
       <div class="field"><label for="aNom">Nom de l'atelier</label><input id="aNom" type="text" autocomplete="off" placeholder="Ex. Menuiserie Baye Fall"></div>
@@ -160,6 +160,11 @@
       <div class="field"><label for="aKerf">Trait de scie (mm)</label><input id="aKerf" type="number" min="0" max="10" step="0.5"></div>
     </div>
     <p class="note">Ces réglages apparaissent sur chaque devis. Ils restent enregistrés sur ce téléphone.</p>
+  </section>
+  <section class="panel form">
+    <h2>🔊 Guide vocal</h2>
+    <div class="seg" id="aVoix" role="group" aria-label="Langue du guide vocal"></div>
+    <p class="note">Touchez 🔊 à côté d'un titre pour écouter l'explication.</p>
   </section>
 </div></main>
 

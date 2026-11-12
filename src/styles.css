@@ -143,3 +143,11 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:20;background:var(--ink);color:var(--surface);padding:10px 16px;border-radius:12px;font-weight:700;max-width:min(92vw,520px);box-shadow:0 6px 20px rgba(0,0,0,.25)}
 .toast.err{background:var(--warn)}
 button:disabled,input:disabled{opacity:.55;cursor:not-allowed}
+
+/* Guide vocal */
+.voix{margin-left:8px;border:2px solid var(--line);background:var(--surface);border-radius:999px;width:40px;height:40px;font-size:20px;line-height:1;cursor:pointer;vertical-align:middle;flex:none}
+.voix.parle{border-color:var(--accent);background:var(--accent-soft)}
+body.sans-voix .voix{display:none}
+.voixrow{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.voixrow .acts{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
+@media (max-width:560px){.voixrow{grid-template-columns:auto 1fr}.voixrow .acts{grid-column:1/-1;justify-content:flex-start}}

@@ -4,6 +4,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RECIPES, BIENTOT, buildRecipe, pack, outils, SHEET, holeLocal, HOLE_KINDS, SECTIONS_DEF, debitMassif } from "./engine/index.js";
 import { HCOL, sheetHoles, cncSVG, cncDXF, makeZip, ascii } from "./export/cnc.js";
 import * as cloud from "./cloud/cloud.js";
+import { PHRASES, parler, boutonVoix, chargerVoix, aUnAudio } from "./voix.js";
 import "./styles.css";
 
 const COLORS=[["Blanc","#efefeb"],["Gris","#8b8f90"],["Noir","#2a2a2a"],["Chêne clair","#c9a36b"],["Wengé","#4a3326"]];
@@ -392,7 +393,14 @@ $("fillEx").onclick=()=>{CAT.panneaux.forEach(pn=>{if(!pn.prix&&EX_PRIX[pn.id])p
 let resetArmed=false;$("resetCat").onclick=()=>{if(!resetArmed){resetArmed=true;$("resetCat").textContent="Touchez encore pour tout remettre à zéro";return}resetArmed=false;$("resetCat").textContent="↺ Remettre les prix à zéro";CAT.panneaux.forEach(p=>p.prix=0);CAT.sections.forEach(x=>x.prix=0);CAT.prix={};CAT.exemple=false;saveCat();renderCatalogue()};
 
 /* ----- Écran Mon atelier ----- */
-function renderAtelier(){[["aNom","nom"],["aTel","tel"],["aJour","jour"],["aMarge","marge"],["aValid","valid"]].forEach(([id,k])=>$(id).value=AT[k]??"");$("aKerf").value=st.kerf}
+function renderAtelier(){[["aNom","nom"],["aTel","tel"],["aJour","jour"],["aMarge","marge"],["aValid","valid"]].forEach(([id,k])=>$(id).value=AT[k]??"");$("aKerf").value=st.kerf;
+  const mode=AT.voix||"wo";
+  $("aVoix").replaceChildren(...[["wo","🇸🇳 Wolof"],["fr","🇫🇷 Français"],["non","🔇 Aucune"]].map(([k,l])=>el("button",{type:"button","aria-pressed":String(mode===k),onclick:()=>{AT.voix=k;saveAt();appliquerVoix();renderAtelier();if(k!=="non")parler("atelier")}},l)));
+}
+/* ----- Guide vocal ----- */
+function appliquerVoix(){document.body.classList.toggle("sans-voix",(AT.voix||"wo")==="non")}
+document.querySelectorAll("[data-voix]").forEach(n=>n.append(boutonVoix(n.dataset.voix,el)));
+appliquerVoix();chargerVoix();
 [["aNom","nom"],["aTel","tel"],["aJour","jour"],["aMarge","marge"],["aValid","valid"]].forEach(([id,k])=>$(id).addEventListener("input",e=>{AT[k]=["jour","marge","valid"].includes(k)?(parseFloat(e.target.value)||0):e.target.value;saveAt()}));
 $("aKerf").addEventListener("input",e=>{st.kerf=parseFloat(e.target.value)||0;save()});
 
@@ -709,12 +717,52 @@ async function vueAdmin(){
   const reinit=el("section",{class:"panel form"},el("h2",{},"🔑 Code PIN oublié"),el("div",{class:"grid2"},el("div",{class:"field"},el("label",{for:"arTel"},"📱 Numéro du compte"),rTel),el("div",{class:"field"},el("label",{for:"arPin"},"Nouveau code PIN"),rPin)),el("div",{class:"actions"},reset),rSt);
   return [
     el("section",{class:"panel"},el("h2",{},"🛡️ Vue d'ensemble"),kpis,el("div",{class:"actions"},el("button",{type:"button",class:"btn",onclick:()=>renderCompte()},"🔄 Actualiser")),search),
-    creation,reinit,
+    creation,reinit,await sectionVoix(),
     el("section",{class:"panel"},el("h2",{},"🏪 Quincailleries ("+v.quincailleries.length+")"),el("p",{class:"note"},"Réglez la date de fin d'abonnement puis 💾. Touchez le statut pour suspendre ou réactiver : une quincaillerie suspendue ne reçoit plus de commandes."),
       el("div",{class:"tablewrap"},el("table",{},th("Quincaillerie","Propriétaire","Code","Menuisiers","Commandes","Montant","Abonnement jusqu'au","Note","Statut"),qBody))),
     el("section",{class:"panel"},el("h2",{},"🪚 Menuisiers ("+v.menuisiers.length+")"),
       el("div",{class:"tablewrap"},el("table",{},th("Nom","Téléphone","Quincaillerie","Projets","Commandes","Inscrit le","Dernière activité"),mBody)))
   ];
+}
+/* ----- Console : voix en wolof ----- */
+async function sectionVoix(){
+  const dispo=await chargerVoix().catch(()=>({}));
+  const st3=el("p",{class:"status",role:"status"}),liste=el("div",{});
+  const envoyer=async(cle,blob)=>{st3.className="status";st3.textContent="⏳ Envoi de « "+cle+" »…";
+    try{if(blob.size>2*1024*1024)throw new Error("Fichier trop lourd (2 Mo maximum).");await cloud.adminEnvoyerVoix(cle,blob);await chargerVoix();st3.className="status ok";st3.textContent="✅ « "+cle+" » enregistré.";dessiner()}
+    catch(e){st3.className="status err";st3.textContent=cloud.message(e)}};
+  let rec=null;
+  const ligne=(cle,[ic,fr])=>{
+    const ok=aUnAudio(cle);
+    const ecouter=el("button",{type:"button",class:"btn","aria-label":"Écouter",onclick:()=>parler(cle,null,"wo")},"▶️");ecouter.disabled=!ok;
+    const micro=el("button",{type:"button",class:"btn"},"🎙️ Enregistrer");
+    micro.onclick=async()=>{
+      if(rec&&rec.cle===cle){rec.r.stop();return}
+      if(rec){st3.className="status err";st3.textContent="Terminez d'abord l'enregistrement en cours.";return}
+      if(!window.MediaRecorder||!navigator.mediaDevices){st3.className="status err";st3.textContent="Ce navigateur ne peut pas enregistrer : importez un fichier audio (note vocale WhatsApp, mp3…).";return}
+      try{const flux=await navigator.mediaDevices.getUserMedia({audio:true});const r=new MediaRecorder(flux),morceaux=[];
+        r.ondataavailable=e=>morceaux.push(e.data);
+        r.onstop=()=>{flux.getTracks().forEach(t=>t.stop());rec=null;micro.textContent="🎙️ Enregistrer";envoyer(cle,new Blob(morceaux,{type:r.mimeType||"audio/webm"}))};
+        r.start();rec={cle,r};micro.textContent="⏹️ Arrêter";st3.className="status";st3.textContent="🔴 Parlez maintenant, puis touchez « Arrêter ».";
+      }catch(e){st3.className="status err";st3.textContent="Micro refusé ou indisponible."}
+    };
+    const fichier=el("input",{type:"file",accept:"audio/*",hidden:"hidden"});fichier.onchange=()=>{if(fichier.files[0])envoyer(cle,fichier.files[0])};
+    const imp=el("button",{type:"button",class:"btn",onclick:()=>fichier.click()},"📁");
+    return el("div",{class:"voixrow"},el("span",{style:"font-size:26px","aria-hidden":"true"},ic),
+      el("div",{},el("b",{},fr),el("div",{class:"note"},(ok?"✅ audio wolof prêt":"⏳ pas encore d'audio wolof")+" · "+cle)),
+      el("div",{class:"acts"},ecouter,micro,imp,fichier));
+  };
+  const dessiner=()=>{const n=Object.keys(PHRASES).filter(aUnAudio).length;
+    liste.replaceChildren(el("p",{class:"note"},n+" / "+Object.keys(PHRASES).length+" phrases ont leur audio wolof."),...Object.entries(PHRASES).map(([k,v])=>ligne(k,v)))};
+  dessiner();
+  // Import groupé : fichiers nommés <clé>.mp3 (sortie du cahier Colab Adia TTS)
+  const lot=el("input",{type:"file",accept:"audio/*",multiple:"multiple",hidden:"hidden"});
+  lot.onchange=async()=>{const fs=[...lot.files];let n=0,ign=[];
+    for(const f of fs){const cle=f.name.replace(/\.[^.]+$/,"");if(!PHRASES[cle]){ign.push(f.name);continue}await envoyer(cle,f);n++}
+    st3.className=ign.length?"status err":"status ok";st3.textContent="✅ "+n+" audio(s) importé(s)"+(ign.length?" · ignorés (nom inconnu) : "+ign.join(", "):"")};
+  return el("section",{class:"panel"},el("h2",{},"🎙️ Voix en wolof"),
+    el("p",{class:"note"},"Générez les audios avec le cahier Colab « outils/voix_wolof_adia.ipynb » (modèle Adia TTS de CONCREE, licence Apache 2.0), puis importez-les tous d'un coup. Une phrase mal prononcée : refaites-la au micro 🎙️ ou importez une note vocale 📁."),
+    el("div",{class:"actions"},el("button",{type:"button",class:"btn primary",onclick:()=>lot.click()},"📦 Importer les audios (plusieurs fichiers)"),lot),st3,liste);
 }
 if(cloud.actif)cloud.chargerCompte().then(c=>{ME=c;if(c)appliquerCompte();if(!$("v-compte").hidden)renderCompte()}).catch(()=>{});
 
