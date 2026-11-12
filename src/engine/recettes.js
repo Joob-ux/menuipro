@@ -1,5 +1,5 @@
 // MenuiPro — recettes de meubles
-import { add, add3d, hw, caisse, portes, plateau, panneauV, voile, piedsAchetes, planTravail, lit, armoire } from "./blocs.js";
+import { add, add3d, hw, caisse, portes, plateau, panneauV, voile, piedsAchetes, planTravail, lit, armoire, G } from "./blocs.js";
 
 /* ===================== RECETTES ===================== */
 export const RECIPES = [];
@@ -196,5 +196,130 @@ rec({ id: "salle-de-bain", nom: "Meuble de salle de bain", e: "🚿", cat: "Port
 } });
 
 /* Bientôt (bois massif, menuiserie de bâtiment) */
-export const BIENTOT = [["Lit superposé", "🪜", "Chambre"], ["Chaises", "🪑", "Salon"], ["Cadre de canapé", "🛋️", "Salon"], ["Porte pleine en bois massif", "🚪", "Portes et autres"], ["Porte isoplane", "🚪", "Portes et autres"], ["Fenêtre / persienne", "🪟", "Portes et autres"], ["Faux plafond / lambris", "🏠", "Portes et autres"]];
+export const BIENTOT = [];
+
+/* ===================== BOIS MASSIF ===================== */
+// Pièce en bois massif : la section (planche, chevron, madrier…) est choisie au débit, ou imposée par « sec ».
+const M = (c, name, box, sec, extra = {}) => add(c, name, "massif", box, { flags: { section: sec, ...extra } });
+
+rec({ id: "lit-superpose", nom: "Lit superposé", e: "🪜", cat: "Chambre", massif: true, dims: [90, 165, 190], dimLabels: ["Largeur matelas", "Hauteur totale", "Longueur matelas"], opts: [stp("echelle", "Échelle", "🪜", 1, 0, 1)], build(c, p, o) {
+  const L = p.L, H = p.H, P = p.P, pw = 65, pd = 80, D = P + 2 * pd, X2 = L + pw;
+  [[0, 0], [X2, 0], [0, D - pd], [X2, D - pd]].forEach(([x, z], i) => M(c, "Montant " + (i + 1), [x, 0, z, pw, H, pd], "chevron"));
+  const niveaux = [250, Math.max(900, H - 650)];
+  niveaux.forEach((y, n) => {
+    const nm = n ? "haut" : "bas";
+    M(c, "Longeron gauche (" + nm + ")", [pw, y, pd, 27, 150, P], "planche");
+    M(c, "Longeron droit (" + nm + ")", [L + pw - 27, y, pd, 27, 150, P], "planche");
+    M(c, "Traverse tête (" + nm + ")", [0, y, pd - 27, L + 2 * pw, 150, 27], "planche");
+    M(c, "Traverse pied (" + nm + ")", [0, y, pd + P, L + 2 * pw, 150, 27], "planche");
+    const nl = Math.round(P / 110);
+    for (let i = 0; i < nl; i++) add3d(c, "massif", [pw + 27, y + 100, pd + 40 + i * (P - 80) / (nl - 1) - 35, L - 54, 20, 70]);
+    hw(c, "lattes", "🪵", "Lattes de lit " + Math.round((L - 54) / 10) + " cm", nl);
+    hw(c, "tasseaux", "🪵", "Tasseaux d'appui", 2 * P / 1000, "m");
+  });
+  const yH = niveaux[1];
+  M(c, "Garde-corps mur", [-27, yH + 220, pd, 27, 120, P], "planche");
+  M(c, "Garde-corps avant", [X2 + pw, yH + 220, pd, 27, 120, P - 520], "planche");
+  if (o.echelle) {
+    const zE = D - pd - 470;
+    M(c, "Montant d'échelle 1", [X2 + pw, 0, zE, 27, yH + 200, 70], "latte");
+    M(c, "Montant d'échelle 2", [X2 + pw, 0, zE + 400, 27, yH + 200, 70], "latte");
+    const nb = Math.max(3, Math.floor((yH + 100) / 280));
+    for (let i = 1; i <= nb; i++) M(c, "Barreau " + i, [X2 + pw + 27, i * (yH + 100) / (nb + 1), zE, 27, 70, 470], "latte");
+  }
+  hw(c, "boulons", "🔩", "Boulons de lit 8 × 120 + écrous", 16);
+  hw(c, "visbois", "🔩", "Vis à bois 5 × 60", 40);
+} });
+
+rec({ id: "chaise", nom: "Chaise", e: "🪑", cat: "Salon", massif: true, dims: [44, 90, 44], dimMin: [30, 60, 30], dimLabels: ["Largeur", "Hauteur du dossier", "Profondeur"], opts: [stp("nombre", "Nombre de chaises", "🪑", 4, 1, 12)], build(c, p, o) {
+  const L = p.L, H = p.H, P = p.P, A = 450, f = 40;
+  const q = { qty: o.nombre };
+  M(c, "Pied avant gauche", [0, 0, P - f, f, A, f], null, q); M(c, "Pied avant droit", [L - f, 0, P - f, f, A, f], null, q);
+  M(c, "Pied arrière gauche", [0, 0, 0, f, H, f], null, q); M(c, "Pied arrière droit", [L - f, 0, 0, f, H, f], null, q);
+  M(c, "Ceinture avant", [f, A - 90, P - f + 9, L - 2 * f, 70, 22], null, q); M(c, "Ceinture arrière", [f, A - 90, 9, L - 2 * f, 70, 22], null, q);
+  M(c, "Ceinture gauche", [9, A - 90, f, 22, 70, P - 2 * f], null, q); M(c, "Ceinture droite", [L - 31, A - 90, f, 22, 70, P - 2 * f], null, q);
+  M(c, "Traverse haute du dossier", [f, H - 120, 9, L - 2 * f, 70, 22], null, q); M(c, "Traverse basse du dossier", [f, A + 180, 9, L - 2 * f, 60, 22], null, q);
+  add(c, "Assise", "caisson", [0, A - 20, 0, L, c.E, P], { qty: o.nombre, edge: 2 * (L + P) });
+  hw(c, "tourillons_ch", "🪵", "Tourillons Ø8 + colle", 24 * o.nombre);
+  hw(c, "patins", "⚪", "Patins de pieds", 4 * o.nombre);
+} });
+
+rec({ id: "canape", nom: "Cadre de canapé", e: "🛋️", cat: "Salon", massif: true, dims: [200, 85, 85], opts: [stp("places", "Places", "🛋️", 3, 2, 4)], build(c, p, o) {
+  const L = p.L, H = p.H, P = p.P, s = 65, h = 80, yA = 180;
+  [[0, 0], [L - s, 0], [0, P - s], [L - s, P - s]].forEach(([x, z], i) => M(c, "Pied " + (i + 1), [x, 0, z, s, yA, s], "chevron"));
+  M(c, "Longeron avant", [0, yA, P - s, L, h, s], "chevron"); M(c, "Longeron arrière", [0, yA, 0, L, h, s], "chevron");
+  for (let i = 0; i <= o.places; i++) M(c, "Traverse d'assise " + (i + 1), [i * (L - s) / o.places, yA, s, s, h, P - 2 * s], "chevron");
+  M(c, "Montant de dossier gauche", [0, yA + h, 0, s, H - yA - h, s], "chevron"); M(c, "Montant de dossier droit", [L - s, yA + h, 0, s, H - yA - h, s], "chevron");
+  M(c, "Traverse haute du dossier", [s, H - h, 0, L - 2 * s, h, s], "chevron");
+  M(c, "Accoudoir gauche", [0, 600, 0, s, 27, P]); M(c, "Accoudoir droit", [L - s, 600, 0, s, 27, P]);
+  M(c, "Montant d'accoudoir gauche", [0, yA + h, P - s, s, 600 - yA - h, s], "chevron"); M(c, "Montant d'accoudoir droit", [L - s, yA + h, P - s, s, 600 - yA - h, s], "chevron");
+  hw(c, "sangles", "🧵", "Sangles élastiques", Math.ceil((P / 1000) * (L / 120)), "m");
+  hw(c, "mousse", "🟨", "Mousse d'assise 10 cm", (L / 1000) * (P / 1000), "m²");
+  hw(c, "tissu", "🧶", "Tissu", (L / 1000) * 3, "m");
+  hw(c, "visbois", "🔩", "Vis à bois 5 × 80", 48);
+} });
+
+const DIMS_PORTE = ["Largeur", "Hauteur", "Épaisseur"];
+function huisserie(c, L, H) {
+  M(c, "Huisserie montant gauche", [-70, 0, -20, 65, H + 5, 80], "chevron");
+  M(c, "Huisserie montant droit", [L + 5, 0, -20, 65, H + 5, 80], "chevron");
+  M(c, "Huisserie traverse", [-70, H + 5, -20, L + 140, 65, 80], "chevron");
+  hw(c, "pattes", "🔩", "Pattes de scellement", 6);
+}
+rec({ id: "porte-pleine", nom: "Porte pleine en bois massif", e: "🚪", cat: "Portes et autres", massif: true, dims: [83, 204, 4], dimMin: [40, 100, 3], dimLabels: DIMS_PORTE, opts: [stp("huisserie", "Avec huisserie", "🧱", 1, 0, 1)], build(c, p, o) {
+  const L = p.L, H = p.H, T = p.P, m = 120;
+  M(c, "Montant gauche", [0, 0, 0, m, H, T]); M(c, "Montant droit", [L - m, 0, 0, m, H, T]);
+  M(c, "Traverse basse", [m, 0, 0, L - 2 * m, 200, T]); M(c, "Traverse du milieu", [m, H / 2 - 75, 0, L - 2 * m, 150, T]); M(c, "Traverse haute", [m, H - m, 0, L - 2 * m, m, T]);
+  const pe = Math.max(15, T - 20);
+  M(c, "Panneau bas", [m, 200, (T - pe) / 2, L - 2 * m, H / 2 - 75 - 200, pe]);
+  M(c, "Panneau haut", [m, H / 2 + 75, (T - pe) / 2, L - 2 * m, H / 2 - 75 - m, pe]);
+  if (o.huisserie) huisserie(c, L, H);
+  hw(c, "paumelles", "⚙️", "Paumelles", 3); hw(c, "serrure", "🔒", "Serrure + cylindre", 1); hw(c, "poignees", "🚪", "Poignée de porte", 1);
+  hw(c, "colle", "🧴", "Colle à bois", 1);
+} });
+rec({ id: "porte-isoplane", nom: "Porte isoplane", e: "🚪", cat: "Portes et autres", massif: true, dims: [83, 204, 4], dimMin: [40, 100, 3], dimLabels: DIMS_PORTE, opts: [stp("huisserie", "Avec huisserie", "🧱", 1, 0, 1)], build(c, p, o) {
+  const L = p.L, H = p.H, T = p.P, ec = T - 10, b = 40;
+  M(c, "Cadre montant gauche", [0, 0, 5, b, H, ec]); M(c, "Cadre montant droit", [L - b, 0, 5, b, H, ec]);
+  M(c, "Cadre traverse basse", [b, 0, 5, L - 2 * b, b, ec]); M(c, "Cadre traverse haute", [b, H - b, 5, L - 2 * b, b, ec]);
+  for (let i = 1; i <= 3; i++) M(c, "Traverse intermédiaire " + i, [b, i * H / 4 - b / 2, 5, L - 2 * b, b, ec]);
+  M(c, "Renfort de serrure", [L - b - 80, H / 2 - 200, 5, 80, 400, ec]);
+  add(c, "Parement face 1", "dos", [0, 0, 0, L, H, 5]); add(c, "Parement face 2", "dos", [0, 0, T - 5, L, H, 5]);
+  if (o.huisserie) huisserie(c, L, H);
+  hw(c, "paumelles", "⚙️", "Paumelles", 3); hw(c, "serrure", "🔒", "Serrure + cylindre", 1); hw(c, "poignees", "🚪", "Poignée de porte", 1);
+  hw(c, "colle", "🧴", "Colle à bois", 1); hw(c, "pointes", "🔨", "Pointes", Math.ceil((2 * (L + H) * 2) / 100));
+} });
+rec({ id: "fenetre", nom: "Fenêtre / persienne", e: "🪟", cat: "Portes et autres", massif: true, dims: [120, 140, 8], dimMin: [40, 40, 5], dimLabels: ["Largeur", "Hauteur", "Épaisseur du dormant"], opts: [stp("vantaux", "Vantaux", "🪟", 2, 1, 2)], build(c, p, o) {
+  const L = p.L, H = p.H, T = p.P, d = 65;
+  M(c, "Dormant montant gauche", [0, 0, 0, d, H, T], "chevron"); M(c, "Dormant montant droit", [L - d, 0, 0, d, H, T], "chevron");
+  M(c, "Dormant traverse basse", [d, 0, 0, L - 2 * d, d, T], "chevron"); M(c, "Dormant traverse haute", [d, H - d, 0, L - 2 * d, d, T], "chevron");
+  const n = o.vantaux, wv = (L - 2 * d - G * (n + 1)) / n, hv = H - 2 * d - 2 * G, yv = d + G, ev = 45;
+  for (let v = 0; v < n; v++) {
+    const x = d + G + v * (wv + G), nm = n > 1 ? " (vantail " + (v + 1) + ")" : "";
+    M(c, "Montant gauche" + nm, [x, yv, 10, 50, hv, ev]); M(c, "Montant droit" + nm, [x + wv - 50, yv, 10, 50, hv, ev]);
+    M(c, "Traverse basse" + nm, [x + 50, yv, 10, wv - 100, 70, ev]); M(c, "Traverse haute" + nm, [x + 50, yv + hv - 60, 10, wv - 100, 60, ev]);
+    const nl = Math.max(1, Math.floor((hv - 130) / 45));
+    for (let i = 0; i < nl; i++) M(c, "Lame" + nm + " " + (i + 1), [x + 50, yv + 70 + i * 45, 18, wv - 100, 55, 12], "lame");
+  }
+  hw(c, "paumelles", "⚙️", "Paumelles", 2 * n); hw(c, "espagnolette", "🔒", "Espagnolette / crémone", 1); hw(c, "colle", "🧴", "Colle à bois", 1);
+} });
+rec({ id: "lambris", nom: "Faux plafond / lambris", e: "🏠", cat: "Portes et autres", massif: true, dims: [400, 280, 300], dimLabels: ["Longueur de la pièce", "Hauteur sous plafond", "Largeur de la pièce"], opts: [], build(c, p) {
+  const L = p.L, H = p.H, P = p.P, utile = 90, maxL = 3980;
+  // Lames pleine longueur ; le complément (au moins 60 cm) est pris dans les chutes, qui servent à plusieurs rangs.
+  const rangs = Math.ceil(P / utile), longs = [];
+  let reste = L;
+  while (reste > maxL) { longs.push(maxL); reste -= maxL; }
+  if (longs.length && reste < 600) { longs[longs.length - 1] -= 600 - reste; reste = 600; }
+  longs.push(reste);
+  for (let r = 0; r < rangs; r++) {
+    let x = 0;
+    longs.forEach((lg, k) => {
+      M(c, "Lame rang " + (r + 1) + (longs.length > 1 ? " (" + (k + 1) + "/" + longs.length + ")" : ""), [x, H - 15, r * utile, lg, 15, Math.min(100, P - r * utile + 10)], "lame");
+      x += lg;
+    });
+  }
+  const nt = Math.floor(L / 400) + 1;
+  for (let i = 0; i < nt; i++) M(c, "Tasseau " + (i + 1), [Math.min(i * 400, L - 27), H - 15 - 27, 0, 27, 27, P], "latte");
+  hw(c, "chevilles", "🔩", "Chevilles + vis de fixation des tasseaux", nt * Math.ceil(P / 600));
+  hw(c, "pointes", "🔨", "Pointes de lambris", rangs * nt);
+} });
 

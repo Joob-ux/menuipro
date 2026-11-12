@@ -18,7 +18,7 @@ export function add(ctx, name, mat, box, o = {}) {
     name, mat, box,
     cut: cut ? [Math.round(Math.max(...cut)), Math.round(Math.min(...cut))] : null,
     edge: Math.round(o.edge || 0), qty: o.qty || 1,
-    look: o.look || (mat === "dos" ? "back" : "case"),
+    look: o.look || (mat === "dos" ? "back" : mat === "massif" ? "massif" : "case"),
     holes: []
   }, o.flags || {});
   ctx.parts.push(part);

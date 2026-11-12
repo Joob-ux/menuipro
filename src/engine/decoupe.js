@@ -29,8 +29,8 @@ export function packOnce(items, W, H, kerf, rot, rule) {
     return true;
   }
 }
-export function pack(items, kerf, rot) {
-  const W = SHEET.w - 2 * SHEET.trim, H = SHEET.h - 2 * SHEET.trim;
+export function pack(items, kerf, rot, sheet = SHEET) {
+  const W = sheet.w - 2 * sheet.trim, H = sheet.h - 2 * sheet.trim;
   const sorts = { aire: (a, b) => b.l * b.w - a.l * a.w, long: (a, b) => b.l - a.l || b.w - a.w, large: (a, b) => b.w - a.w || b.l - a.l, perim: (a, b) => (b.l + b.w) - (a.l + a.w) };
   let best = null;
   for (const k in sorts) for (const rule of ["short", "long"]) {

@@ -6,6 +6,7 @@ import { computeHoles } from "./percages.js";
 export { RECIPES, BIENTOT } from "./recettes.js";
 export { pack, SHEET } from "./decoupe.js";
 export { outils, vis } from "./outils.js";
+export { SECTIONS_DEF, debitMassif, dimsMassif, choisirSection } from "./massif.js";
 export { holeLocal, HOLE_KINDS, computeHoles } from "./percages.js";
 
 export function buildRecipe(id, p, opts) {

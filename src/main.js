@@ -1,7 +1,7 @@
 // MenuiPro — interface de l'application
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { RECIPES, BIENTOT, buildRecipe, pack, outils, SHEET, holeLocal, HOLE_KINDS } from "./engine/index.js";
+import { RECIPES, BIENTOT, buildRecipe, pack, outils, SHEET, holeLocal, HOLE_KINDS, SECTIONS_DEF, debitMassif } from "./engine/index.js";
 import { HCOL, sheetHoles, cncSVG, cncDXF, makeZip, ascii } from "./export/cnc.js";
 import * as cloud from "./cloud/cloud.js";
 import "./styles.css";
@@ -37,7 +37,7 @@ function renderControls(){
   const r=R(st.id),c=cfg();
   $("current").replaceChildren(el("span",{class:"e","aria-hidden":"true"},r.e),el("div",{},el("b",{},r.nom),el("div",{class:"note"},r.cat)));
   const labels=r.dimLabels||["Largeur","Hauteur","Profondeur"];
-  $("dims").replaceChildren(...["L","H","P"].map((k,i)=>{const inp=el("input",{id:"d"+k,type:"number",inputmode:"numeric",min:"10",max:"600"});inp.value=c[k];inp.addEventListener("input",e=>{c[k]=parseFloat(e.target.value)||0;compute()});return el("div",{class:"num"},el("label",{for:"d"+k},labels[i]),inp,el("small",{},["↔","↕","⤢"][i]))}));
+  $("dims").replaceChildren(...["L","H","P"].map((k,i)=>{const inp=el("input",{id:"d"+k,type:"number",inputmode:"numeric",min:String((r.dimMin||[10,10,10])[i]),max:"2000"});inp.value=c[k];inp.addEventListener("input",e=>{c[k]=parseFloat(e.target.value)||0;compute()});return el("div",{class:"num"},el("label",{for:"d"+k},labels[i]),inp,el("small",{},["↔","↕","⤢"][i]))}));
   $("optsLabel").hidden=!r.opts.length;
   $("opts").replaceChildren(...r.opts.map(x=>{
     if(x.choice)return el("div",{style:"display:grid;gap:6px"},el("span",{class:"name",style:"font-weight:700"},x.label),el("div",{class:"seg"},x.options.map(([v,l])=>el("button",{type:"button","aria-pressed":String(c.o[x.k]===v),onclick:()=>{c.o[x.k]=v;renderControls();compute()}},l))));
@@ -64,37 +64,71 @@ let sel=0,lastCtx=null,lastRes={};
 function compute(refit){
   syncPanel();save();
   const r=R(st.id),c=cfg();
-  if(!(c.L>=10&&c.H>=10&&c.P>=10&&st.ep>=10)){$("kpis").replaceChildren(el("p",{class:"warn"},"Entrez des cotes valides (au moins 10 cm)."));return}
+  const mn=r.dimMin||[10,10,10];
+  if(!(c.L>=mn[0]&&c.H>=mn[1]&&c.P>=mn[2]&&st.ep>=10)){$("kpis").replaceChildren(el("p",{class:"warn"},"Entrez des cotes valides (au moins "+mn.join(" / ")+" cm)."));return}
   let ctx;
   try{ctx=buildRecipe(r.id,{L:c.L*10,H:c.H*10,P:c.P*10,ep:st.ep},c.o)}catch(e){$("kpis").replaceChildren(el("p",{class:"warn"},"Ces cotes ne permettent pas de construire ce meuble. Essayez des valeurs plus grandes."));return}
   lastCtx=ctx;
   const items={caisson:[],dos:[]};let id=0;
-  ctx.parts.filter(p=>p.mat).forEach(p=>{const hl=p.box?(p.holes||[]).map(h=>{const L=holeLocal(p,h);const t=[0,1,2].find(i=>i===h.axis);const face=Math.abs(h.p[t]-p.box[t])<0.6?"A":"B";return {u:L.u,v:L.v,d:h.d,kind:h.kind,face,through:h.kind==="vis"}}):[];for(let q=0;q<p.qty;q++)items[p.mat].push({id:++id,name:p.name,l:p.cut[0],w:p.cut[1],holes:hl})});
-  const res={caisson:pack(items.caisson,st.kerf,st.rot),dos:pack(items.dos,st.kerf,true)};lastRes=res;
+  ctx.parts.filter(p=>p.mat&&p.mat!=="massif").forEach(p=>{const hl=p.box?(p.holes||[]).map(h=>{const L=holeLocal(p,h);const t=[0,1,2].find(i=>i===h.axis);const face=Math.abs(h.p[t]-p.box[t])<0.6?"A":"B";return {u:L.u,v:L.v,d:h.d,kind:h.kind,face,through:h.kind==="vis"}}):[];for(let q=0;q<p.qty;q++)items[p.mat].push({id:++id,name:p.name,l:p.cut[0],w:p.cut[1],holes:hl})});
+  const res={caisson:pack(items.caisson,st.kerf,st.rot),dos:pack(items.dos,st.kerf,true),massif:debitMassif(ctx.parts,sectionsBois(),st.kerf)};lastRes=res;
+  const nb=res.massif.sections.reduce((t,x)=>t+x.res.sheets.length,0);
   const n18=res.caisson.sheets.length,n5=res.dos.sheets.length;
   const used=res.caisson.sheets.reduce((t,s)=>t+s.parts.reduce((u,p)=>u+p.pw*p.ph,0),0);
   const util=n18?used/(n18*SHEET.w*SHEET.h)*100:0;
   const bl=buyLines(ctx);lastBuy=bl;
-  const k=[el("div",{class:"kpi main"},el("div",{class:"v"},n18+" feuille"+(n18>1?"s":"")),el("div",{class:"k"},panLabel())),
-           el("div",{class:"kpi"},el("div",{class:"v"},n5+" feuille"+(n5>1?"s":"")),el("div",{class:"k"},"contreplaqué 5 mm (dos, fonds)")),
-           el("div",{class:"kpi"},el("div",{class:"v"},Math.round(util)+" %"),el("div",{class:"k"},"de la matière utilisée")),
-           el("div",{class:"kpi"},el("div",{class:"v"},items.caisson.length+items.dos.length),el("div",{class:"k"},"pièces à couper"))];
+  const npb=res.massif.sections.reduce((t,x)=>t+x.items.length,0);
+  const k=[];
+  res.massif.sections.forEach((x,i)=>k.push(el("div",{class:"kpi"+(i===0&&!n18?" main":"")},el("div",{class:"v"},x.res.sheets.length+" "+x.section.nom.toLowerCase()+(x.res.sheets.length>1?"s":"")),el("div",{class:"k"},"bois "+secTxt(x.section)))));
+  if(n18||!nb)k.push(el("div",{class:"kpi"+(nb?"":" main")},el("div",{class:"v"},n18+" feuille"+(n18>1?"s":"")),el("div",{class:"k"},panLabel())));
+  if(n5||!nb)k.push(el("div",{class:"kpi"},el("div",{class:"v"},n5+" feuille"+(n5>1?"s":"")),el("div",{class:"k"},"contreplaqué 5 mm"+(nb?" (parements)":" (dos, fonds)"))));
+  if(n18)k.push(el("div",{class:"kpi"},el("div",{class:"v"},Math.round(util)+" %"),el("div",{class:"k"},"de la matière utilisée")));
+  k.push(el("div",{class:"kpi"},el("div",{class:"v"},items.caisson.length+items.dos.length+npb),el("div",{class:"k"},"pièces à couper")));
   k.push(el("div",{class:"kpi"},el("div",{class:"v"},bl.total?fmt(bl.total):"—"),el("div",{class:"k"},bl.total?"FCFA de matériel"+(bl.missing?" (incomplet)":""):"matériel : prix à saisir")));
-  const over=[...res.caisson.over,...res.dos.over];
-  $("kpis").replaceChildren(...k,...(over.length?[el("p",{class:"warn",style:"grid-column:1/-1"},"⚠️ Trop grand pour une feuille : "+over.map(o=>o.name+" ("+o.l+" × "+o.w+")").join(", ")+". Réduisez les cotes ou prévoyez un joint.")]:[]));
+  const over=[...res.caisson.over,...res.dos.over],trop=res.massif.trop;
+  $("kpis").replaceChildren(...k,...(over.length?[el("p",{class:"warn",style:"grid-column:1/-1"},"⚠️ Trop grand pour une feuille : "+over.map(o=>o.name+" ("+o.l+" × "+o.w+")").join(", ")+". Réduisez les cotes ou prévoyez un joint.")]:[]),
+    ...(trop.length?[el("p",{class:"warn",style:"grid-column:1/-1"},"⚠️ Aucune section de bois ne convient : "+trop.map(o=>o.name+" ("+o.L+" × "+o.W+" × "+o.T+" mm)").join(", ")+". Ajoutez une section plus grosse ou plus longue dans le catalogue.")]:[]));
   renderPlan();renderDebit(ctx);renderKit(ctx);renderDevis();
   update3D(ctx,refit);
 }
 
 function renderPlan(){
-  const all=[...lastRes.caisson.sheets.map((s,i)=>({s,label:"Panneau "+(i+1)})),...lastRes.dos.sheets.map((s,i)=>({s,label:"5 mm "+(i+1)}))];
+  const all=[...lastRes.caisson.sheets.map((s,i)=>({s,label:"Feuille panneau "+(i+1),dim:SHEET})),...lastRes.dos.sheets.map((s,i)=>({s,label:"Feuille 5 mm "+(i+1),dim:SHEET})),
+    ...lastRes.massif.sections.map(x=>({groupes:grouperBarres(x.res.sheets),label:"🪵 "+x.section.nom+" ("+x.res.sheets.length+")",bois:x.section,dim:{w:x.section.long,h:x.section.larg,trim:0}}))];
   if(sel>=all.length)sel=0;
-  $("sheetTabs").replaceChildren(...all.map((x,i)=>el("button",{type:"button",class:"btn","aria-pressed":String(i===sel),onclick:()=>{sel=i;renderPlan()}},"Feuille "+x.label)));
+  $("sheetTabs").replaceChildren(...all.map((x,i)=>el("button",{type:"button",class:"btn","aria-pressed":String(i===sel),onclick:()=>{sel=i;renderPlan()}},x.label)));
   const cur=all[sel];if(!cur){$("plan").replaceChildren();$("sheetInfo").textContent="";return}
-  const T=SHEET.trim,NS="http://www.w3.org/2000/svg";
-  const svg=document.createElementNS(NS,"svg");svg.setAttribute("viewBox",`-20 -20 ${SHEET.w+40} ${SHEET.h+90}`);svg.setAttribute("role","img");svg.setAttribute("aria-label","Plan de découpe, feuille "+cur.label);
+  const D=cur.dim,T=D.trim,NS="http://www.w3.org/2000/svg";
+  // Une barre de bois est très fine : on l'affiche plus haute (échelle verticale ×k) pour qu'on puisse lire les pièces.
+  const ky=cur.bois?Math.max(1,Math.min(8,(D.w/4)/D.h)):1,capY=D.h*ky+60;
+  const svg=document.createElementNS(NS,"svg");svg.setAttribute("viewBox",`-20 -20 ${D.w+40} ${capY+30}`);svg.setAttribute("role","img");svg.setAttribute("aria-label","Plan de découpe, "+cur.label);
   const mk=(t,a)=>{const n=document.createElementNS(NS,t);for(const k in a)n.setAttribute(k,a[k]);return n};
-  svg.append(mk("rect",{x:0,y:0,width:SHEET.w,height:SHEET.h,fill:"var(--waste)",rx:6}));
+  svg.append(mk("rect",{x:0,y:0,width:D.w,height:D.h*ky,fill:"var(--waste)",rx:6}));
+  if(cur.bois){
+    // Chaque ligne = une barre (ou un groupe de barres identiques « × n »).
+    const hb=D.h*ky,pas=hb+150;svg.setAttribute("viewBox",`-20 -20 ${D.w+40} ${cur.groupes.length*pas+120}`);svg.replaceChildren();
+    cur.groupes.forEach((gr,r)=>{
+      const y0=r*pas+110;
+      const lb=mk("text",{x:0,y:y0-24,"font-size":90,"font-family":"Atkinson Hyperlegible, sans-serif","font-weight":700,fill:"var(--ink)"});lb.textContent=gr.n>1?"× "+gr.n+" barres identiques":"Barre "+(r+1);svg.append(lb);
+      svg.append(mk("rect",{x:0,y:y0,width:D.w,height:hb,fill:"var(--waste)",rx:6}));
+      gr.s.parts.forEach(p=>{
+        const g=mk("g",{}),y=y0+p.y*ky,h=p.ph*ky;
+        g.append(mk("rect",{x:p.x,y,width:p.pw,height:h,fill:"var(--part)",stroke:p.lamelle?"var(--accent, var(--part-line))":"var(--part-line)","stroke-width":p.lamelle?8:4}));
+        const fs=Math.max(50,Math.min(110,Math.min(p.pw/7,h/2.4)));
+        const nm=p.name.replace(/^.*· /,"");
+        const t1=mk("text",{x:p.x+p.pw/2,y:y+h/2-fs*.1,"text-anchor":"middle","font-size":fs,"font-family":"Atkinson Hyperlegible, sans-serif","font-weight":700,fill:"var(--ink)"});t1.textContent=nm.length>26?nm.slice(0,25)+"…":nm;
+        const t2=mk("text",{x:p.x+p.pw/2,y:y+h/2+fs,"text-anchor":"middle","font-size":fs*.85,"font-family":"JetBrains Mono, monospace",fill:"var(--muted)"});t2.textContent=p.pw+" × "+p.ph;
+        if(p.pw>500&&h>fs*2.2)g.append(t1,t2);else if(p.pw>300){t2.setAttribute("y",y+h/2+fs/3);g.append(t2)}
+        svg.append(g);
+      });
+    });
+    const cap=mk("text",{x:0,y:cur.groupes.length*pas+90,"font-size":70,"font-family":"JetBrains Mono, monospace",fill:"var(--muted)"});cap.textContent=cur.bois.nom+" "+secTxt(cur.bois)+" · barre de "+D.w+" mm · trait de scie "+st.kerf+" mm"+(ky>1?" · hauteur agrandie ×"+Math.round(ky):"");svg.append(cap);
+    $("plan").replaceChildren(svg);
+    const nbar=cur.groupes.reduce((t,g)=>t+g.n,0),np=cur.groupes.reduce((t,g)=>t+g.n*g.s.parts.length,0),used=cur.groupes.reduce((t,g)=>t+g.n*g.s.parts.reduce((u,p)=>u+p.pw,0),0);
+    const nl=cur.groupes.reduce((t,g)=>t+g.n*g.s.parts.filter(p=>p.lamelle).length,0);
+    $("sheetInfo").textContent=`${nbar} barre${nbar>1?"s":""} · ${np} pièces · ${Math.round(used/(nbar*D.w)*100)} % de la longueur utilisée · +20 mm de surlongueur par pièce`+(nl?` · ${nl} lames à coller (lamellé-collé, bord épais)`:"")+" · en beige : la chute.";
+    $("keys").replaceChildren();return;
+  }
   cur.s.parts.forEach(p=>{
     const g=mk("g",{});
     g.append(mk("rect",{x:T+p.x,y:T+p.y,width:p.pw,height:p.ph,fill:"var(--part)",stroke:"var(--part-line)","stroke-width":4}));
@@ -106,7 +140,7 @@ function renderPlan(){
     sheetHoles(p).forEach(h=>g.append(mk("circle",{cx:h.x,cy:h.y,r:Math.max(h.d/2,7),fill:"none",stroke:HCOL[h.kind],"stroke-width":4})));
     svg.append(g);
   });
-  const cap=mk("text",{x:0,y:SHEET.h+60,"font-size":40,"font-family":"JetBrains Mono, monospace",fill:"var(--muted)"});cap.textContent="Feuille 2440 × 1220 mm · cotes en mm · trait de scie "+st.kerf+" mm";svg.append(cap);
+  const cap=mk("text",{x:0,y:capY,"font-size":40,"font-family":"JetBrains Mono, monospace",fill:"var(--muted)"});cap.textContent="Feuille 2440 × 1220 mm · cotes en mm · trait de scie "+st.kerf+" mm";svg.append(cap);
   $("plan").replaceChildren(svg);
   const used=cur.s.parts.reduce((u,p)=>u+p.pw*p.ph,0);
   const nh=cur.s.parts.reduce((t,p)=>t+(p.holes||[]).length,0);
@@ -118,7 +152,7 @@ function renderPlan(){
 function allSheets(){return [...lastRes.caisson.sheets.map((s,i)=>({s,label:"panneau-"+st.ep+"mm-"+(i+1),mat:"Panneau "+st.ep+" mm"})),...lastRes.dos.sheets.map((s,i)=>({s,label:"contreplaque-5mm-"+(i+1),mat:"Contreplaqué 5 mm"}))]}
 function debitCSV(){
   const rows=[["Piece","Quantite","Longueur_mm","Largeur_mm","Matiere","Chant_m","Percages"]];
-  lastCtx.parts.filter(p=>p.mat).forEach(p=>rows.push([p.name.replace(/ \(×2\)/,""),p.qty,p.cut[0],p.cut[1],p.mat==="dos"?"Contreplaque 5 mm":"Panneau "+st.ep+" mm",p.edge?(p.edge*p.qty/1000).toFixed(2):"0",(p.holes||[]).length]));
+  lastCtx.parts.filter(p=>p.mat).forEach(p=>rows.push([p.name.replace(/ \(×2\)/,""),p.qty,p.cut[0],p.cut[1],ascii(matiere(p)),p.edge?(p.edge*p.qty/1000).toFixed(2):"0",(p.holes||[]).length]));
   return "﻿"+rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(";")).join("\r\n");
 }
 function slug(){return ascii(R(st.id).nom).toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")}
@@ -142,9 +176,19 @@ $("zipBtn").onclick=()=>{const all=allSheets();if(!all.length)return;const files
 };
 
 function renderDebit(ctx){
-  const rows=ctx.parts.filter(p=>p.mat).map(p=>el("tr",{},el("td",{},p.name.replace(/ \(×2\)/,"")),el("td",{class:"n"},String(p.qty)),el("td",{class:"n"},p.cut[0]+" × "+p.cut[1]),el("td",{},p.mat==="dos"?"Contreplaqué 5 mm":"Panneau "+st.ep+" mm"),el("td",{class:"n"},p.edge?((p.edge*p.qty/1000).toFixed(2)+" m"):"—"),el("td",{class:"n"},(p.holes||[]).length?String(p.holes.length):"—")));
+  const rows=ctx.parts.filter(p=>p.mat).map(p=>el("tr",{},el("td",{},p.name.replace(/ \(×2\)/,"")),el("td",{class:"n"},String(p.qty)),el("td",{class:"n"},p.mat==="massif"?coteBois(p):p.cut[0]+" × "+p.cut[1]),el("td",{},matiere(p)),el("td",{class:"n"},p.edge?((p.edge*p.qty/1000).toFixed(2)+" m"):"—"),el("td",{class:"n"},(p.holes||[]).length?String(p.holes.length):"—")));
   $("debit").replaceChildren(el("thead",{},el("tr",{},el("th",{},"Pièce"),el("th",{},"Qté"),el("th",{},"Cotes (mm)"),el("th",{},"Matière"),el("th",{},"Chant"),el("th",{},"Perçages"))),el("tbody",{},rows));
 }
+
+/* ----- Bois massif ----- */
+// Sections du catalogue (prix de la barre) ; à défaut, sections standard du moteur.
+function sectionsBois(){return (CAT.sections&&CAT.sections.length?CAT.sections:SECTIONS_DEF).filter(x=>x.ep>0&&x.larg>0&&x.long>0)}
+const cm=v=>String(Math.round(v)/10).replace(".",",");
+const secTxt=x=>cm(x.ep)+" × "+cm(x.larg)+" cm";
+function grouperBarres(sheets){const m=new Map();sheets.forEach(sh=>{const k=sh.parts.map(p=>p.pw+"x"+p.ph+p.name.replace(/[0-9]+/g,"")).join("|");if(m.has(k))m.get(k).n++;else m.set(k,{s:sh,n:1})});return [...m.values()]}
+function sectionDe(p){for(const x of (lastRes.massif?lastRes.massif.sections:[]))if(x.items.some(i=>i.src===p))return x.section;return null}
+function coteBois(p){const d=[p.box[3],p.box[4],p.box[5]].map(Math.round).sort((a,b)=>b-a);return d[0]+" × "+d[1]+" × "+d[2]}
+function matiere(p){if(p.mat==="dos")return "Contreplaqué 5 mm";if(p.mat!=="massif")return "Panneau "+st.ep+" mm";const x=sectionDe(p);return x?"🪵 "+x.nom+" "+secTxt(x):"🪵 bois massif"}
 
 /* ===================== CATALOGUE, PRIX, ATELIER ===================== */
 const ARTICLES=[
@@ -154,18 +198,23 @@ const ARTICLES=[
  ["galets","⚙️","Kit galets coulissants","kit"],["cuvettes","✋","Poignée cuvette","pièce"],["verre","🪟","Verre trempé","m²"],["miroir","🪞","Miroir 60 × 80","pièce"],
  ["pieds","🦵","Pied de table","pièce"],["piedsreg","🦵","Pied réglable cuisine","pièce"],["pdt","🟫","Plan de travail 38 mm","m"],["roulettes","🛞","Roulette","pièce"],
  ["lattes","🪵","Latte de lit","pièce"],["tasseaux","🪵","Tasseau bois","m"],["poutre","🪵","Traverse bois massif","m"],["equerres","📐","Équerre","pièce"],
- ["fixmur","🔩","Fixations murales","lot de 4",4],["fixhaut","🔩","Fixation meuble haut","pièce"],["pointes","🔨","Pointes","boîte de 500",500],["vasque","🚰","Vasque à poser","pièce"]];
-const EX_PRIX={mela18:22000,mela16:20000,cp18:25000,mdf18:20000,cp5:9000,chant:300,vis440:1500,vis3516:1500,tourillons:1500,charn:750,charnv:2500,poignees:500,coulisses:2500,taquets:25,tringle:1500,supports:250,rail:3000,galets:5000,cuvettes:500,verre:15000,miroir:10000,pieds:2000,piedsreg:750,pdt:15000,roulettes:500,lattes:1000,tasseaux:750,poutre:1500,equerres:150,fixmur:1000,fixhaut:1000,pointes:1000,vasque:25000};
-const DEF_CAT=()=>({boutique:{nom:"",wa:"",commune:""},exemple:false,panneaux:[{id:"mela18",nom:"Mélaminé",ep:18,prix:0},{id:"mela16",nom:"Mélaminé",ep:16,prix:0},{id:"cp18",nom:"Contreplaqué",ep:18,prix:0},{id:"mdf18",nom:"MDF",ep:18,prix:0},{id:"cp5",nom:"Contreplaqué",ep:5,prix:0,dos:true}],prix:{}});
+ ["fixmur","🔩","Fixations murales","lot de 4",4],["fixhaut","🔩","Fixation meuble haut","pièce"],["pointes","🔨","Pointes","boîte de 500",500],["vasque","🚰","Vasque à poser","pièce"],
+ ["paumelles","⚙️","Paumelle de porte","pièce"],["serrure","🔒","Serrure + cylindre","pièce"],["espagnolette","🔒","Espagnolette / crémone","pièce"],["pattes","🔩","Patte de scellement","pièce"],
+ ["boulons","🔩","Boulon de lit 8 × 120","pièce"],["visbois","🔩","Vis à bois","boîte de 100",100],["chevilles","🔩","Cheville + vis","pièce"],["colle","🧴","Colle à bois","pot"],
+ ["patins","⚪","Patin de pied","pièce"],["sangles","🧵","Sangle élastique","m"],["mousse","🟨","Mousse 10 cm","m²"],["tissu","🧶","Tissu d'ameublement","m"]];
+const EX_PRIX={mela18:22000,mela16:20000,cp18:25000,mdf18:20000,cp5:9000,chant:300,vis440:1500,vis3516:1500,tourillons:1500,charn:750,charnv:2500,poignees:500,coulisses:2500,taquets:25,tringle:1500,supports:250,rail:3000,galets:5000,cuvettes:500,verre:15000,miroir:10000,pieds:2000,piedsreg:750,pdt:15000,roulettes:500,lattes:1000,tasseaux:750,poutre:1500,equerres:150,fixmur:1000,fixhaut:1000,pointes:1000,vasque:25000,
+  paumelles:500,serrure:6000,espagnolette:3500,pattes:150,boulons:300,visbois:1500,chevilles:50,colle:2500,patins:100,sangles:500,mousse:12000,tissu:3000,
+  lame:2500,latte:2000,planche:6000,chevron:5000,madrier:15000};
+const DEF_CAT=()=>({boutique:{nom:"",wa:"",commune:""},exemple:false,panneaux:[{id:"mela18",nom:"Mélaminé",ep:18,prix:0},{id:"mela16",nom:"Mélaminé",ep:16,prix:0},{id:"cp18",nom:"Contreplaqué",ep:18,prix:0},{id:"mdf18",nom:"MDF",ep:18,prix:0},{id:"cp5",nom:"Contreplaqué",ep:5,prix:0,dos:true}],sections:SECTIONS_DEF.map(x=>({...x,prix:0})),prix:{}});
 let CAT=DEF_CAT(),AT={nom:"",tel:"",jour:0,marge:20,valid:15};
-try{const c=JSON.parse(localStorage.getItem("menuipro-catalogue")||"null");if(c&&c.panneaux)CAT={...DEF_CAT(),...c}}catch(e){}
+try{const c=JSON.parse(localStorage.getItem("menuipro-catalogue")||"null");if(c&&c.panneaux)CAT={...DEF_CAT(),...c};if(!CAT.sections||!CAT.sections.length)CAT.sections=DEF_CAT().sections}catch(e){}
 try{const a=JSON.parse(localStorage.getItem("menuipro-atelier")||"null");if(a)AT={...AT,...a}}catch(e){}
 let ME=null; // compte connecté : {user, profil, quinc}
 const saveCatLocal=()=>{try{localStorage.setItem("menuipro-catalogue",JSON.stringify(CAT))}catch(e){}};
 const saveCat=()=>{saveCatLocal();pousserCatalogue()};
 const saveAt=()=>{try{localStorage.setItem("menuipro-atelier",JSON.stringify(AT))}catch(e){}pousserAtelier()};
 const artPrice=k=>+(CAT.prix[k]||0);
-const hwArticle=k=>k.startsWith("coulisses")?"coulisses":k;
+const hwArticle=k=>k.startsWith("coulisses")?"coulisses":k==="tourillons_ch"?"tourillons":k;
 function panLabel(){const pn=CAT.panneaux.find(x=>x.id===st.panneau);return (pn?pn.nom+" "+pn.ep+" mm":"panneau "+st.ep+" mm")+" "+COLORS[st.color][0].toLowerCase()}
 let lastBuy={lines:[],total:0,missing:0};
 function buyLines(ctx){
@@ -174,7 +223,8 @@ function buyLines(ctx){
   const pn=CAT.panneaux.find(x=>x.id===st.panneau),dos=CAT.panneaux.find(x=>x.dos)||{prix:0};
   const add=(e,label,detail,qty,unit)=>L.push({e,label,detail,total:unit?qty*unit:null});
   if(n18)add("🟫",panLabel(),n18+" feuille"+(n18>1?"s":"")+" 244 × 122",n18,pn?pn.prix:0);
-  if(n5)add("🟫","Contreplaqué 5 mm",n5+" feuille"+(n5>1?"s":"")+" (dos, fonds de tiroir)",n5,dos.prix);
+  if(n5)add("🟫","Contreplaqué 5 mm",n5+" feuille"+(n5>1?"s":"")+" (dos, fonds, parements)",n5,dos.prix);
+  (lastRes.massif?lastRes.massif.sections:[]).forEach(x=>{const n=x.res.sheets.length;add("🪵",x.section.nom+" "+secTxt(x.section),n+" barre"+(n>1?"s":"")+" de "+cm(x.section.long/10)+" m",n,+x.section.prix||0)});
   if(chant>0){const m=Math.ceil(chant*1.1);add("🎞️","Bande de chant "+COLORS[st.color][0].toLowerCase(),m+" m (marge comprise)",m,artPrice("chant"))}
   const hc={};ctx.parts.forEach(p=>(p.holes||[]).forEach(h=>hc[h.kind]=(hc[h.kind]||0)+p.qty));
   const small=(ctx.hw.charn?ctx.hw.charn.qty:0)*4+Object.keys(ctx.hw).filter(k=>k.startsWith("coulisses")).reduce((t,k)=>t+ctx.hw[k].qty*8,0);
@@ -325,6 +375,11 @@ function renderCatalogue(){
     if(pn.dos)del.disabled=true;
     return el("tr",{},el("td",{},nm,pn.dos?el("div",{class:"note"},"utilisé pour les dos et fonds"):null),el("td",{},ep),el("td",{},pin(pn.prix,v=>pn.prix=v)),el("td",{},del));
   })));
+  $("secTable").replaceChildren(el("thead",{},el("tr",{},el("th",{},"Bois"),el("th",{},"Épaisseur × largeur (cm)"),el("th",{},"Longueur (cm)"),el("th",{},"Prix de la barre (F)"))),el("tbody",{},CAT.sections.map(x=>{
+    const nm=el("input",{type:"text",style:"text-align:left;font-family:var(--body)"});nm.value=x.nom;nm.addEventListener("input",e=>{x.nom=e.target.value;saveCat()});
+    const num=(k,w)=>{const i=el("input",{type:"number",min:"1",step:"0.5",inputmode:"decimal",style:"max-width:"+w+"px"});i.value=x[k]/10;i.addEventListener("input",e=>{const v=parseFloat(String(e.target.value).replace(",","."));if(v>0){x[k]=Math.round(v*10);saveCat()}});return i};
+    return el("tr",{},el("td",{},nm),el("td",{},el("div",{class:"row",style:"gap:6px;flex-wrap:nowrap;align-items:center"},num("ep",70),"×",num("larg",70))),el("td",{},num("long",90)),el("td",{},pin(x.prix,v=>x.prix=v)));
+  })));
   $("artTable").replaceChildren(el("thead",{},el("tr",{},el("th",{},"Article"),el("th",{},"Vendu par"),el("th",{},"Prix (F)"))),el("tbody",{},ARTICLES.map(([k,e,l,u])=>el("tr",{},el("td",{},e+" "+l),el("td",{},u),el("td",{},pin(CAT.prix[k],v=>CAT.prix[k]=v))))));
   const ro=lectureSeule();
   $("roBanner").hidden=!ro;if(ro)$("roBanner").textContent="🔒 Prix gérés par "+ME.quinc.nom+". Ils se mettent à jour automatiquement ; seule la quincaillerie peut les modifier.";
@@ -333,8 +388,8 @@ function renderCatalogue(){
 }
 [["bNom","nom"],["bWa","wa"],["bCom","commune"]].forEach(([id,k])=>$(id).addEventListener("input",e=>{CAT.boutique[k]=e.target.value;saveCat()}));
 $("addPan").onclick=()=>{CAT.panneaux.splice(CAT.panneaux.length-1,0,{id:"pan"+Date.now(),nom:"Nouveau panneau",ep:18,prix:0});saveCat();renderCatalogue()};
-$("fillEx").onclick=()=>{CAT.panneaux.forEach(pn=>{if(!pn.prix&&EX_PRIX[pn.id])pn.prix=EX_PRIX[pn.id]});ARTICLES.forEach(([k])=>{if(!CAT.prix[k])CAT.prix[k]=EX_PRIX[k]||0});CAT.exemple=true;saveCat();renderCatalogue()};
-let resetArmed=false;$("resetCat").onclick=()=>{if(!resetArmed){resetArmed=true;$("resetCat").textContent="Touchez encore pour tout remettre à zéro";return}resetArmed=false;$("resetCat").textContent="↺ Remettre les prix à zéro";CAT.panneaux.forEach(p=>p.prix=0);CAT.prix={};CAT.exemple=false;saveCat();renderCatalogue()};
+$("fillEx").onclick=()=>{CAT.panneaux.forEach(pn=>{if(!pn.prix&&EX_PRIX[pn.id])pn.prix=EX_PRIX[pn.id]});CAT.sections.forEach(x=>{if(!x.prix&&EX_PRIX[x.id])x.prix=EX_PRIX[x.id]});ARTICLES.forEach(([k])=>{if(!CAT.prix[k])CAT.prix[k]=EX_PRIX[k]||0});CAT.exemple=true;saveCat();renderCatalogue()};
+let resetArmed=false;$("resetCat").onclick=()=>{if(!resetArmed){resetArmed=true;$("resetCat").textContent="Touchez encore pour tout remettre à zéro";return}resetArmed=false;$("resetCat").textContent="↺ Remettre les prix à zéro";CAT.panneaux.forEach(p=>p.prix=0);CAT.sections.forEach(x=>x.prix=0);CAT.prix={};CAT.exemple=false;saveCat();renderCatalogue()};
 
 /* ----- Écran Mon atelier ----- */
 function renderAtelier(){[["aNom","nom"],["aTel","tel"],["aJour","jour"],["aMarge","marge"],["aValid","valid"]].forEach(([id,k])=>$(id).value=AT[k]??"");$("aKerf").value=st.kerf}
@@ -466,7 +521,7 @@ let tCat=null,tAt=null;
 function pousserCatalogue(){
   if(!cloud.actif||!estQuinc()||!ME.quinc)return;
   clearTimeout(tCat);tCat=setTimeout(async()=>{
-    try{await cloud.sauverQuincaillerie(ME.quinc.id,{catalogue:{panneaux:CAT.panneaux,prix:CAT.prix,exemple:CAT.exemple},nom:(CAT.boutique.nom||ME.quinc.nom).slice(0,80),whatsapp:CAT.boutique.wa||null,commune:CAT.boutique.commune||null});
+    try{await cloud.sauverQuincaillerie(ME.quinc.id,{catalogue:{panneaux:CAT.panneaux,sections:CAT.sections,prix:CAT.prix,exemple:CAT.exemple},nom:(CAT.boutique.nom||ME.quinc.nom).slice(0,80),whatsapp:CAT.boutique.wa||null,commune:CAT.boutique.commune||null});
       ME.quinc.nom=CAT.boutique.nom||ME.quinc.nom;toast("✅ Prix enregistrés pour tous vos menuisiers")}
     catch(e){toast(cloud.message(e),true)}},1200);
 }
@@ -488,7 +543,7 @@ function appliquerCompte(){
   const q=ME.quinc;
   if(q){
     const c=q.catalogue||{};
-    if(c.panneaux&&c.panneaux.length){CAT.panneaux=c.panneaux;CAT.prix=c.prix||{};CAT.exemple=!!c.exemple}
+    if(c.panneaux&&c.panneaux.length){CAT.panneaux=c.panneaux;CAT.prix=c.prix||{};CAT.exemple=!!c.exemple;if(c.sections&&c.sections.length)CAT.sections=c.sections}
     else if(estQuinc())pousserCatalogue();
     CAT.boutique={nom:q.nom||"",wa:q.whatsapp||"",commune:q.commune||""};saveCatLocal();
     if(estQuinc()&&!(c.panneaux&&c.panneaux.length))pousserCatalogue();
