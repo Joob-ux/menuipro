@@ -22,6 +22,11 @@ export const PHRASES = {
   atelier: ["⚙️", "Écris ton nom, ton téléphone et ton prix de la journée."],
   compte: ["👤", "Connecte-toi avec ton numéro de téléphone et ton code à six chiffres."],
   code_quinc: ["🔢", "Écris le code donné par ta quincaillerie."],
+  ecoute: ["🎙️", "Je t'écoute. Dis-moi le meuble et ses mesures, puis touche encore le micro."],
+  compris: ["👍", "D'accord. Voici ton meuble."],
+  modifie: ["🔁", "C'est changé."],
+  pas_compris: ["🤔", "Je n'ai pas compris. Répète doucement, s'il te plaît."],
+  limite: ["⛔", "Tu as beaucoup parlé aujourd'hui. Réessaie demain."],
   enregistre: ["✅", "C'est enregistré."],
   erreur: ["⚠️", "Il y a un problème. Vérifie et réessaie."]
 };

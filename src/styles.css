@@ -151,3 +151,13 @@ body.sans-voix .voix{display:none}
 .voixrow{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
 .voixrow .acts{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
 @media (max-width:560px){.voixrow{grid-template-columns:auto 1fr}.voixrow .acts{grid-column:1/-1;justify-content:flex-start}}
+
+/* Assistant vocal */
+.micbox{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:40;display:flex;flex-direction:column;align-items:flex-end;gap:8px;max-width:calc(100vw - 32px)}
+.micbtn{width:72px;height:72px;border-radius:50%;border:0;background:var(--accent);color:#fff;font-size:34px;box-shadow:0 6px 18px rgba(0,0,0,.25);cursor:pointer}
+.micbtn.rec{background:#c62828;animation:pulse 1s infinite}
+.micbtn.wait{background:var(--muted)}
+@keyframes pulse{50%{transform:scale(1.08)}}
+.bulle{background:var(--surface);color:var(--ink);border:2px solid var(--line);border-radius:14px;padding:10px 12px;max-width:320px;font-size:15px;box-shadow:0 4px 14px rgba(0,0,0,.15)}
+.bulle b{display:block;font-size:22px}
+.bulle .note{margin-top:4px}

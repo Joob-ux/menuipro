@@ -101,3 +101,23 @@ export async function adminEnvoyerVoix(cle, blob) {
   return ok(await sb.storage.from("voix").upload("wo/" + cle, blob, { upsert: true, contentType: type, cacheControl: "3600" }));
 }
 export async function adminSupprimerVoix(cle) { return ok(await sb.storage.from("voix").remove(["wo/" + cle])); }
+
+/* ---------- Assistant vocal (fonction serveur « assistant-voix ») ---------- */
+const ERREURS_ASSISTANT = {
+  non_connecte: "Connectez-vous pour parler à l'assistant.", limite: "Limite du jour atteinte. Réessayez demain.",
+  assistant_non_configure: "L'assistant vocal n'est pas encore activé.", audio_invalide: "Note vocale vide ou trop longue (30 s maximum).",
+  service_google: "Le service de reconnaissance ne répond pas. Réessayez."
+};
+const versBase64 = blob => new Promise((ok, ko) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1] || ""); r.onerror = ko; r.readAsDataURL(blob); });
+export async function assistant(blob, catalogue, contexte, duree) {
+  const audio = await versBase64(blob);
+  const { data, error } = await sb.functions.invoke("assistant-voix", { body: { audio, catalogue, contexte, duree } });
+  if (error) {
+    let code = error.message, corps = null;
+    try { corps = await error.context.json(); code = corps.erreur || code; } catch (e) { /* réponse sans JSON */ }
+    const err = new Error(ERREURS_ASSISTANT[code] || MESSAGES[code] || ("Erreur : " + code));
+    err.code = code; err.action = corps && corps.action;
+    throw err;
+  }
+  return data;
+}

@@ -5,6 +5,7 @@ import { RECIPES, BIENTOT, buildRecipe, pack, outils, SHEET, holeLocal, HOLE_KIN
 import { HCOL, sheetHoles, cncSVG, cncDXF, makeZip, ascii } from "./export/cnc.js";
 import * as cloud from "./cloud/cloud.js";
 import { PHRASES, parler, boutonVoix, chargerVoix, aUnAudio } from "./voix.js";
+import { catalogueIA, validerAction, DUREE_MAX_S } from "./assistant.js";
 import "./styles.css";
 
 const COLORS=[["Blanc","#efefeb"],["Gris","#8b8f90"],["Noir","#2a2a2a"],["Chêne clair","#c9a36b"],["Wengé","#4a3326"]];
@@ -581,6 +582,7 @@ async function synchroniserProjets(){
 }
 const STAT_CMD={envoyee:["📨","Envoyée"],vue:["👀","Vue"],prete:["✅","Prête"],livree:["🚚","Livrée"],annulee:["✖️","Annulée"]};
 async function renderCompte(){
+  majMicro();
   const box=$("compteBox");
   if(!cloud.actif){box.replaceChildren(el("section",{class:"panel"},el("h2",{},"Connexion en ligne"),el("p",{},"La connexion en ligne n'est pas encore activée sur cette version. L'application fonctionne entièrement sur ce téléphone.")));return}
   if(!ME){
@@ -724,6 +726,48 @@ async function vueAdmin(){
       el("div",{class:"tablewrap"},el("table",{},th("Nom","Téléphone","Quincaillerie","Projets","Commandes","Inscrit le","Dernière activité"),mBody)))
   ];
 }
+/* ----- Assistant vocal : note vocale en wolof → meuble rempli ----- */
+const CAT_IA=catalogueIA(RECIPES);
+let micRec=null;
+function bulle(gros,petit){const b=$("micBulle");b.hidden=!gros;b.replaceChildren(el("b",{},gros||""),petit?el("div",{class:"note"},petit):"")}
+function appliquerAction(a){
+  if(!a)return;
+  if(a.recette){
+    if(a.recette!==st.id){st.id=a.recette;openState=false;sel=0}
+    const c=cfg();if(a.cotes)Object.assign(c,a.cotes);if(a.options)Object.assign(c.o,a.options);
+    save();go("concevoir");renderCatalog();renderControls();compute(true);
+    const k=$("kpis");k&&k.scrollIntoView&&k.scrollIntoView({behavior:"smooth",block:"start"});
+  }
+  parler(a.reponse);
+}
+function majMicro(){const ok=cloud.actif&&ME;$("micBox").hidden=!ok}
+$("micBtn").onclick=async()=>{
+  const btn=$("micBtn");
+  if(micRec){micRec.stop();return}
+  if(btn.classList.contains("wait"))return;
+  if(!window.MediaRecorder||!navigator.mediaDevices){bulle("⚠️","Ce téléphone ne peut pas enregistrer ici. Essayez avec Chrome.");return}
+  let flux;try{flux=await navigator.mediaDevices.getUserMedia({audio:true})}catch(e){bulle("🎙️❌","Autorisez le micro pour parler à l'assistant.");return}
+  const type=["audio/webm;codecs=opus","audio/ogg;codecs=opus","audio/mp4"].find(t=>MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(t));
+  const r=new MediaRecorder(flux,type?{mimeType:type}:undefined),morceaux=[],t0=Date.now();
+  let minuteur=setInterval(()=>{const s=Math.round((Date.now()-t0)/1000);bulle("🔴 "+s+" s","Touchez encore le micro quand vous avez fini.");if(s>=DUREE_MAX_S)r.stop()},500);
+  r.ondataavailable=e=>e.data.size&&morceaux.push(e.data);
+  r.onstop=async()=>{
+    clearInterval(minuteur);flux.getTracks().forEach(t=>t.stop());micRec=null;btn.classList.remove("rec");
+    const duree=(Date.now()-t0)/1000;
+    if(duree<1){bulle("🤔","Trop court. Appuyez, parlez, puis appuyez encore.");return}
+    btn.classList.add("wait");btn.textContent="⏳";bulle("⏳","Je réfléchis…");
+    try{
+      const res=await cloud.assistant(new Blob(morceaux,{type:r.mimeType||"audio/webm"}),CAT_IA,{recette:st.id,nom:R(st.id).nom,...cfg()},duree);
+      const a=validerAction(res.action,RECIPES,st.id)||{action:"inconnu",reponse:"pas_compris"};
+      const ic={compris:"👍",modifie:"🔁",pas_compris:"🤔",limite:"⛔"}[a.reponse]||"💡";
+      bulle(ic+" "+(a.recette?R(a.recette).nom:""),[res.texte?"« "+res.texte+" »":"",a.resume].filter(Boolean).join(" → "));
+      appliquerAction(a);
+    }catch(e){bulle("⚠️",e.message);if(e.action)parler(e.action.reponse);else parler("erreur")}
+    finally{btn.classList.remove("wait");btn.textContent="🎙️";setTimeout(()=>{if(!micRec)$("micBulle").hidden=true},12000)}
+  };
+  r.start();micRec=r;btn.classList.add("rec");btn.textContent="⏹️";bulle("🔴 0 s","Parlez maintenant.");parler("ecoute");
+};
+
 /* ----- Console : voix en wolof ----- */
 async function sectionVoix(){
   const dispo=await chargerVoix().catch(()=>({}));
@@ -764,7 +808,7 @@ async function sectionVoix(){
     el("p",{class:"note"},"Générez les audios avec le cahier Colab « outils/voix_wolof_adia.ipynb » (modèle Adia TTS de CONCREE, licence Apache 2.0), puis importez-les tous d'un coup. Une phrase mal prononcée : refaites-la au micro 🎙️ ou importez une note vocale 📁."),
     el("div",{class:"actions"},el("button",{type:"button",class:"btn primary",onclick:()=>lot.click()},"📦 Importer les audios (plusieurs fichiers)"),lot),st3,liste);
 }
-if(cloud.actif)cloud.chargerCompte().then(c=>{ME=c;if(c)appliquerCompte();if(!$("v-compte").hidden)renderCompte()}).catch(()=>{});
+if(cloud.actif)cloud.chargerCompte().then(c=>{ME=c;if(c)appliquerCompte();majMicro();if(!$("v-compte").hidden)renderCompte()}).catch(()=>{});
 
 /* ----- Application installable (hors-ligne) ----- */
 if("serviceWorker" in navigator&&location.protocol==="https:"){window.addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}))}

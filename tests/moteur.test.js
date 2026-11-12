@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { catalogueIA, validerAction } from "../src/assistant.js";
 import { RECIPES, BIENTOT, buildRecipe, pack, holeLocal, SHEET, debitMassif, SECTIONS_DEF } from "../src/engine/index.js";
 
 const variantes = r => {
@@ -107,5 +108,31 @@ describe("Bois massif", () => {
     const sec = SECTIONS_DEF.map(s => ({ ...s, long: 3000 }));
     const d = debitMassif([{ name: "Montant", mat: "massif", qty: 1, box: [0, 0, 0, 65, 3500, 80] }], sec);
     expect(d.trop.length).toBe(1);
+  });
+});
+
+describe("Assistant vocal : contrôle des actions de l'IA", () => {
+  it("le catalogue envoyé à l'IA contient tous les meubles et reste léger", () => {
+    const c = catalogueIA(RECIPES);
+    expect(c.length).toBe(RECIPES.length);
+    expect(JSON.stringify(c).length).toBeLessThan(20000);
+  });
+  it("une demande valide est appliquée, les valeurs hors limites sont bornées", () => {
+    const r = RECIPES.find(x => x.id === "armoire-2");
+    const k = r.opts.find(x => !x.choice);
+    const a = validerAction({ action: "meuble", recette: "armoire-2", cotes: { L: "120", H: 200, P: 5 }, options: { [k.k]: 99 }, reponse: "compris" }, RECIPES);
+    expect(a.recette).toBe("armoire-2");
+    expect(a.cotes).toEqual({ L: 120, H: 200 });
+    expect(a.options[k.k]).toBe(k.max);
+  });
+  it("un meuble inconnu ou une réponse inventée deviennent « pas compris »", () => {
+    expect(validerAction({ action: "meuble", recette: "fusee" }, RECIPES).reponse).toBe("pas_compris");
+    expect(validerAction({ action: "n'importe quoi", reponse: "<script>" }, RECIPES)).toMatchObject({ action: "inconnu", reponse: "pas_compris" });
+    expect(validerAction(null, RECIPES)).toBe(null);
+  });
+  it("« modifier » sans meuble garde le meuble affiché", () => {
+    const a = validerAction({ action: "modifier", cotes: { L: 150 } }, RECIPES, "armoire-2");
+    expect(a.recette).toBe("armoire-2");
+    expect(a.reponse).toBe("compris");
   });
 });
