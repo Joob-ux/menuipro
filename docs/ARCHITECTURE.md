@@ -24,3 +24,12 @@ Version de lancement : catalogue, réglages de l'atelier et projets enregistrés
 ## Hébergement
 
 Render, site statique gratuit. Budget d'hébergement total visé : moins de 10 000 FCFA/mois.
+
+## Comptes et données en ligne (v0.2)
+
+- **Supabase** : PostgreSQL + authentification. Migration : `supabase/migrations/20261112000000_init.sql`.
+- **Connexion** : numéro de téléphone + code PIN de 6 chiffres. Supabase exigeant un e-mail, l'application utilise `<numéro>@menuipro.app` (aucun e-mail envoyé). Réglage obligatoire côté Supabase : désactiver « Confirm email ».
+- **Tables** : `profils` (créé à l'inscription), `quincailleries` (catalogue partagé en JSON, code d'invitation à 6 caractères), `projets`, `commandes`.
+- **Sécurité (RLS)** : chacun ne voit que ses projets ; les menuisiers lisent le catalogue de leur quincaillerie sans pouvoir le modifier ; une commande ne part que vers sa propre quincaillerie ; la quincaillerie ne change que le statut. Le rôle et la quincaillerie d'un profil ne changent que par `creer_quincaillerie` / `rejoindre_quincaillerie`.
+- **Tests** : `npm run test:db` rejoue 33 scénarios sur un vrai PostgreSQL (PGlite).
+- **Sans configuration**, l'application reste 100 % locale.

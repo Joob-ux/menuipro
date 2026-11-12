@@ -123,6 +123,8 @@
 
 <main id="v-catalogue" hidden><div class="wrap view">
   <h2>🏪 Catalogue et prix de la quincaillerie</h2>
+  <div class="banner" id="roBanner" hidden></div>
+  <div class="banner" id="ownBanner" hidden>🔄 Vous êtes la quincaillerie : chaque prix modifié ici est envoyé automatiquement à tous vos menuisiers.</div>
   <div class="banner" id="exBanner" hidden>Ces prix sont des <b>exemples</b>. Remplacez-les par les vrais prix de la quincaillerie avant de faire un devis.</div>
   <section class="panel"><h2>La quincaillerie</h2>
     <div class="grid2">
@@ -157,6 +159,8 @@
   </section>
 </div></main>
 
+<main id="v-compte" hidden><div class="wrap view" id="compteBox"></div></main>
+<div id="toast" class="toast" role="status" hidden></div>
 <script type="module" src="/src/main.js"></script>
 </body>
 </html>

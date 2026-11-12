@@ -21,7 +21,7 @@ Application pour les menuisiers du Sénégal : on choisit un meuble, on règle s
 ```bash
 npm install
 npm run dev      # serveur local
-npm test         # tests du moteur (114 tests)
+npm test         # tests du moteur (114) et des règles de sécurité (33)
 npm run build    # version de production dans dist/
 ```
 

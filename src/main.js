@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RECIPES, BIENTOT, buildRecipe, pack, outils, SHEET, holeLocal, HOLE_KINDS } from "./engine/index.js";
 import { HCOL, sheetHoles, cncSVG, cncDXF, makeZip, ascii } from "./export/cnc.js";
+import * as cloud from "./cloud/cloud.js";
 import "./styles.css";
 
 const COLORS=[["Blanc","#efefeb"],["Gris","#8b8f90"],["Noir","#2a2a2a"],["Chêne clair","#c9a36b"],["Wengé","#4a3326"]];
@@ -159,8 +160,10 @@ const DEF_CAT=()=>({boutique:{nom:"",wa:"",commune:""},exemple:false,panneaux:[{
 let CAT=DEF_CAT(),AT={nom:"",tel:"",jour:0,marge:20,valid:15};
 try{const c=JSON.parse(localStorage.getItem("menuipro-catalogue")||"null");if(c&&c.panneaux)CAT={...DEF_CAT(),...c}}catch(e){}
 try{const a=JSON.parse(localStorage.getItem("menuipro-atelier")||"null");if(a)AT={...AT,...a}}catch(e){}
-const saveCat=()=>{try{localStorage.setItem("menuipro-catalogue",JSON.stringify(CAT))}catch(e){}};
-const saveAt=()=>{try{localStorage.setItem("menuipro-atelier",JSON.stringify(AT))}catch(e){}};
+let ME=null; // compte connecté : {user, profil, quinc}
+const saveCatLocal=()=>{try{localStorage.setItem("menuipro-catalogue",JSON.stringify(CAT))}catch(e){}};
+const saveCat=()=>{saveCatLocal();pousserCatalogue()};
+const saveAt=()=>{try{localStorage.setItem("menuipro-atelier",JSON.stringify(AT))}catch(e){}pousserAtelier()};
 const artPrice=k=>+(CAT.prix[k]||0);
 const hwArticle=k=>k.startsWith("coulisses")?"coulisses":k;
 function panLabel(){const pn=CAT.panneaux.find(x=>x.id===st.panneau);return (pn?pn.nom+" "+pn.ep+" mm":"panneau "+st.ep+" mm")+" "+COLORS[st.color][0].toLowerCase()}
@@ -216,7 +219,8 @@ async function copyText(text,statusEl,ta){
   try{await navigator.clipboard.writeText(text);statusEl.className="status ok";statusEl.textContent="✅ Copié. Collez-le dans WhatsApp.";ta.hidden=true}
   catch(e){ta.hidden=false;ta.value=text;ta.focus();ta.select();statusEl.className="status";statusEl.textContent="Texte sélectionné : copiez-le avec le menu du téléphone."}
 }
-$("copyOrder").onclick=()=>copyText(orderText(),$("orderStatus"),$("orderText"));
+$("copyOrder").onclick=()=>{copyText(orderText(),$("orderStatus"),$("orderText"));enregistrerCommande()};
+$("waBtn").addEventListener("click",()=>enregistrerCommande());
 
 /* ----- Devis ----- */
 function estimateDays(ctx){
@@ -285,6 +289,7 @@ $("dSave").onclick=()=>{
   if(pr)Object.assign(pr,data);else{pr={id:"p"+Date.now(),statut:"devis",...data};PROJ.unshift(pr);st.projId=pr.id}
   const ok=saveProj();save();
   $("dStatus").className="status "+(ok?"ok":"err");$("dStatus").textContent=ok?"✅ Projet enregistré dans « Mes projets ».":"Impossible d'enregistrer sur ce téléphone.";
+  if(ok&&ME)pousserProjet(pr).then(()=>{$("dStatus").textContent="✅ Projet enregistré, aussi en ligne."}).catch(e=>{$("dStatus").className="status err";$("dStatus").textContent="Enregistré sur le téléphone. En ligne : "+cloud.message(e)});
 };
 function renderProjects(){
   const box=$("projList");
@@ -292,9 +297,9 @@ function renderProjects(){
   box.replaceChildren(...PROJ.map(pr=>{
     const r=R(pr.recipe)||{e:"🪑",nom:"Meuble"};
     const si=STATUTS.findIndex(x=>x[0]===pr.statut);
-    const chip=el("button",{type:"button",class:"chip "+pr.statut,title:"Changer le statut",onclick:()=>{pr.statut=STATUTS[(si+1)%3][0];saveProj();renderProjects()}},STATUTS[si<0?0:si][1]);
+    const chip=el("button",{type:"button",class:"chip "+pr.statut,title:"Changer le statut",onclick:()=>{pr.statut=STATUTS[(si+1)%3][0];saveProj();renderProjects();if(ME&&pr.cloudId)pousserProjet(pr).catch(()=>{})}},STATUTS[si<0?0:si][1]);
     let armed=false;const del=el("button",{type:"button",class:"btn"},"🗑️");
-    del.onclick=()=>{if(!armed){armed=true;del.textContent="Supprimer ?";return}PROJ=PROJ.filter(x=>x!==pr);if(st.projId===pr.id)st.projId=null;saveProj();renderProjects()};
+    del.onclick=()=>{if(!armed){armed=true;del.textContent="Supprimer ?";return}PROJ=PROJ.filter(x=>x!==pr);if(st.projId===pr.id)st.projId=null;saveProj();renderProjects();if(ME&&pr.cloudId)cloud.supprimerProjet(pr.cloudId).catch(e=>toast(cloud.message(e),true))};
     return el("div",{class:"pcard"},el("div",{class:"top"},el("span",{class:"e","aria-hidden":"true"},r.e),el("div",{},el("h3",{},pr.nom),el("div",{class:"note"},r.nom+" · "+pr.cfg.L+" × "+pr.cfg.H+" × "+pr.cfg.P+" cm"))),
       el("div",{class:"step"},el("span",{class:"bigprice",style:"font-size:24px"},pr.prix?fmt(pr.prix)+" F":"—"),chip),
       el("div",{class:"note"},"Enregistré le "+new Date(pr.date).toLocaleDateString("fr-FR")),
@@ -310,7 +315,7 @@ $("newProj").onclick=()=>{st.projId=null;st.dv={client:"",tel:"",jours:null,pose
 
 /* ----- Écran Catalogue ----- */
 function renderCatalogue(){
-  $("exBanner").hidden=!CAT.exemple;
+  $("exBanner").hidden=!CAT.exemple||lectureSeule();
   [["bNom","nom"],["bWa","wa"],["bCom","commune"]].forEach(([id,k])=>$(id).value=CAT.boutique[k]||"");
   const pin=(v,on)=>{const i=el("input",{type:"number",min:"0",step:"500",inputmode:"numeric"});i.value=v||"";i.addEventListener("input",e=>{on(parseFloat(e.target.value)||0);CAT.exemple=false;saveCat();$("exBanner").hidden=true});return i};
   $("panTable").replaceChildren(el("thead",{},el("tr",{},el("th",{},"Panneau"),el("th",{},"Épaisseur"),el("th",{},"Prix (F)"),el("th",{},""))),el("tbody",{},CAT.panneaux.map(pn=>{
@@ -321,6 +326,10 @@ function renderCatalogue(){
     return el("tr",{},el("td",{},nm,pn.dos?el("div",{class:"note"},"utilisé pour les dos et fonds"):null),el("td",{},ep),el("td",{},pin(pn.prix,v=>pn.prix=v)),el("td",{},del));
   })));
   $("artTable").replaceChildren(el("thead",{},el("tr",{},el("th",{},"Article"),el("th",{},"Vendu par"),el("th",{},"Prix (F)"))),el("tbody",{},ARTICLES.map(([k,e,l,u])=>el("tr",{},el("td",{},e+" "+l),el("td",{},u),el("td",{},pin(CAT.prix[k],v=>CAT.prix[k]=v))))));
+  const ro=lectureSeule();
+  $("roBanner").hidden=!ro;if(ro)$("roBanner").textContent="🔒 Prix gérés par "+ME.quinc.nom+". Ils se mettent à jour automatiquement ; seule la quincaillerie peut les modifier.";
+  $("v-catalogue").querySelectorAll("input,button").forEach(x=>{x.disabled=ro});
+  $("ownBanner").hidden=!(estQuinc()&&ME.quinc);
 }
 [["bNom","nom"],["bWa","wa"],["bCom","commune"]].forEach(([id,k])=>$(id).addEventListener("input",e=>{CAT.boutique[k]=e.target.value;saveCat()}));
 $("addPan").onclick=()=>{CAT.panneaux.splice(CAT.panneaux.length-1,0,{id:"pan"+Date.now(),nom:"Nouveau panneau",ep:18,prix:0});saveCat();renderCatalogue()};
@@ -333,7 +342,7 @@ function renderAtelier(){[["aNom","nom"],["aTel","tel"],["aJour","jour"],["aMarg
 $("aKerf").addEventListener("input",e=>{st.kerf=parseFloat(e.target.value)||0;save()});
 
 /* ----- Navigation ----- */
-const VIEWS=[["concevoir","🪚 Concevoir"],["projets","📁 Mes projets"],["catalogue","🏪 Catalogue & prix"],["atelier","⚙️ Mon atelier"]];
+const VIEWS=[["concevoir","🪚 Concevoir"],["projets","📁 Mes projets"],["catalogue","🏪 Catalogue & prix"],["atelier","⚙️ Mon atelier"],["compte","👤 Compte"]];
 function go(v){if(location.hash!=="#"+v){try{history.replaceState(null,"","#"+v)}catch(e){location.hash=v}}show(v)}
 function show(v){
   if(!VIEWS.find(x=>x[0]===v))v="concevoir";
@@ -342,6 +351,7 @@ function show(v){
   if(v==="projets")renderProjects();
   if(v==="catalogue")renderCatalogue();
   if(v==="atelier")renderAtelier();
+  if(v==="compte")renderCompte();
   if(v==="concevoir"&&lastCtx){renderPanSel();compute()}
   window.scrollTo(0,0);
 }
@@ -445,6 +455,134 @@ has3D=init3D();
 setupTap();
 compute(true);
 let lastKey="";setInterval(()=>{const c=cfg();const k=st.id+c.L+c.H+c.P;if(k!==lastKey){if(lastKey&&has3D)fitCamera();lastKey=k}},800);
+
+/* ===================== COMPTE ET SYNCHRONISATION ===================== */
+function estQuinc(){return !!(ME&&ME.profil&&ME.profil.role==="quincaillerie")}
+function lectureSeule(){return !!(ME&&ME.quinc&&!estQuinc())}
+let toastT=null;
+function toast(msg,err){const t=$("toast");t.textContent=msg;t.className="toast"+(err?" err":"");t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,3500)}
+let tCat=null,tAt=null;
+function pousserCatalogue(){
+  if(!cloud.actif||!estQuinc()||!ME.quinc)return;
+  clearTimeout(tCat);tCat=setTimeout(async()=>{
+    try{await cloud.sauverQuincaillerie(ME.quinc.id,{catalogue:{panneaux:CAT.panneaux,prix:CAT.prix,exemple:CAT.exemple},nom:(CAT.boutique.nom||ME.quinc.nom).slice(0,80),whatsapp:CAT.boutique.wa||null,commune:CAT.boutique.commune||null});
+      ME.quinc.nom=CAT.boutique.nom||ME.quinc.nom;toast("✅ Prix enregistrés pour tous vos menuisiers")}
+    catch(e){toast(cloud.message(e),true)}},1200);
+}
+function pousserAtelier(){
+  if(!cloud.actif||!ME)return;
+  clearTimeout(tAt);tAt=setTimeout(()=>cloud.majProfil({atelier:{...AT,kerf:st.kerf},nom:AT.nom||ME.profil.nom},ME.user.id).catch(()=>{}),1200);
+}
+async function pousserProjet(pr){const id=await cloud.sauverProjet(pr);pr.cloudId=id;saveProj();return id}
+let derniereCommande="";
+function enregistrerCommande(){
+  if(!cloud.actif||!ME||!ME.quinc||estQuinc()||!lastCtx)return;
+  const txt=orderText();if(txt===derniereCommande)return;derniereCommande=txt;
+  const pr=PROJ.find(x=>x.id===st.projId);
+  cloud.envoyerCommande({quincaillerie_id:ME.quinc.id,projet_id:pr&&pr.cloudId||null,meuble:(R(st.id).nom+" "+dimsText()).slice(0,200),lignes:lastBuy.lines.map(l=>({article:l.label,detail:l.detail,total:l.total})),total:lastBuy.total?Math.round(lastBuy.total):null})
+    .then(()=>toast("📦 Commande enregistrée chez "+ME.quinc.nom)).catch(e=>{derniereCommande="";toast(cloud.message(e),true)});
+}
+function appliquerCompte(){
+  if(!ME)return;
+  const q=ME.quinc;
+  if(q){
+    const c=q.catalogue||{};
+    if(c.panneaux&&c.panneaux.length){CAT.panneaux=c.panneaux;CAT.prix=c.prix||{};CAT.exemple=!!c.exemple}
+    else if(estQuinc())pousserCatalogue();
+    CAT.boutique={nom:q.nom||"",wa:q.whatsapp||"",commune:q.commune||""};saveCatLocal();
+    if(estQuinc()&&!(c.panneaux&&c.panneaux.length))pousserCatalogue();
+  }
+  const a=ME.profil&&ME.profil.atelier;
+  if(a&&Object.keys(a).length){AT={...AT,...a};if(a.kerf)st.kerf=a.kerf;try{localStorage.setItem("menuipro-atelier",JSON.stringify(AT))}catch(e){}}
+  else pousserAtelier();
+  $("count-tag").textContent="👤 "+(ME.profil&&ME.profil.nom||"Connecté");
+  renderPanSel();if(lastCtx)compute();
+  synchroniserProjets();
+}
+async function synchroniserProjets(){
+  if(!ME)return;
+  try{
+    const rows=await cloud.listerProjets();
+    rows.forEach(r=>{
+      const loc=PROJ.find(p=>p.cloudId===r.id),cfgx=r.config||{};
+      const data={cloudId:r.id,recipe:r.recette,cfg:cfgx.cfg,color:cfgx.color||0,panneau:cfgx.panneau,dv:cfgx.dv||{},prix:r.prix,materiel:r.materiel,nom:r.nom,statut:r.statut,date:r.updated_at};
+      if(!data.cfg)return;
+      if(!loc)PROJ.push({id:"c"+r.id,...data});
+      else if(new Date(r.updated_at)>new Date(loc.date))Object.assign(loc,data);
+    });
+    for(const p of PROJ.filter(p=>!p.cloudId))await pousserProjet(p);
+    PROJ.sort((a,b)=>new Date(b.date)-new Date(a.date));saveProj();
+    if(!$("v-projets").hidden)renderProjects();
+  }catch(e){toast("Projets en ligne : "+cloud.message(e),true)}
+}
+const STAT_CMD={envoyee:["📨","Envoyée"],vue:["👀","Vue"],prete:["✅","Prête"],livree:["🚚","Livrée"],annulee:["✖️","Annulée"]};
+async function renderCompte(){
+  const box=$("compteBox");
+  if(!cloud.actif){box.replaceChildren(el("section",{class:"panel"},el("h2",{},"Connexion en ligne"),el("p",{},"La connexion en ligne n'est pas encore activée sur cette version. L'application fonctionne entièrement sur ce téléphone.")));return}
+  if(!ME){
+    const tel=el("input",{id:"cTel",type:"tel",inputmode:"tel",autocomplete:"tel",placeholder:"77 000 00 00"});
+    const pin=el("input",{id:"cPin",type:"password",inputmode:"numeric",maxlength:"6",autocomplete:"current-password",placeholder:"6 chiffres"});
+    const nom=el("input",{id:"cNom",type:"text",autocomplete:"name",placeholder:"Ex. Menuiserie Fall"});
+    const status=el("p",{class:"status",role:"status"});
+    const run=async(fn,okMsg)=>{status.className="status";status.textContent="⏳ Un instant…";try{await fn();ME=await cloud.chargerCompte();appliquerCompte();toast(okMsg);renderCompte()}catch(e){status.className="status err";status.textContent=cloud.message(e)}};
+    box.replaceChildren(el("section",{class:"panel form"},el("h2",{},"Se connecter"),
+      el("p",{class:"note"},"Avec un compte, vos projets sont sauvegardés en ligne et vous recevez les prix de votre quincaillerie."),
+      el("div",{class:"grid2"},el("div",{class:"field"},el("label",{for:"cTel"},"📱 Numéro de téléphone"),tel),el("div",{class:"field"},el("label",{for:"cPin"},"🔑 Code PIN (6 chiffres)"),pin)),
+      el("div",{class:"actions"},el("button",{type:"button",class:"btn primary",onclick:()=>run(()=>cloud.connecter(tel.value,pin.value),"✅ Connecté")},"Me connecter")),
+      status,
+      el("h2",{style:"margin-top:8px"},"Pas encore de compte ?"),
+      el("div",{class:"field"},el("label",{for:"cNom"},"Votre nom ou celui de l'atelier"),nom),
+      el("div",{class:"actions"},el("button",{type:"button",class:"btn",onclick:()=>run(()=>cloud.inscrire(tel.value,pin.value,nom.value),"✅ Compte créé")},"➕ Créer mon compte")),
+      el("p",{class:"note"},"Choisissez un code PIN facile à retenir pour vous, mais pas votre date de naissance.")));
+    return;
+  }
+  const p=ME.profil||{},q=ME.quinc,parts=[];
+  let armedOut=false;const out=el("button",{type:"button",class:"btn"},"🚪 Se déconnecter");
+  out.onclick=async()=>{if(!armedOut){armedOut=true;out.textContent="Touchez encore pour vous déconnecter";return}await cloud.deconnecter();ME=null;$("count-tag").textContent="MenuiPro";toast("Déconnecté");renderCompte()};
+  parts.push(el("section",{class:"panel"},el("h2",{},"👤 "+(p.nom||"Mon compte")),el("p",{class:"note"},"📱 "+(p.telephone||"")+" · "+(estQuinc()?"Quincaillerie":"Menuisier")),el("div",{class:"actions"},out)));
+  if(estQuinc()&&q){
+    const copy=el("button",{type:"button",class:"btn"},"📋 Copier le code");copy.onclick=async()=>{try{await navigator.clipboard.writeText(q.code);toast("Code copié")}catch(e){toast("Code : "+q.code)}};
+    parts.push(el("section",{class:"panel"},el("h2",{},"🏪 "+q.nom),el("p",{},"Code à donner à vos menuisiers :"),el("div",{class:"bigprice",style:"letter-spacing:.15em"},q.code),el("div",{class:"actions"},copy,el("a",{class:"btn",href:"#catalogue"},"🏷️ Gérer mes prix")),el("p",{class:"note"},"Chaque menuisier qui entre ce code reçoit vos prix et peut vous envoyer ses commandes.")));
+    const list=el("div",{class:"lines"},el("p",{class:"note"},"⏳ Chargement des commandes…"));
+    parts.push(el("section",{class:"panel"},el("h2",{},"📥 Commandes reçues"),list));
+    box.replaceChildren(...parts);
+    try{
+      const rows=await cloud.commandesRecues(q.id);
+      if(!rows.length){list.replaceChildren(el("p",{class:"note"},"Aucune commande pour l'instant. Elles arrivent ici quand un menuisier touche « Commander »."));return}
+      list.replaceChildren(...rows.map(c=>{
+        const seg=el("div",{class:"seg"},["vue","prete","livree"].map(k=>el("button",{type:"button","aria-pressed":String(c.statut===k),onclick:async()=>{try{await cloud.changerStatut(c.id,k);c.statut=k;renderCompte()}catch(e){toast(cloud.message(e),true)}}},STAT_CMD[k][0]+" "+STAT_CMD[k][1])));
+        const who=c.profils?((c.profils.nom||"Menuisier")+" · "+(c.profils.telephone||"")):"Menuisier";
+        return el("div",{class:"line",style:"grid-template-columns:32px minmax(0,1fr)"},el("span",{class:"e"},STAT_CMD[c.statut][0]),
+          el("div",{},el("b",{},c.meuble),el("span",{},who+" · "+new Date(c.created_at).toLocaleString("fr-FR",{dateStyle:"short",timeStyle:"short"})+(c.total?" · "+fmt(c.total)+" F":"")),
+            el("details",{},el("summary",{},(c.lignes||[]).length+" articles"),el("ul",{},(c.lignes||[]).map(l=>el("li",{},l.article+" : "+l.detail)))),seg));
+      }));
+    }catch(e){list.replaceChildren(el("p",{class:"status err"},cloud.message(e)))}
+    return;
+  }
+  if(q){
+    let armedQ=false;const leave=el("button",{type:"button",class:"btn"},"Quitter cette quincaillerie");
+    leave.onclick=async()=>{if(!armedQ){armedQ=true;leave.textContent="Touchez encore pour quitter";return}try{await cloud.quitter();ME=await cloud.chargerCompte();toast("Vous avez quitté la quincaillerie");renderCompte()}catch(e){toast(cloud.message(e),true)}};
+    parts.push(el("section",{class:"panel"},el("h2",{},"🏪 Ma quincaillerie"),el("p",{},el("b",{},q.nom),q.commune?" · "+q.commune:""),el("p",{class:"note"},"Vos listes d'achat utilisent ses prix. Vos commandes lui arrivent directement."),el("div",{class:"actions"},leave)));
+    const list=el("div",{class:"lines"},el("p",{class:"note"},"⏳ Chargement…"));
+    parts.push(el("section",{class:"panel"},el("h2",{},"📦 Mes commandes"),list));
+    box.replaceChildren(...parts);
+    try{const rows=await cloud.mesCommandes(ME.user.id);
+      list.replaceChildren(...(rows.length?rows.map(c=>el("div",{class:"line"},el("span",{class:"e"},STAT_CMD[c.statut][0]),el("div",{},el("b",{},c.meuble),el("span",{},new Date(c.created_at).toLocaleDateString("fr-FR"))),el("span",{class:"pr"},STAT_CMD[c.statut][1]))):[el("p",{class:"note"},"Aucune commande. Touchez « Commander » dans la liste d'achat d'un meuble.")]))}
+    catch(e){list.replaceChildren(el("p",{class:"status err"},cloud.message(e)))}
+    return;
+  }
+  const code=el("input",{id:"cCode",type:"text",maxlength:"6",autocomplete:"off",placeholder:"Ex. F93A3E",style:"text-transform:uppercase;letter-spacing:.15em;font-weight:700"});
+  const st1=el("p",{class:"status",role:"status"});
+  const qn=el("input",{id:"qNom",type:"text",placeholder:"Nom de la quincaillerie"}),qw=el("input",{id:"qWa",type:"tel",inputmode:"tel",placeholder:"WhatsApp"}),qc=el("input",{id:"qCom",type:"text",placeholder:"Commune"});
+  const st2=el("p",{class:"status",role:"status"});
+  parts.push(el("section",{class:"panel form"},el("h2",{},"🏪 Rejoindre ma quincaillerie"),el("p",{class:"note"},"Demandez le code à 6 caractères à votre quincaillerie."),el("div",{class:"field"},el("label",{for:"cCode"},"Code"),code),
+    el("div",{class:"actions"},el("button",{type:"button",class:"btn primary",onclick:async()=>{st1.textContent="⏳";try{const r=await cloud.rejoindre(code.value);ME=await cloud.chargerCompte();appliquerCompte();toast("✅ Vous avez rejoint "+r.nom);renderCompte()}catch(e){st1.className="status err";st1.textContent=cloud.message(e)}}},"Rejoindre")),st1));
+  parts.push(el("section",{class:"panel form"},el("h2",{},"Vous êtes une quincaillerie ?"),el("div",{class:"grid2"},el("div",{class:"field"},el("label",{for:"qNom"},"Nom"),qn),el("div",{class:"field"},el("label",{for:"qWa"},"WhatsApp"),qw),el("div",{class:"field"},el("label",{for:"qCom"},"Commune"),qc)),
+    el("div",{class:"actions"},el("button",{type:"button",class:"btn",onclick:async()=>{if((qn.value||"").trim().length<2){st2.className="status err";st2.textContent="Entrez le nom de la quincaillerie.";return}st2.textContent="⏳";try{await cloud.creerQuincaillerie(qn.value,qw.value,qc.value);ME=await cloud.chargerCompte();appliquerCompte();pousserCatalogue();toast("✅ Quincaillerie créée");renderCompte()}catch(e){st2.className="status err";st2.textContent=cloud.message(e)}}},"Créer ma quincaillerie")),st2,
+    el("p",{class:"note"},"Vous recevrez un code à donner à vos menuisiers. Vos prix actuels deviendront le catalogue partagé.")));
+  box.replaceChildren(...parts);
+}
+if(cloud.actif)cloud.chargerCompte().then(c=>{ME=c;if(c)appliquerCompte();if(!$("v-compte").hidden)renderCompte()}).catch(()=>{});
 
 /* ----- Application installable (hors-ligne) ----- */
 if("serviceWorker" in navigator&&location.protocol==="https:"){window.addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}))}

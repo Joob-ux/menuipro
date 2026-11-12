@@ -139,3 +139,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center}
 .breakdown div{display:flex;justify-content:space-between;gap:12px}
 .breakdown div span:last-child{font-family:var(--mono)}
 button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:20;background:var(--ink);color:var(--surface);padding:10px 16px;border-radius:12px;font-weight:700;max-width:min(92vw,520px);box-shadow:0 6px 20px rgba(0,0,0,.25)}
+.toast.err{background:var(--warn)}
+button:disabled,input:disabled{opacity:.55;cursor:not-allowed}
