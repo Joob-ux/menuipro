@@ -175,8 +175,9 @@ export function planTravail(ctx, x, y, z, W, D) {
 /* ---------- Bloc : lit ---------- */
 export function lit(ctx, p, o = {}) {
   const E = ctx.E, L = p.L, Lg = p.P, Ht = p.H, Hc = 350;
-  panneauV(ctx, "Côté de lit gauche", 0, 0, 0, Hc, Lg);
-  panneauV(ctx, "Côté de lit droit", L + E, 0, 0, Hc, Lg);
+  // Chant sur le dessus, toute la longueur (les bouts sont cachés par la tête et le pied de lit).
+  panneauV(ctx, "Côté de lit gauche", 0, 0, 0, Hc, Lg, Lg);
+  panneauV(ctx, "Côté de lit droit", L + E, 0, 0, Hc, Lg, Lg);
   add(ctx, "Tête de lit", "caisson", [0, 0, -E, L + 2 * E, Ht, E], { edge: 2 * (L + 2 * E) + 2 * Ht });
   add(ctx, "Pied de lit", "caisson", [0, 0, Lg, L + 2 * E, Hc + 50, E], { edge: 2 * (L + 2 * E) + 2 * (Hc + 50) });
   const nl = Math.round(Lg / 110);

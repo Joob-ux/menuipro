@@ -195,6 +195,106 @@ rec({ id: "salle-de-bain", nom: "Meuble de salle de bain", e: "🚿", cat: "Port
   add3d(c, "top", [0, p.H, 0, p.L, 20, p.P + 20]); hw(c, "vasque", "🚰", "Vasque à poser + plan", 1); hw(c, "fixmur", "🔩", "Fixations murales + chevilles", 4);
 } });
 
+/* ===================== MODÈLES ACTUELS (très demandés) ===================== */
+/* ----- Salon ----- */
+rec({ id: "tv-suspendu", nom: "Meuble TV suspendu", e: "📺", cat: "Salon", dims: [160, 40, 38], opts: [stp("colonnes", "Casiers", "▥", 3, 2, 5), stp("ouvert", "Casier ouvert au centre", "⬜", 1, 0, 1)], build(c, p, o) {
+  // Fixé au mur, à 35 cm du sol : pas de socle.
+  const cols = [];
+  for (let k = 0; k < o.colonnes; k++) cols.push(o.ouvert && k === Math.floor(o.colonnes / 2) ? [{ t: "niche" }] : [{ t: "etageres", n: 0, portes: { n: 1 } }]);
+  caisse(c, 0, 350, 0, p.L, p.H, p.P, { socle: 0, colonnes: cols });
+  hw(c, "fixmur", "🔩", "Fixations murales + chevilles", 4 * Math.ceil(p.L / 1000));
+} });
+rec({ id: "mur-tv", nom: "Mur TV (ensemble complet)", e: "🖼️", cat: "Salon", dims: [280, 200, 40], dimMin: [180, 140, 30], dimLabels: ["Largeur du mur", "Hauteur", "Profondeur du bas"], opts: [stp("etageres", "Étagères des colonnes", "📚", 4, 1, 6), stp("pont", "Pont en haut", "🌉", 1, 0, 1), stp("led", "Ruban LED", "💡", 1, 0, 1)], build(c, p, o) {
+  const Hb = 450, CW = 450, Dc = Math.min(p.P, 300);
+  // Bas : modules de 120 cm au plus (une feuille) ; le module central reste ouvert pour le décodeur.
+  const nb = Math.ceil(p.L / 1200), wb = p.L / nb;
+  for (let i = 0; i < nb; i++) {
+    const centre = nb > 1 && i === Math.floor(nb / 2);
+    caisse(c, i * wb, 0, 0, wb, Hb, p.P, { nom: "Bas " + (i + 1), socle: 60, colonnes: [centre ? [{ t: "etageres", n: 1 }] : [{ t: "etageres", n: 0, portes: { n: 2 } }]] });
+  }
+  // Colonnes à gauche et à droite, posées sur le bas.
+  [0, p.L - CW].forEach((x, i) => caisse(c, x, Hb, 0, CW, p.H - Hb, Dc, { nom: "Colonne " + (i ? "droite" : "gauche"), colonnes: [[{ t: "etageres", n: o.etageres }]] }));
+  if (o.pont) {
+    const Lp = p.L - 2 * CW, np = Math.ceil(Lp / 2400);
+    for (let i = 0; i < np; i++) caisse(c, CW + i * Lp / np, p.H - 300, 0, Lp / np, 300, Dc, { nom: "Pont" + (np > 1 ? " " + (i + 1) : ""), colonnes: [[{ t: "niche" }]] });
+    if (o.led) hw(c, "led", "💡", "Ruban LED + alimentation", Math.ceil(Lp / 1000), "m");
+  }
+  hw(c, "fixmur", "🔩", "Fixations murales + chevilles", 8);
+} });
+rec({ id: "range-chaussures", nom: "Range-chaussures", e: "👟", cat: "Salon", dims: [80, 100, 35], opts: [stp("etageres", "Étagères", "📚", 4, 2, 8), stp("portes", "Portes (0 = ouvert)", "🚪", 2, 0, 2)], build(c, p, o) {
+  caisse(c, 0, 0, 0, p.L, p.H, p.P, { socle: 50, colonnes: [[{ t: "etageres", n: o.etageres, portes: { n: o.portes } }]] });
+} });
+rec({ id: "console-entree", nom: "Console d'entrée", e: "🪴", cat: "Salon", dims: [100, 80, 35], opts: [stp("tiroirs", "Tiroirs", "🗄️", 2, 0, 3), stp("tablette", "Tablette basse", "▭", 1, 0, 1)], build(c, p, o) {
+  const E = c.E;
+  plateau(c, "Plateau", 0, p.H - E, 0, p.L, p.P);
+  panneauV(c, "Pied gauche", 0, 0, 0, p.H - E, p.P); panneauV(c, "Pied droit", p.L - E, 0, 0, p.H - E, p.P);
+  if (o.tiroirs) caisse(c, 0, p.H - E - 160, 0, p.L, 160, p.P, { nom: "Tiroirs", cotes: false, dessus: false, dos: false, colonnes: Array.from({ length: o.tiroirs }, () => [{ t: "tiroirs", n: 1 }]) });
+  else voile(c, "Voile", E, p.H - E - 120, p.P - E, p.L - 2 * E, 120);
+  if (o.tablette) plateau(c, "Tablette basse", E, 120, 0, p.L - 2 * E, p.P, p.L);
+} });
+rec({ id: "vaisselier", nom: "Vaisselier", e: "🍶", cat: "Salon", dims: [120, 200, 45], dimMin: [60, 150, 35], opts: [stp("etageres", "Étagères vitrées", "📚", 2, 1, 4), stp("tiroirs", "Rangée de tiroirs", "🗄️", 1, 0, 1)], build(c, p, o) {
+  const Hb = 850, Dh = Math.min(p.P, 350);
+  const bas = o.tiroirs ? [{ t: "etageres", n: 1, portes: { n: 2 } }, { t: "tiroirs", n: 1, h: 150 }] : [{ t: "etageres", n: 1, portes: { n: 2 } }];
+  caisse(c, 0, 0, 0, p.L, Hb, p.P, { nom: "Bas", socle: 80, colonnes: [bas] });
+  caisse(c, 0, Hb, 0, p.L, p.H - Hb, Dh, { nom: "Haut", colonnes: [[{ t: "etageres", n: o.etageres, portes: { n: 2, type: "vitree" } }]] });
+} });
+rec({ id: "etagere-cubes", nom: "Étagère à cases carrées", e: "🔲", cat: "Salon", dims: [150, 150, 39], opts: [stp("colonnes", "Colonnes", "▥", 4, 2, 6), stp("rangees", "Rangées", "▤", 4, 2, 6), stp("portes", "Cases avec porte", "🚪", 0, 0, 2)], build(c, p, o) {
+  // Cases identiques ; les premières cases du bas peuvent recevoir une porte.
+  const cols = [];
+  for (let k = 0; k < o.colonnes; k++) cols.push(Array.from({ length: o.rangees }, (_, j) => j === 0 && k < o.portes ? { t: "etageres", n: 0, portes: { n: 1 } } : { t: "niche" }));
+  caisse(c, 0, 0, 0, p.L, p.H, p.P, { socle: 0, colonnes: cols });
+} });
+
+/* ----- Chambre ----- */
+rec({ id: "tete-lit-chevets", nom: "Tête de lit avec chevets", e: "🛌", cat: "Chambre", dims: [260, 110, 40], dimMin: [160, 60, 30], dimLabels: ["Largeur totale", "Hauteur", "Profondeur des chevets"], opts: [stp("tiroirs", "Tiroirs par chevet", "🗄️", 1, 1, 2)], build(c, p, o) {
+  const E = c.E, CW = 450, Hc = 180 * o.tiroirs;
+  // Panneau mural (en plusieurs morceaux s'il dépasse une feuille) et deux chevets suspendus.
+  const n = Math.ceil(p.L / 2400);
+  for (let i = 0; i < n; i++) add(c, "Panneau tête de lit" + (n > 1 ? " " + (i + 1) + "/" + n : ""), "caisson", [i * p.L / n, 0, 0, p.L / n, p.H, E], { edge: p.L / n + (i === 0 || i === n - 1 ? p.H : 0) });
+  [0, p.L - CW].forEach((x, i) => caisse(c, x, 400, E, CW, Hc, p.P - E, { nom: "Chevet " + (i ? "droit" : "gauche"), dos: false, colonnes: [[{ t: "tiroirs", n: o.tiroirs }]] }));
+  hw(c, "fixmur", "🔩", "Fixations murales + chevilles", 8);
+} });
+
+/* ----- Bureau ----- */
+rec({ id: "bureau-etude", nom: "Bureau d'étude avec étagères", e: "📖", cat: "Bureau", dims: [120, 180, 55], dimMin: [60, 140, 40], opts: [stp("etageres", "Étagères au-dessus", "📚", 2, 1, 3), stp("colonnes", "Colonnes d'étagères", "▥", 2, 1, 3)], build(c, p, o) {
+  const E = c.E, Hp = 750;
+  plateau(c, "Plateau", 0, Hp - E, 0, p.L, p.P);
+  panneauV(c, "Pied gauche", 0, 0, 0, Hp - E, p.P); panneauV(c, "Pied droit", p.L - E, 0, 0, Hp - E, p.P);
+  voile(c, "Voile de fond", E, Hp - E - 300, 30, p.L - 2 * E, 300);
+  caisse(c, 0, 1000, 0, p.L, p.H - 1000, 250, { nom: "Étagère haute", colonnes: Array.from({ length: o.colonnes }, () => [{ t: "etageres", n: o.etageres - 1 }]) });
+  hw(c, "fixmur", "🔩", "Fixations murales + chevilles", 4);
+} });
+rec({ id: "vestiaire-casiers", nom: "Vestiaire à casiers", e: "🔐", cat: "Bureau", dims: [120, 180, 50], opts: [stp("colonnes", "Colonnes", "▥", 3, 1, 4), stp("casiers", "Casiers par colonne", "🔲", 3, 1, 5)], build(c, p, o) {
+  const cols = Array.from({ length: o.colonnes }, () => Array.from({ length: o.casiers }, () => ({ t: "etageres", n: 0, portes: { n: 1 } })));
+  caisse(c, 0, 0, 0, p.L, p.H, p.P, { socle: 80, colonnes: cols });
+  hw(c, "moraillon", "🔒", "Moraillons porte-cadenas", o.colonnes * o.casiers);
+} });
+
+/* ----- Cuisine ----- */
+rec({ id: "ilot-cuisine", nom: "Îlot de cuisine / bar", e: "🏝️", cat: "Cuisine", dims: [180, 87, 56], fixedHP: true, opts: [stp("tiroirs", "Modules à tiroirs", "🗄️", 1, 0, 3), stp("bar", "Débord côté bar (cm)", "🍹", 30, 0, 40, 5)], build(c, p, o) {
+  const E = c.E, n = Math.max(1, Math.round(p.L / 600)), W = p.L / n;
+  for (let i = 0; i < n; i++) {
+    basCuisine(c, i * W, W, { nom: "Module " + (i + 1), tiroirs: i < o.tiroirs ? 3 : 0 });
+    add(c, "Habillage côté bar " + (i + 1), "caisson", [i * W, 0, -5 - E, W, 832, E], { edge: W });
+  }
+  planTravail(c, 0, 832, -5 - E - o.bar * 10, p.L, 560 + 5 + E + o.bar * 10);
+} });
+
+/* ----- Boutique ----- */
+rec({ id: "poste-coiffure", nom: "Poste de coiffure", e: "💇", cat: "Boutique", dims: [120, 85, 45], dimLabels: ["Largeur d'un poste", "Hauteur", "Profondeur"], opts: [stp("postes", "Postes", "💺", 1, 1, 4), stp("tiroirs", "Tiroirs", "🗄️", 3, 1, 4)], build(c, p, o) {
+  const E = c.E, CW = 400;
+  for (let k = 0; k < o.postes; k++) {
+    const x = k * p.L, nm = o.postes > 1 ? " " + (k + 1) : "";
+    plateau(c, "Plateau" + nm, x, p.H - E, 0, p.L, p.P);
+    caisse(c, x, 0, 0, CW, p.H - E, p.P, { nom: "Caisson" + nm, dessus: false, dos: false, socle: 60, colonnes: [[{ t: "tiroirs", n: o.tiroirs }]] });
+    panneauV(c, "Pied droit" + nm, x + p.L - E, 0, 0, p.H - E, p.P);
+    add(c, "Panneau de miroir" + nm, "caisson", [x, p.H, 0, p.L, 1000, E], { edge: 2 * (p.L + 1000) });
+    add3d(c, "mirror", [x + p.L / 2 - 300, p.H + 150, E, 600, 800, 6]);
+    hw(c, "miroir", "🪞", "Miroir 60 × 80 cm", 1);
+  }
+  hw(c, "fixmur", "🔩", "Fixations murales + chevilles", 4 * o.postes);
+} });
+
 /* Bientôt (bois massif, menuiserie de bâtiment) */
 export const BIENTOT = [];
 

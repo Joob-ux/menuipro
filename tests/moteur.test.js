@@ -23,6 +23,10 @@ const chevauche = sh => {
 
 describe("Catalogue de recettes", () => {
   it("contient au moins 37 meubles", () => expect(RECIPES.length).toBeGreaterThanOrEqual(37));
+  it("contient les modèles actuels (mur TV, îlot, coiffure…)", () => {
+    for (const id of ["tv-suspendu", "mur-tv", "range-chaussures", "console-entree", "vaisselier", "etagere-cubes", "tete-lit-chevets", "bureau-etude", "vestiaire-casiers", "ilot-cuisine", "poste-coiffure"]) expect(RECIPES.find(r => r.id === id)).toBeTruthy();
+  });
+  it("chaque meuble a un identifiant unique", () => expect(new Set(RECIPES.map(r => r.id)).size).toBe(RECIPES.length));
 });
 
 describe.each(RECIPES.map(r => [r.nom, r]))("%s", (_, r) => {
@@ -63,6 +67,11 @@ describe("Cas de référence menuisier", () => {
     const r = RECIPES.find(x => x.id === "armoire-2");
     const ctx = build(r, { etageres: 3, penderie: 0, tiroirs: 0 });
     expect(ctx.hw.charn.qty).toBe(8);
+  });
+  it("lit 160 × 200 : chant des côtés sur toute la longueur", () => {
+    const r = RECIPES.find(x => x.id === "lit-double");
+    const ctx = build(r, {});
+    ctx.parts.filter(p => p.name.startsWith("Côté de lit")).forEach(p => expect(p.edge).toBe(2000));
   });
 });
 

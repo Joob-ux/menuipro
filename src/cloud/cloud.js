@@ -52,7 +52,7 @@ export async function sauverQuincaillerie(id, champs) { return ok(await sb.from(
 
 export async function listerProjets() { return ok(await sb.from("projets").select("*").order("updated_at", { ascending: false })); }
 export async function sauverProjet(p) {
-  const row = { nom: p.nom, recette: p.recipe, config: { cfg: p.cfg, color: p.color, panneau: p.panneau, dv: p.dv }, prix: Math.round(p.prix || 0), materiel: Math.round(p.materiel || 0), statut: p.statut || "devis" };
+  const row = { nom: p.nom, recette: p.recipe, config: { cfg: p.cfg, color: p.color, panneau: p.panneau, dv: p.dv, fin: p.fin }, prix: Math.round(p.prix || 0), materiel: Math.round(p.materiel || 0), statut: p.statut || "devis" };
   if (p.cloudId) { ok(await sb.from("projets").update(row).eq("id", p.cloudId)); return p.cloudId; }
   return ok(await sb.from("projets").insert(row).select("id").single()).id;
 }

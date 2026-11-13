@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>MenuiPro</title>
 <meta name="description" content="Concevoir un meuble, savoir combien de feuilles acheter, couper, percer et faire le devis.">
-<meta name="theme-color" content="#1f5fbf">
+<meta name="theme-color" content="#8a5226">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icons/icon-192.png">
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
@@ -21,34 +21,42 @@
 <nav class="appnav" aria-label="Sections"><div class="wrap" id="appnav"></div></nav>
 
 <main id="v-concevoir">
+<div class="barprix" id="barPrix" hidden></div>
 <div class="wrap">
-  <section class="catalog" aria-label="Catalogue de meubles">
-    <div class="cathead">
-      <h2 data-voix="choisir">Choisir un meuble</h2>
-      <input class="search" id="search" type="search" placeholder="🔎 Chercher : armoire, lit, cuisine…" autocomplete="off">
+  <!-- Étape 1 : choisir le meuble (familles, puis meubles) -->
+  <section class="etape" data-etape="choisir" aria-label="Choisir un meuble">
+    <div class="catalog">
+      <div class="cathead">
+        <h2 data-voix="choisir">Quel meuble ?</h2>
+        <input class="search" id="search" type="search" placeholder="🔎 Chercher : armoire, lit, cuisine…" autocomplete="off">
+      </div>
+      <div class="famhead" id="famHead" hidden></div>
+      <div class="familles" id="familles"></div>
+      <div class="meubles" id="meubles"></div>
     </div>
-    <div class="rooms" id="rooms"></div>
-    <div class="meubles" id="meubles"></div>
-  </section>
-</div>
-
-<div class="wrap layout">
-  <section class="panel" aria-label="Configurer le meuble">
-    <div class="current" id="current"></div>
-    <div class="label" data-voix="cotes">Les cotes (en cm)</div>
-    <div class="dims" id="dims"></div>
-    <div class="label" id="optsLabel" data-voix="options">Les options</div>
-    <div id="opts" style="display:grid;gap:10px"></div>
-    <div class="label">La couleur du mélaminé</div>
-    <div class="swatches" id="swatches"></div>
-    <div class="label">Le panneau</div>
-    <div class="field"><label for="panSel">Panneau du caisson</label><select id="panSel"></select></div>
-    <label class="check"><input type="checkbox" id="rot" checked> Pièces tournables (mélaminé uni)</label>
-    <p class="note">Feuilles de 244 × 122 cm, 1 cm de bord retiré. Découpe en guillotine : chaque coupe traverse la feuille.</p>
   </section>
 
-  <section class="results" aria-label="Résultats">
+  <!-- Étape 2 : régler les cotes et les options -->
+  <section class="etape" data-etape="regler" aria-label="Régler le meuble" hidden>
+    <div class="panel" aria-label="Configurer le meuble">
+      <div class="current" id="current"></div>
+      <div class="label" data-voix="cotes">Les cotes (en cm)</div>
+      <div class="dims" id="dims"></div>
+      <div class="label" id="optsLabel" data-voix="options">Les options</div>
+      <div id="opts" style="display:grid;gap:10px"></div>
+      <div class="label">La couleur du mélaminé</div>
+      <div class="swatches" id="swatches"></div>
+      <div class="label">Le panneau</div>
+      <div class="field"><label for="panSel">Panneau du caisson</label><select id="panSel"></select></div>
+      <label class="check"><input type="checkbox" id="rot" checked> Pièces tournables (mélaminé uni)</label>
+      <p class="note">Feuilles de 244 × 122 cm, 1 cm de bord retiré. Découpe en guillotine : chaque coupe traverse la feuille.</p>
+    </div>
     <div class="kpis" id="kpis"></div>
+    <button class="btn primary suivant" type="button" data-aller="voir">Voir en 3D et la découpe →</button>
+  </section>
+
+  <!-- Étape 3 : voir le meuble, le plan de découpe et la liste de débit -->
+  <section class="etape" data-etape="voir" aria-label="Voir et découper" hidden>
     <div class="panel">
       <h2 data-voix="vue3d">Le meuble en 3D</h2>
       <div class="view3d" id="view3d">
@@ -76,6 +84,15 @@
       <p class="note">Le pack CNC contient, pour chaque feuille, un fichier DXF et un SVG en millimètres (calques DECOUPE et perçages), plus la liste de débit en CSV. Cotes finies : la compensation de fraise se règle dans le logiciel de la CNC.</p>
     </div>
     <div class="panel">
+      <h2 data-voix="debit">Liste de débit</h2>
+      <div class="tablewrap"><table id="debit"></table></div>
+    </div>
+    <button class="btn primary suivant" type="button" data-aller="acheter">Liste d'achat →</button>
+  </section>
+
+  <!-- Étape 4 : acheter -->
+  <section class="etape" data-etape="acheter" aria-label="Acheter" hidden>
+    <div class="panel">
       <h2 data-voix="achat">🛒 Liste d'achat</h2>
       <div class="banner" id="buyBanner" hidden></div>
       <div class="lines" id="buy"></div>
@@ -89,6 +106,11 @@
       <div class="sub">Outils à préparer</div>
       <div class="kit" id="tools"></div>
     </div>
+    <button class="btn primary suivant" type="button" data-aller="devis">Faire le devis →</button>
+  </section>
+
+  <!-- Étape 5 : devis pour le client -->
+  <section class="etape" data-etape="devis" aria-label="Devis" hidden>
     <div class="panel" id="devisPanel">
       <h2 data-voix="devis">💰 Devis pour le client</h2>
       <div class="grid2">
@@ -96,9 +118,11 @@
         <div class="field"><label for="dTel">Téléphone du client</label><input id="dTel" type="tel" inputmode="tel" autocomplete="off"></div>
         <div class="field"><label for="dJours">Jours de travail</label><input id="dJours" type="number" min="0.5" step="0.5"></div>
         <div class="field"><label for="dPose">Transport et pose (FCFA)</label><input id="dPose" type="number" min="0" step="1000"></div>
+        <div class="field"><label for="dAcompte">Acompte à la commande (%)</label><input id="dAcompte" type="number" min="0" max="100" step="10" inputmode="numeric"></div>
       </div>
       <div class="breakdown" id="dBreak"></div>
       <div class="total"><span>Prix pour le client</span><span class="bigprice" id="dPrix">—</span></div>
+      <div class="acompte-ligne" id="dAcompteLigne" hidden></div>
       <div class="actions">
         <button class="btn primary" type="button" id="dImg">🖼️ Image du devis</button>
         <button class="btn" type="button" id="dCopy">📋 Copier le texte</button>
@@ -108,12 +132,9 @@
       <textarea class="copy" id="dText" readonly hidden></textarea>
       <p class="note">Les jours sont estimés d'après le nombre de pièces, de perçages, de portes et de tiroirs ; modifiez-les si besoin. Tarif et marge se règlent dans « Mon atelier ».</p>
     </div>
-    <div class="panel">
-      <h2 data-voix="debit">Liste de débit</h2>
-      <div class="tablewrap"><table id="debit"></table></div>
-    </div>
   </section>
 </div>
+<nav class="etapes" id="etapes" aria-label="Étapes"></nav>
 </main>
 
 <main id="v-projets" hidden><div class="wrap view">
@@ -157,6 +178,7 @@
       <div class="field"><label for="aJour">Prix d'une journée de travail (FCFA)</label><input id="aJour" type="number" min="0" step="1000"></div>
       <div class="field"><label for="aMarge">Marge sur le devis (%)</label><input id="aMarge" type="number" min="0" max="200" step="1"></div>
       <div class="field"><label for="aValid">Devis valable (jours)</label><input id="aValid" type="number" min="1" max="90" step="1"></div>
+      <div class="field"><label for="aAcompte">Acompte demandé (%)</label><input id="aAcompte" type="number" min="0" max="100" step="10" inputmode="numeric"></div>
       <div class="field"><label for="aKerf">Trait de scie (mm)</label><input id="aKerf" type="number" min="0" max="10" step="0.5"></div>
     </div>
     <p class="note">Ces réglages apparaissent sur chaque devis. Ils restent enregistrés sur ce téléphone.</p>
