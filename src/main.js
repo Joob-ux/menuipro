@@ -948,6 +948,63 @@ function marquerVues(rows){const vu=lireVu();rows.forEach(c=>vu[c.id]=cleSuivi(c
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")verifierCommandes()});
 setInterval(()=>{if(document.visibilityState==="visible")verifierCommandes()},120000);
 
+/* ----- Page de connexion : on ne voit l'application qu'après s'être connecté ----- */
+// Numéro WhatsApp du support (variable VITE_SUPPORT_WHATSAPP sur Render) pour « Code PIN oublié ».
+const SUPPORT_WA=waDigits(import.meta.env.VITE_SUPPORT_WHATSAPP||"");
+let modePorte="connexion";
+function entrerDansAppli(){
+  document.body.classList.remove("verrou","attente");$("porte").hidden=true;$("porte").replaceChildren();
+  show(location.hash.slice(1)||"concevoir");
+}
+async function ouvrirPorte(horsLigne){
+  document.body.classList.remove("attente");document.body.classList.add("verrou");
+  const box=$("porte");box.hidden=false;
+  const status=el("p",{class:"status",role:"status"});
+  if(horsLigne){status.className="status err";status.textContent="Pas de connexion Internet. Vérifiez le réseau puis réessayez."}
+  const champ=(id,lbl,attrs)=>{const i=el("input",{id,...attrs});return [i,el("div",{class:"field"},el("label",{for:id},lbl),i)]};
+  const [tel,fTel]=champ("pTel","📱 Numéro de téléphone",{type:"tel",inputmode:"tel",autocomplete:"tel",placeholder:"77 000 00 00"});
+  const [pin,fPin]=champ("pPin","🔑 Code PIN (6 chiffres)",{type:"password",inputmode:"numeric",maxlength:"6",autocomplete:modePorte==="connexion"?"current-password":"new-password",placeholder:"••••••"});
+  const [pin2,fPin2]=champ("pPin2","🔑 Répétez le code PIN",{type:"password",inputmode:"numeric",maxlength:"6",autocomplete:"new-password",placeholder:"••••••"});
+  const [nom,fNom]=champ("pNom","👤 Votre nom ou celui de l'atelier",{type:"text",autocomplete:"name",placeholder:"Ex. Menuiserie Fall"});
+  // Vérifications avant d'appeler le serveur : messages simples, sans jargon.
+  const verifier=()=>{
+    const d=String(tel.value).replace(/\D/g,"");
+    if(d.length<9)return "Entrez votre numéro de téléphone (9 chiffres).";
+    if(!/^\d{6}$/.test(pin.value))return "Le code PIN a exactement 6 chiffres.";
+    if(modePorte==="inscription"){if(String(nom.value).trim().length<2)return "Entrez votre nom.";if(pin.value!==pin2.value)return "Les deux codes PIN ne sont pas les mêmes.";}
+    return null;
+  };
+  const valider=el("button",{type:"submit",class:"btn primary porte-ok"},modePorte==="connexion"?"Me connecter":"➕ Créer mon compte");
+  const form=el("form",{class:"porte-form",novalidate:"novalidate"});
+  form.addEventListener("submit",async e=>{
+    e.preventDefault();
+    const err=verifier();if(err){status.className="status err";status.textContent=err;return}
+    status.className="status";status.textContent="⏳ Un instant…";valider.disabled=true;
+    try{
+      if(modePorte==="connexion")await cloud.connecter(tel.value,pin.value);else await cloud.inscrire(tel.value,pin.value,nom.value);
+      ME=await cloud.chargerCompte();
+      if(!ME)throw new Error("Compte introuvable. Réessayez.");
+      entrerDansAppli();appliquerCompte();majMicro();
+      toast(modePorte==="connexion"?"✅ Bienvenue "+(ME.profil&&ME.profil.nom||""):"✅ Compte créé. Bienvenue !");
+    }catch(e2){status.className="status err";status.textContent=cloud.message(e2);valider.disabled=false}
+  });
+  form.append(...(modePorte==="inscription"?[fNom]:[]),fTel,fPin,...(modePorte==="inscription"?[fPin2]:[]),status,valider);
+  const onglets=el("div",{class:"seg porte-onglets",role:"tablist"},...[["connexion","Me connecter"],["inscription","Créer mon compte"]].map(([k,l])=>el("button",{type:"button",role:"tab","aria-selected":String(modePorte===k),"aria-pressed":String(modePorte===k),onclick:()=>{modePorte=k;ouvrirPorte()}},l)));
+  // Code PIN oublié : WhatsApp du support si le numéro est réglé, sinon la marche à suivre.
+  const aide=el("div",{class:"porte-aide",hidden:"hidden"},
+    el("p",{},"Seul l'administrateur de MenuiPro peut vous donner un nouveau code PIN. Votre quincaillerie peut aussi le contacter pour vous."),
+    SUPPORT_WA?el("a",{class:"btn",href:"https://wa.me/"+SUPPORT_WA+"?text="+encodeURIComponent("Bonjour, j'ai oublié mon code PIN MenuiPro. Mon numéro : "+(tel.value||"")),target:"_blank",rel:"noopener"},"📲 Demander un nouveau code sur WhatsApp"):null);
+  const oubli=el("button",{type:"button",class:"lien",onclick:()=>{aide.hidden=!aide.hidden;const a=aide.querySelector("a");if(a)a.href="https://wa.me/"+SUPPORT_WA+"?text="+encodeURIComponent("Bonjour, j'ai oublié mon code PIN MenuiPro. Mon numéro : "+(tel.value||""))}},"Code PIN oublié ?");
+  const invit=await bandeauInvitation();
+  box.replaceChildren(el("div",{class:"porte-carte"},
+    el("div",{class:"porte-logo"},el("div",{class:"porte-ic","aria-hidden":"true"},"🪚"),el("h1",{},"MenuiPro"),el("p",{},"L'atelier du menuisier sur votre téléphone")),
+    ...(invit?[invit]:[]),
+    onglets,form,
+    modePorte==="connexion"?el("div",{class:"porte-bas"},oubli,aide):el("p",{class:"note"},"Choisissez un code PIN facile à retenir pour vous, mais pas votre date de naissance."),
+    el("p",{class:"note porte-quinc"},"🏪 Vous êtes une quincaillerie ? Contactez MenuiPro pour ouvrir votre compte.")));
+  (modePorte==="inscription"?nom:tel).focus({preventScroll:true});
+}
+
 show(location.hash.slice(1)||"concevoir");
 renderCatalog();renderControls();
 has3D=init3D();
@@ -1046,7 +1103,7 @@ async function renderCompteBase(){
   }
   const p=ME.profil||{},q=ME.quinc,parts=[];
   let armedOut=false;const out=el("button",{type:"button",class:"btn"},"🚪 Se déconnecter");
-  out.onclick=async()=>{if(!armedOut){armedOut=true;out.textContent="Touchez encore pour vous déconnecter";return}await cloud.deconnecter();ME=null;$("count-tag").textContent="MenuiPro";toast("Déconnecté");renderCompte()};
+  out.onclick=async()=>{if(!armedOut){armedOut=true;out.textContent="Touchez encore pour vous déconnecter";return}await cloud.deconnecter();ME=null;$("count-tag").textContent="MenuiPro";toast("Déconnecté");ouvrirPorte()};
   parts.push(el("section",{class:"panel"},el("h2",{},(estAdmin()?"🛡️ ":"👤 ")+(p.nom||"Mon compte")),el("p",{class:"note"},"📱 "+(p.telephone||"")+" · "+(estAdmin()?"Administrateur":estQuinc()?"Quincaillerie":"Menuisier")),el("div",{class:"actions"},out)));
   if(estAdmin()){box.replaceChildren(...parts,...await vueAdmin());return}
   if(q&&q.actif===false)parts.push(el("div",{class:"banner"},estQuinc()?"⚠️ Votre abonnement est suspendu : vos menuisiers ne peuvent plus vous envoyer de commandes. Contactez MenuiPro.":"⚠️ "+q.nom+" est suspendue pour le moment : les commandes sont indisponibles."));
@@ -1244,7 +1301,14 @@ async function sectionVoix(){
     el("p",{class:"note"},"Générez les audios avec le cahier Colab « outils/voix_wolof_adia.ipynb » (modèle Adia TTS de CONCREE, licence Apache 2.0), puis importez-les tous d'un coup. Une phrase mal prononcée : refaites-la au micro 🎙️ ou importez une note vocale 📁."),
     el("div",{class:"actions"},el("button",{type:"button",class:"btn primary",onclick:()=>lot.click()},"📦 Importer les audios (plusieurs fichiers)"),lot),st3,liste);
 }
-if(cloud.actif)cloud.chargerCompte().then(c=>{ME=c;if(c)appliquerCompte();majMicro();if(!$("v-compte").hidden)renderCompte()}).catch(()=>{});
+// Démarrage : avec la connexion en ligne, l'appli ne s'ouvre qu'une fois connecté (sinon page de connexion).
+if(cloud.actif){
+  cloud.chargerCompte().then(c=>{ME=c;if(c){entrerDansAppli();appliquerCompte();majMicro()}else ouvrirPorte()})
+    .catch(async()=>{
+      // Pas de réseau : un compte déjà connecté sur ce téléphone garde l'accès (l'appli marche hors ligne).
+      let s=null;try{s=await cloud.session()}catch(e){}
+      if(s){entrerDansAppli();toast("Hors ligne : l'application marche, la synchronisation reprendra avec le réseau.",true)}else ouvrirPorte(true)});
+}else document.body.classList.remove("attente");
 
 /* ----- Application installable (hors-ligne) ----- */
 if("serviceWorker" in navigator&&location.protocol==="https:"){window.addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}))}

@@ -268,3 +268,26 @@ body.avec-etapes .micbox,body.avec-etapes .toast{bottom:calc(88px + env(safe-are
 .prix-f input:disabled{opacity:.4}
 .rep-form textarea,.rep-form input[type=date]{font:inherit;padding:8px 10px;border:2px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink)}
 .rep-form textarea{width:100%}
+
+/* ---------- Page de connexion (avant l'application) ---------- */
+body.attente>*:not(#toast),body.verrou>*:not(#porte):not(#toast){display:none!important}
+body.attente::after{content:"⏳";position:fixed;inset:0;display:grid;place-items:center;font-size:44px;background:var(--bg)}
+#porte{min-height:100vh;min-height:100dvh;display:grid;place-items:start center;padding:76px 16px 40px;background:linear-gradient(var(--wood) 0 230px,var(--bg) 230px)}
+.porte-carte{width:100%;max-width:440px;display:grid;gap:14px;background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:20px 18px;box-shadow:0 10px 30px rgba(43,33,26,.12)}
+.porte-logo{text-align:center;display:grid;gap:2px;margin-top:-56px}
+.porte-ic{width:84px;height:84px;margin:0 auto;border-radius:24px;background:var(--surface);border:3px solid var(--wood);display:grid;place-items:center;font-size:44px}
+.porte-logo h1{font-size:30px;color:var(--ink);margin-top:6px}
+.porte-logo p{margin:0;color:var(--muted);font-size:15px}
+.porte-onglets{display:grid;grid-template-columns:1fr 1fr}
+.porte-onglets button{padding:12px 6px;font-size:16px}
+.porte-form{display:grid;gap:12px}
+.porte-form input{width:100%;font:700 20px var(--body);padding:12px 14px;border:2px solid var(--line);border-radius:14px;background:var(--surface);color:var(--ink)}
+.porte-form input[type=password]{letter-spacing:.35em;font-family:var(--mono)}
+.porte-form input:focus{outline:none;border-color:var(--accent)}
+.porte-ok{padding:15px;font-size:18px;border-radius:14px}
+.porte-ok:disabled{opacity:.6}
+.porte-bas{display:grid;gap:8px;justify-items:center}
+.lien{border:0;background:none;color:var(--accent);font:inherit;font-weight:700;text-decoration:underline;cursor:pointer;padding:4px}
+.porte-aide{display:grid;gap:8px;background:var(--wood-soft);border-radius:12px;padding:12px;font-size:15px}
+.porte-aide p{margin:0}
+.porte-quinc{text-align:center}
