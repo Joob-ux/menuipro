@@ -3,7 +3,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { readFileSync } from "node:fs";
 
 const db = new PGlite();
-const migration = ["20261112000000_init.sql", "20261112000100_durcissement.sql", "20261112000200_performance.sql", "20261112000300_administration.sql", "20261112000400_comptes_par_admin.sql", "20261114000000_quincaillerie_fluide.sql", "20261115000000_comptes.sql"].map(f => readFileSync(new URL("../migrations/" + f, import.meta.url), "utf8")).join("\n");
+const migration = ["20261112000000_init.sql", "20261112000100_durcissement.sql", "20261112000200_performance.sql", "20261112000300_administration.sql", "20261112000400_comptes_par_admin.sql", "20261114000000_quincaillerie_fluide.sql", "20261115000000_comptes.sql", "20261115000100_roles.sql"].map(f => readFileSync(new URL("../migrations/" + f, import.meta.url), "utf8")).join("\n");
 let ok = 0, ko = 0;
 const check = (cond, label) => { if (cond) { ok++; console.log("  ✅ " + label); } else { ko++; console.log("  ❌ " + label); } };
 const expectError = async (fn, label, msg) => { try { await fn(); check(false, label + " (aurait dû être refusé)"); } catch (e) { check(!msg || String(e.message).includes(msg), label + " → refusé : " + e.message.split("\n")[0]); } };
@@ -20,7 +20,6 @@ await db.exec(`
   grant execute on function auth.uid() to anon, authenticated;
 `);
 await db.exec(migration);
-await db.exec(`grant all on all tables in schema public to anon, authenticated;`);
 console.log("Migration appliquée.");
 
 const U = { quinc: "11111111-1111-1111-1111-111111111111", ali: "22222222-2222-2222-2222-222222222222", bob: "33333333-3333-3333-3333-333333333333", autreQ: "44444444-4444-4444-4444-444444444444" };
@@ -35,15 +34,16 @@ const as = async (uid, sql, params = []) => {
 };
 
 console.log("\nQuincaillerie");
-const q = (await as(U.quinc, `select * from public.creer_quincaillerie('Quincaillerie Test', '771234567', 'Pikine')`)).rows[0];
+const creerQ = async (uid, nom, wa, commune) => { await db.query(`select public.svc_configurer_compte($1, 'quincaillerie', $2, $3, $4)`, [uid, nom, wa, commune]); return (await db.query(`select * from public.quincailleries where owner_id = $1`, [uid])).rows[0]; };
+const q = await creerQ(U.quinc, 'Quincaillerie Test', '771234567', 'Pikine');
 check(q && q.code && q.code.length === 6, "la quincaillerie est créée avec un code d'invitation à 6 caractères (" + q.code + ")");
 check((await as(U.quinc, `select role from public.profils where id = auth.uid()`)).rows[0].role === "quincaillerie", "son profil passe en rôle quincaillerie");
-const q2 = (await as(U.autreQ, `select * from public.creer_quincaillerie('Autre Quincaillerie')`)).rows[0];
+const q2 = await creerQ(U.autreQ, 'Autre Quincaillerie', null, null);
 check((await as(U.quinc, `update public.quincailleries set catalogue = '{"prix":{"charn":750}}' where id = $1 returning id`, [q.id])).rows.length === 1, "le propriétaire modifie son catalogue");
 await expectError(() => as(U.quinc, `update public.quincailleries set owner_id = $1 where id = $2`, [U.ali, q.id]), "le propriétaire ne peut pas céder sa quincaillerie", "modification_interdite");
 
 console.log("\nMenuisier Ali");
-check((await as(U.ali, `select * from public.quincailleries`)).rows.length === 0, "avant d'avoir rejoint, il ne voit aucune quincaillerie");
+check((await as(U.ali, `select id, nom from public.quincailleries`)).rows.length === 0, "avant d'avoir rejoint, il ne voit aucune quincaillerie");
 await expectError(() => as(U.ali, `select public.rejoindre_quincaillerie('ZZZZZZ')`), "un mauvais code", "code_inconnu");
 const j = (await as(U.ali, `select public.rejoindre_quincaillerie($1) as r`, [q.code.toLowerCase()])).rows[0].r;
 check(j.nom === "Quincaillerie Test", "il rejoint la quincaillerie avec le code (en minuscules aussi)");
@@ -66,8 +66,8 @@ const c = (await as(U.ali, `insert into public.commandes (quincaillerie_id, proj
 check(!!c.id, "Ali commande auprès de sa quincaillerie");
 await expectError(() => as(U.ali, `insert into public.commandes (quincaillerie_id, meuble, lignes) values ($1, 'x', '[]')`, [q2.id]), "Ali ne peut pas envoyer une commande à une autre quincaillerie");
 await expectError(() => as(U.bob, `insert into public.commandes (quincaillerie_id, meuble, lignes) values ($1, 'x', '[]')`, [q.id]), "Bob (pas membre) ne peut pas commander chez elle");
-const vues = (await as(U.quinc, `select c.meuble, c.total, pr.nom from public.commandes c join public.profils pr on pr.id = c.menuisier_id`)).rows;
-check(vues.length === 1 && vues[0].nom === "Ali Menuiserie", "la quincaillerie voit la commande et le nom du menuisier");
+const vues = (await as(U.quinc, `select public.commandes_recues() as r`)).rows[0].r;
+check(vues.length === 1 && vues[0].profils.nom === "Ali Menuiserie", "la quincaillerie voit la commande et le nom du menuisier");
 check((await as(U.autreQ, `select * from public.commandes`)).rows.length === 0, "l'autre quincaillerie ne voit pas cette commande");
 check((await as(U.quinc, `update public.commandes set statut = 'prete' where id = $1 returning statut`, [c.id])).rows[0].statut === "prete", "la quincaillerie change le statut (prête)");
 await expectError(() => as(U.quinc, `update public.commandes set total = 1 where id = $1`, [c.id]), "la quincaillerie ne peut pas modifier le montant", "modification_interdite");
@@ -75,11 +75,12 @@ check((await as(U.ali, `update public.commandes set statut = 'livree' where id =
 check((await as(U.ali, `select statut from public.commandes`)).rows[0].statut === "prete", "Ali voit l'avancement de sa commande");
 
 console.log("\nVisiteur non connecté");
-for (const t of ["profils", "quincailleries", "projets", "commandes"]) check((await as(null, `select * from public.${t}`)).rows.length === 0, "il ne voit rien dans " + t);
+for (const t of ["profils", "quincailleries", "projets", "commandes"]) { let n = 0; try { n = (await as(null, `select id from public.${t}`)).rows.length; } catch (e) { n = 0; } check(n === 0, "il ne voit rien dans " + t); }
 await expectError(() => as(null, `select public.rejoindre_quincaillerie($1)`, [q.code]), "il ne peut pas utiliser un code d'invitation");
 
 console.log("\nProfils");
-check((await as(U.quinc, `select nom from public.profils order by nom`)).rows.length === 2, "la quincaillerie voit son profil et celui de ses menuisiers (pas Bob)");
+check((await as(U.quinc, `select nom from public.profils order by nom`)).rows.length === 1, "la quincaillerie ne lit que son propre profil");
+check((await as(U.quinc, `select * from public.mes_menuisiers()`)).rows.map(r => r.nom).join() === "Ali Menuiserie", "elle voit le nom de ses menuisiers (Ali, pas Bob) par mes_menuisiers");
 check((await as(U.bob, `select * from public.profils`)).rows.length === 1, "Bob ne voit que son propre profil");
 
 console.log("\nFonctions internes");
@@ -174,11 +175,30 @@ await as(U.quinc, `update public.commandes set statut = 'prete' where id = $1`, 
 await expectError(() => as(U.ali, `select public.annuler_commande($1)`, [c2.id]), "une commande déjà prête ne s'annule plus", "annulation_impossible");
 
 console.log("\nLa quincaillerie et ses menuisiers");
-check((await as(U.quinc, `select id from public.profils where quincaillerie_id = $1 and role = 'menuisier'`, [q.id])).rows.some(r => r.id === U.ali), "la quincaillerie voit la liste de ses menuisiers");
+check((await as(U.quinc, `select * from public.mes_menuisiers()`)).rows.some(r => r.id === U.ali), "la quincaillerie voit la liste de ses menuisiers");
 await expectError(() => as(U.autreQ, `select public.retirer_menuisier($1)`, [U.ali]), "une autre quincaillerie ne peut pas retirer Ali", "modification_interdite");
 await as(U.quinc, `select public.retirer_menuisier($1)`, [U.ali]);
 check((await as(U.ali, `select quincaillerie_id from public.profils where id = auth.uid()`)).rows[0].quincaillerie_id === null, "la quincaillerie retire Ali de sa liste");
 await expectError(() => as(U.ali, `insert into public.commandes (quincaillerie_id, meuble, lignes) values ($1, 'x', '[]')`, [q.id]), "Ali retiré ne peut plus lui commander");
+
+console.log("\nAudit des rôles");
+await db.exec(`select set_config('menuipro.admin','oui',false); update public.quincailleries set note_admin = 'mauvais payeur' where id = '${q.id}'; select set_config('menuipro.admin','',false);`);
+await as(U.quinc, `select public.retirer_menuisier($1)`, [U.ali]).catch(() => {});
+await as(U.ali, `select public.rejoindre_quincaillerie($1)`, [q.code]);
+await as(U.ali, `update public.profils set atelier = '{"jour":15000,"marge":35}' where id = auth.uid()`);
+check((await as(U.ali, `update public.quincailleries set catalogue = '{"prix":{"charn":1}}' where id = $1 returning id`, [q.id])).rows.length === 0, "un menuisier ne peut pas modifier les prix de sa quincaillerie");
+await expectError(() => as(U.ali, `select note_admin from public.quincailleries`), "un menuisier ne lit pas la note privée de l'admin", "permission denied");
+await expectError(() => as(U.quinc, `select note_admin from public.quincailleries`), "la quincaillerie ne lit pas la note privée de l'admin sur elle", "permission denied");
+check((await as(ADMIN, `select public.admin_vue() as v`)).rows[0].v.quincailleries.find(x => x.id === q.id)?.note_admin === "mauvais payeur", "l'admin lit toujours sa note");
+await expectError(() => as(U.ali, `select (public.creer_quincaillerie('Fausse quinc')).nom`), "un menuisier ne peut pas se transformer en quincaillerie", "reserve_admin");
+check((await as(U.ali, `select role from public.profils where id = auth.uid()`)).rows[0].role === "menuisier", "Ali reste menuisier");
+check((await as(U.quinc, `select atelier from public.profils where id = $1`, [U.ali])).rows.length === 0, "la quincaillerie ne lit pas les réglages privés de ses menuisiers (prix de journée, marge)");
+check(!JSON.stringify((await as(U.quinc, `select public.commandes_recues() as r`)).rows[0].r).includes("marge"), "les commandes reçues ne contiennent pas les réglages du menuisier");
+const fausse = (await as(U.ali, `insert into public.commandes (quincaillerie_id, meuble, lignes, statut, reponse, repondu_le) values ($1, 'x', '[]', 'livree', '{"total":1}', now()) returning statut, reponse, repondu_le`, [q.id])).rows[0];
+check(fausse.statut === "envoyee" && fausse.reponse === null && fausse.repondu_le === null, "une commande neuve est toujours « envoyée », sans réponse (pas de fausse livraison)");
+await expectError(() => as(U.ali, `update public.profils set atelier = $1 where id = auth.uid()`, [{ x: "y".repeat(30000) }]), "réglages trop gros refusés", "profils_atelier_taille");
+check((await as(U.bob, `select * from public.mes_menuisiers()`)).rows.length === 0 && (await as(U.bob, `select public.commandes_recues() as r`)).rows[0].r.length === 0, "un menuisier n'obtient rien des fonctions de la quincaillerie");
+await expectError(() => as(null, `select public.commandes_recues()`), "un visiteur ne peut pas lire les commandes reçues", "permission denied");
 
 console.log(`\nRésultat : ${ok} réussis, ${ko} échoués`);
 process.exit(ko ? 1 : 0);

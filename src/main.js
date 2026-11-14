@@ -265,7 +265,7 @@ try{const c=JSON.parse(localStorage.getItem("menuipro-catalogue")||"null");if(c&
 try{const a=JSON.parse(localStorage.getItem("menuipro-atelier")||"null");if(a)AT={...AT,...a}}catch(e){}
 let ME=null; // compte connecté : {user, profil, quinc}
 const saveCatLocal=()=>{try{localStorage.setItem("menuipro-catalogue",JSON.stringify(CAT))}catch(e){}};
-const saveCat=()=>{saveCatLocal();pousserCatalogue()};
+const saveCat=()=>{if(cloud.actif&&ME&&!estQuinc()&&!CAT.exemple)return;saveCatLocal();pousserCatalogue()}; // un menuisier ne garde pas de prix modifiés
 const saveAt=()=>{try{localStorage.setItem("menuipro-atelier",JSON.stringify(AT))}catch(e){}pousserAtelier()};
 const artPrice=k=>+(CAT.prix[k]||0);
 const hwArticle=k=>k.startsWith("coulisses")?"coulisses":k==="tourillons_ch"?"tourillons":k;
@@ -639,9 +639,13 @@ function renderCatalogue(){
     return el("tr",{},el("td",{},nm),el("td",{},el("div",{class:"row",style:"gap:6px;flex-wrap:nowrap;align-items:center"},num("ep",70),"×",num("larg",70))),el("td",{},num("long",90)),el("td",{},pin(x.prix,v=>x.prix=v)));
   })));
   $("artTable").replaceChildren(el("thead",{},el("tr",{},el("th",{},"Article"),el("th",{},"Vendu par"),el("th",{},"Prix (F)"))),el("tbody",{},ARTICLES.map(([k,e,l,u])=>el("tr",{},el("td",{},e+" "+l),el("td",{},u),el("td",{},pin(CAT.prix[k],v=>CAT.prix[k]=v))))));
-  const ro=lectureSeule();
-  $("roBanner").hidden=!ro;if(ro)$("roBanner").textContent="🔒 Prix gérés par "+ME.quinc.nom+". Ils se mettent à jour automatiquement ; seule la quincaillerie peut les modifier.";
+  const ro=!peutModifierPrix();
+  $("roBanner").hidden=!ro;
+  if(ro)$("roBanner").textContent=ME&&ME.quinc&&!estAdmin()?"🔒 Prix gérés par "+ME.quinc.nom+". Ils se mettent à jour automatiquement ; seule la quincaillerie peut les modifier."
+    :estAdmin()?"🔒 Les prix sont gérés par chaque quincaillerie, depuis son propre compte."
+    :"🔒 Les prix viennent de votre quincaillerie. Rejoignez-la (onglet Compte, ou son lien d'invitation) pour avoir ses prix.";
   $("v-catalogue").querySelectorAll("input,button").forEach(x=>{x.disabled=ro});
+  $("v-catalogue").querySelectorAll("#fillEx,#resetCat,#addPan").forEach(x=>{x.hidden=ro});
   $("ownBanner").hidden=!(estQuinc()&&ME.quinc);
 }
 [["bNom","nom"],["bWa","wa"],["bCom","commune"]].forEach(([id,k])=>$(id).addEventListener("input",e=>{CAT.boutique[k]=e.target.value;saveCat()}));
@@ -668,10 +672,13 @@ $("aKerf").addEventListener("input",e=>{st.kerf=parseFloat(e.target.value)||0;sa
 // [vue, icône, libellé, libellé court (téléphone)]
 const VIEWS=[["concevoir","🪚","Concevoir","Concevoir"],["projets","📁","Mes projets","Projets"],["catalogue","🏪","Catalogue & prix","Prix"],["atelier","⚙️","Mon atelier","Atelier"],["compte","👤","Compte","Compte"]];
 function go(v){if(location.hash!=="#"+v){try{history.replaceState(null,"","#"+v)}catch(e){location.hash=v}}show(v)}
+// Onglets autorisés selon le compte : la quincaillerie gère ses prix et ses commandes, pas de conception.
+function vuesPermises(){return VIEWS.filter(([k])=>!(ME&&estQuinc()&&["concevoir","projets","atelier"].includes(k)))}
 function show(v){
-  if(!VIEWS.find(x=>x[0]===v))v="concevoir";
+  const permises=vuesPermises();
+  if(!permises.find(x=>x[0]===v))v=ME&&estQuinc()?"compte":"concevoir";
   VIEWS.forEach(([k])=>$("v-"+k).hidden=k!==v);
-  $("appnav").replaceChildren(...VIEWS.map(([k,ic,l,c])=>el("button",{type:"button",class:"navbtn","aria-current":k===v?"page":"false","aria-label":l,onclick:()=>go(k)},el("span",{class:"ic","aria-hidden":"true"},ic),el("span",{class:"long"},l),el("span",{class:"court","aria-hidden":"true"},c))));
+  $("appnav").replaceChildren(...permises.map(([k,ic,l,c])=>el("button",{type:"button",class:"navbtn","aria-current":k===v?"page":"false","aria-label":l,onclick:()=>go(k)},el("span",{class:"ic","aria-hidden":"true"},ic),el("span",{class:"long"},l),el("span",{class:"court","aria-hidden":"true"},c))));
   majPastille();
   if(v==="projets")renderProjects();
   if(v==="catalogue")renderCatalogue();
@@ -679,6 +686,7 @@ function show(v){
   if(v==="compte")renderCompte();
   if(v==="concevoir"&&lastCtx){renderPanSel();compute()}
   if(v==="concevoir")setEtape(st.etape,true);
+  if(location.hash.slice(1)!==v){try{history.replaceState(null,"","#"+v)}catch(e){}}
   document.body.classList.toggle("avec-etapes",v==="concevoir");
   majNavH();
   window.scrollTo(0,0);
@@ -1015,12 +1023,22 @@ async function ouvrirPorte(horsLigne){
   (modePorte==="inscription"?nom:tel).focus({preventScroll:true});
 }
 
+/* ----- Déconnexion : on sauvegarde en ligne, puis on efface les données du compte sur ce téléphone ----- */
+const CLES_COMPTE=["menuipro-projets","menuipro-atelier","menuipro-catalogue","menuipro-cmd-vu","menuipro-cmd-recues-vu","menuipro-invitation","menuipro-v2"];
+async function quitterCompte(){
+  // Projets jamais envoyés : on essaie de les sauvegarder avant d'effacer (sans réseau, on les garde sur le téléphone).
+  const restants=PROJ.filter(p=>!p.cloudId);
+  try{for(const p of restants)await pousserProjet(p)}catch(e){toast("Pas de réseau : vos projets non envoyés restent sur ce téléphone.",true);return}
+  await cloud.deconnecter();
+  CLES_COMPTE.forEach(k=>{try{localStorage.removeItem(k)}catch(e){}});
+  location.replace(location.pathname); // l'appli repart propre, sur la page de connexion
+}
 /* ----- Mon compte : nom, code PIN, déconnexion (tous les rôles) ----- */
 function panneauMonCompte(p){
   const role=estAdmin()?"Administrateur":estQuinc()?"Quincaillerie":"Menuisier";
   const zone=el("div",{class:"mon-compte-form"}),st=el("p",{class:"status",role:"status"});
   let armedOut=false;const out=el("button",{type:"button",class:"btn"},"🚪 Se déconnecter");
-  out.onclick=async()=>{if(!armedOut){armedOut=true;out.textContent="Touchez encore pour vous déconnecter";return}await cloud.deconnecter();ME=null;$("count-tag").textContent="MenuiPro";toast("Déconnecté");ouvrirPorte()};
+  out.onclick=async()=>{if(!armedOut){armedOut=true;out.textContent="Touchez encore pour vous déconnecter";return}out.disabled=true;out.textContent="⏳ Déconnexion…";await quitterCompte()};
   const champ=(lbl,attrs)=>{const i=el("input",attrs);return [i,el("label",{class:"field"},el("span",{},lbl),i)]};
   const formNom=()=>{const [i,f]=champ("👤 Nouveau nom",{type:"text",maxlength:"80",autocomplete:"name"});i.value=p.nom||"";
     zone.replaceChildren(f,el("div",{class:"actions"},el("button",{type:"button",class:"btn primary",onclick:async()=>{
@@ -1121,6 +1139,8 @@ let lastKey="";setInterval(()=>{const c=cfg();const k=st.id+c.L+c.H+c.P;if(k!==l
 function estQuinc(){return !!(ME&&ME.profil&&ME.profil.role==="quincaillerie")}
 function estAdmin(){return !!(ME&&ME.profil&&ME.profil.role==="admin")}
 function lectureSeule(){return !!(ME&&ME.quinc&&!estQuinc())}
+// Seule une quincaillerie modifie des prix ; sans connexion en ligne, l'appli locale reste libre.
+function peutModifierPrix(){return !cloud.actif||estQuinc()}
 let toastT=null;
 function toast(msg,err){const t=$("toast");t.textContent=msg;t.className="toast"+(err?" err":"");t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,3500)}
 let tCat=null,tAt=null;
@@ -1349,7 +1369,7 @@ function appliquerAction(a){
   }
   parler(a.reponse);
 }
-function majMicro(){const ok=cloud.actif&&ME;$("micBox").hidden=!ok}
+function majMicro(){const ok=cloud.actif&&ME&&!estQuinc();$("micBox").hidden=!ok}
 $("micBtn").onclick=async()=>{
   const btn=$("micBtn");
   if(micRec){micRec.stop();return}

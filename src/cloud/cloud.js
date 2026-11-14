@@ -44,7 +44,8 @@ export async function chargerCompte() {
   const s = await session(); if (!s) return null;
   const profil = ok(await sb.from("profils").select("*").eq("id", s.user.id).maybeSingle());
   let quinc = null;
-  if (profil && profil.quincaillerie_id) quinc = ok(await sb.from("quincailleries").select("*").eq("id", profil.quincaillerie_id).maybeSingle());
+  // Colonnes listées une à une : la note privée de l'administrateur n'est lisible que par lui.
+  if (profil && profil.quincaillerie_id) quinc = ok(await sb.from("quincailleries").select("id,owner_id,nom,whatsapp,commune,code,catalogue,actif,abonnement_jusqu,created_at,updated_at").eq("id", profil.quincaillerie_id).maybeSingle());
   return { user: s.user, profil, quinc };
 }
 export async function majProfil(champs, id) { return ok(await sb.from("profils").update(champs).eq("id", id)); }
@@ -66,13 +67,14 @@ export async function supprimerProjet(cloudId) { return ok(await sb.from("projet
 
 export async function envoyerCommande(c) { return ok(await sb.from("commandes").insert(c).select("id,statut").single()); }
 export async function mesCommandes(uid) { return ok(await sb.from("commandes").select("id,meuble,lignes,total,statut,reponse,repondu_le,created_at").eq("menuisier_id", uid).order("created_at", { ascending: false }).limit(30)); }
-export async function commandesRecues(qid) { return ok(await sb.from("commandes").select("id,meuble,lignes,total,statut,reponse,repondu_le,created_at,profils(nom,telephone)").eq("quincaillerie_id", qid).order("created_at", { ascending: false }).limit(50)); }
+// La quincaillerie lit ses commandes par une fonction : nom et téléphone du menuisier, sans ses réglages privés.
+export async function commandesRecues() { return ok(await sb.rpc("commandes_recues")) || []; }
 // Réponse de la quincaillerie : disponibilité et prix par ligne, retrait ou livraison, date, message.
 export async function repondreCommande(id, reponse, statut) { return ok(await sb.from("commandes").update({ reponse, statut }).eq("id", id)); }
 // Le menuisier annule sa commande (tant qu'elle n'est pas prête).
 export async function annulerCommande(id) { return ok(await sb.rpc("annuler_commande", { p_id: id })); }
 // La quincaillerie : liste de ses menuisiers, et retrait d'un menuisier.
-export async function mesMenuisiers(qid) { return ok(await sb.from("profils").select("id,nom,telephone,created_at").eq("quincaillerie_id", qid).eq("role", "menuisier").order("created_at", { ascending: false })); }
+export async function mesMenuisiers() { return ok(await sb.rpc("mes_menuisiers")) || []; }
 export async function retirerMenuisier(id) { return ok(await sb.rpc("retirer_menuisier", { p_user: id })); }
 // Changer son code PIN : on vérifie d'abord l'ancien en se reconnectant avec.
 export async function changerPin(tel, ancien, nouveau) {
