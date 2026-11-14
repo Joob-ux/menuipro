@@ -12,7 +12,7 @@ import qrcode from "qrcode-generator";
 import "./styles.css";
 
 const COLORS=[["Blanc","#efefeb"],["Gris","#8b8f90"],["Noir","#2a2a2a"],["Chêne clair","#c9a36b"],["Wengé","#4a3326"]];
-const ROOMS=["Tous","Bureau","Chambre","Salon","Cuisine","Boutique","Portes et autres"];
+const ROOMS=["Tous","Bureau","Chambre","Salon","Cuisine","Boutique","Déco murale","Portes et autres"];
 const $=id=>document.getElementById(id);
 const el=(t,a={},...c)=>{const n=document.createElement(t);for(const k in a){if(k==="class")n.className=a[k];else if(k.startsWith("on"))n.addEventListener(k.slice(2),a[k]);else n.setAttribute(k,a[k])}c.flat().forEach(x=>x!=null&&n.append(x.nodeType?x:document.createTextNode(x)));return n};
 const fmt=n=>Math.round(n).toLocaleString("fr-FR");
@@ -26,7 +26,7 @@ function cfg(){const r=R(st.id);if(!st.per[r.id]){const o={};r.opts.forEach(x=>o
 /* ----- Catalogue ----- */
 let query="";
 // Familles de meubles : gros boutons d'abord, puis les meubles de la famille choisie.
-const FAMILLES=[["Chambre","🛏️"],["Salon","🛋️"],["Cuisine","🍳"],["Bureau","🖥️"],["Boutique","🛍️"],["Portes et autres","🚪"]];
+const FAMILLES=[["Chambre","🛏️"],["Salon","🛋️"],["Cuisine","🍳"],["Bureau","🖥️"],["Boutique","🛍️"],["Déco murale","🎨"],["Portes et autres","🚪"]];
 function choisirMeuble(id){st.id=id;openState=false;sel=0;save();renderCatalog();renderControls();compute(true);setEtape("regler")}
 function tuileMeuble(r){return el("button",{type:"button",class:"meuble","aria-pressed":String(r.id===st.id),onclick:()=>choisirMeuble(r.id)},el("span",{class:"e","aria-hidden":"true"},r.e),r.nom)}
 function renderCatalog(){
@@ -253,10 +253,11 @@ const ARTICLES=[
  ["paumelles","⚙️","Paumelle de porte","pièce"],["serrure","🔒","Serrure + cylindre","pièce"],["espagnolette","🔒","Espagnolette / crémone","pièce"],["pattes","🔩","Patte de scellement","pièce"],
  ["boulons","🔩","Boulon de lit 8 × 120","pièce"],["visbois","🔩","Vis à bois","boîte de 100",100],["chevilles","🔩","Cheville + vis","pièce"],["colle","🧴","Colle à bois","pot"],
  ["patins","⚪","Patin de pied","pièce"],["sangles","🧵","Sangle élastique","m"],["mousse","🟨","Mousse 10 cm","m²"],["tissu","🧶","Tissu d'ameublement","m"],
- ["led","💡","Ruban LED + alimentation","m"],["moraillon","🔒","Moraillon porte-cadenas","pièce"]];
+ ["led","💡","Ruban LED + alimentation","m"],["moraillon","🔒","Moraillon porte-cadenas","pièce"],
+ ["supinv","🔩","Support invisible d'étagère","pièce"],["mastic","🧴","Colle mastic de fixation","cartouche"],["vernis","🖌️","Vernis ou peinture","litre"]];
 const EX_JOUR=10000; // prix de journée d'exemple (FCFA)
 const EX_PRIX={mela18:22000,mela16:20000,cp18:25000,mdf18:20000,cp5:9000,chant:300,vis440:1500,vis3516:1500,tourillons:1500,charn:750,charnv:2500,poignees:500,coulisses:2500,taquets:25,tringle:1500,supports:250,rail:3000,galets:5000,cuvettes:500,verre:15000,miroir:10000,pieds:2000,piedsreg:750,pdt:15000,roulettes:500,lattes:1000,tasseaux:750,poutre:1500,equerres:150,fixmur:1000,fixhaut:1000,pointes:1000,vasque:25000,
-  paumelles:500,serrure:6000,espagnolette:3500,pattes:150,boulons:300,visbois:1500,chevilles:50,colle:2500,patins:100,sangles:500,mousse:12000,tissu:3000,led:2500,moraillon:500,
+  paumelles:500,serrure:6000,espagnolette:3500,pattes:150,boulons:300,visbois:1500,chevilles:50,colle:2500,patins:100,sangles:500,mousse:12000,tissu:3000,led:2500,moraillon:500,supinv:1500,mastic:3500,vernis:6000,
   lame:2500,latte:2000,planche:6000,chevron:5000,madrier:15000};
 const DEF_CAT=()=>({boutique:{nom:"",wa:"",commune:""},exemple:false,panneaux:[{id:"mela18",nom:"Mélaminé",ep:18,prix:0},{id:"mela16",nom:"Mélaminé",ep:16,prix:0},{id:"cp18",nom:"Contreplaqué",ep:18,prix:0},{id:"mdf18",nom:"MDF",ep:18,prix:0},{id:"cp5",nom:"Contreplaqué",ep:5,prix:0,dos:true}],sections:SECTIONS_DEF.map(x=>({...x,prix:0})),prix:{}});
 let CAT=DEF_CAT(),AT={nom:"",tel:"",jour:0,marge:20,valid:15};
@@ -409,7 +410,7 @@ $("dImg").onclick=async()=>{
 /* ----- Plan de face coté ----- */
 // Couleurs écrites en clair (pas de variables CSS) : le même SVG sert à l'image partagée.
 const FAC={encre:"#2b211a",bois:"#8a5226",boisClair:"#f3e4d1",cote:"#1d6b52",gris:"#6c5f55"};
-const STYLE_FACE={caisson:["#ffffff",FAC.encre],porte:[FAC.boisClair,FAC.bois],tiroir:[FAC.boisClair,FAC.bois],verre:["#d6e8f0","#5b8aa0"],miroir:["#a9bcc6","#5b7480"],plan:["#6c5f55",FAC.encre],metal:["#9a9a9a","#555"],massif:["#ecd6b0",FAC.bois]};
+const STYLE_FACE={noir:["#2b2b2b","#111"],caisson:["#ffffff",FAC.encre],porte:[FAC.boisClair,FAC.bois],tiroir:[FAC.boisClair,FAC.bois],verre:["#d6e8f0","#5b8aa0"],miroir:["#a9bcc6","#5b7480"],plan:["#6c5f55",FAC.encre],metal:["#9a9a9a","#555"],massif:["#ecd6b0",FAC.bois]};
 let lastFace=null;
 // Construit le SVG du plan de face (texte), en millimètres, y vers le haut converti pour le SVG.
 function svgFacade(v){
@@ -422,7 +423,7 @@ function svgFacade(v){
   const txt=(x,y,t,o={})=>out.push(`<text x="${x}" y="${y}" font-size="${o.fs||fs}" font-family="Atkinson Hyperlegible, Arial, sans-serif" font-weight="${o.gras?700:400}" fill="${o.col||FAC.cote}" text-anchor="middle"${o.rot?` transform="rotate(-90 ${x} ${y})"`:""}>${t}</text>`);
   const ligne=(xa,ya,xb,yb,col,w)=>out.push(`<line x1="${xa}" y1="${ya}" x2="${xb}" y2="${yb}" stroke="${col}" stroke-width="${w}"/>`);
   // Pièces, du fond vers l'avant
-  v.rects.forEach(r=>{if(r.nature==="dos")return;const [f,s]=STYLE_FACE[r.nature]||STYLE_FACE.caisson;
+  v.rects.forEach(r=>{if(r.nature==="dos"||r.nature==="led")return;const [f,s]=STYLE_FACE[r.nature]||STYLE_FACE.caisson;
     // Portes et tiroirs en transparence : on voit les étagères cotées derrière.
     const transp=r.nature==="porte"||r.nature==="tiroir"||r.nature==="verre";
     out.push(`<rect x="${X(r.x)}" y="${Y(r.y+r.h)}" width="${r.w}" height="${r.h}" fill="${f}"${transp?' fill-opacity="0.55"':""} stroke="${s}" stroke-width="${transp?sw*1.4:sw}"/>`)});
@@ -720,7 +721,10 @@ function update3D(ctx,refit){
     mirror:new THREE.MeshStandardMaterial({color:0xdfe7ea,roughness:0.05,metalness:0.9}),
     metal:new THREE.MeshStandardMaterial({color:0x9a9fa3,roughness:0.35,metalness:0.7}),
     massif:new THREE.MeshStandardMaterial({color:0xb7874f,roughness:0.75}),
-    top:new THREE.MeshStandardMaterial({color:0x6b6560,roughness:0.5})
+    top:new THREE.MeshStandardMaterial({color:0x6b6560,roughness:0.5}),
+    noir:new THREE.MeshStandardMaterial({color:0x232323,roughness:0.8}),
+    led:new THREE.MeshStandardMaterial({color:0xffe2a0,emissive:0xffb347,emissiveIntensity:1.4}),
+    halo:new THREE.MeshBasicMaterial({color:0xffd27a,transparent:true,opacity:0.55})
   };
   const lineMat=new THREE.LineBasicMaterial({color:st.color===2||st.color===4?0x888888:0x333333,transparent:true,opacity:0.3});
   const boxes=ctx.parts.filter(p=>p.box);
@@ -732,7 +736,7 @@ function update3D(ctx,refit){
     const [x,y,z,sx,sy,sz]=p.box.map(v=>v/1000);
     const geo=new THREE.BoxGeometry(sx,sy,sz);
     const mesh=new THREE.Mesh(geo,M[p.look]||M.case);
-    if(p.look!=="glass")mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo),lineMat));
+    if(p.look!=="glass"&&p.look!=="halo"&&p.look!=="led")mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo),lineMat));
     const px=x+sx/2-cx,py=y+sy/2,pz=z+sz/2-cz;
     (p.holes||[]).forEach(h=>{
       const r=Math.max(h.d/2,4)/1000, g=new THREE.CylinderGeometry(r,r,0.003,16);
@@ -756,6 +760,8 @@ function update3D(ctx,refit){
       group.add(mesh);
     }
   });
+  // Meubles accrochés au mur (étagères, niches) : la 3D part du point le plus bas pour rester cadrée.
+  group.position.y=-mn[1]/1000;
   scene.add(group);
   $("openBtn").hidden=!movers.length;$("hint3d").hidden=!movers.length;
   if(refit)fitCamera();

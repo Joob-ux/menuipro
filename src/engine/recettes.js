@@ -295,6 +295,107 @@ rec({ id: "poste-coiffure", nom: "Poste de coiffure", e: "💇", cat: "Boutique"
   hw(c, "fixmur", "🔩", "Fixations murales + chevilles", 4 * o.postes);
 } });
 
+/* ===================== DÉCO MURALE ===================== */
+const DECO = "Déco murale";
+// Grand panneau découpé en morceaux qui tiennent dans une feuille (2420 × 1200 utiles, sens libre).
+function panneauDecoupe(c, nom, mat, x0, y0, z0, W, H, T, edge = 0, look) {
+  const fits = (a, b) => Math.max(a, b) <= 2420 && Math.min(a, b) <= 1200;
+  let best = null;
+  for (let j = 1; j <= 6; j++) for (let k = 1; k <= 8; k++) if (fits(W / k, H / j) && (!best || k * j < best[0] * best[1])) best = [k, j];
+  const [k, j] = best || [Math.ceil(W / 1180), Math.ceil(H / 2400)], n = k * j;
+  for (let a = 0; a < j; a++) for (let b = 0; b < k; b++)
+    add(c, nom + (n > 1 ? " " + (a * k + b + 1) + "/" + n : ""), mat, [x0 + b * W / k, y0 + a * H / j, z0, W / k, H / j, T], { edge: edge / n, look });
+  return n;
+}
+// Finition (vernis ou peinture) : 2 couches, environ 10 m² par litre et par couche.
+const vernis = (c, m2) => hw(c, "vernis", "🖌️", "Vernis ou peinture (2 couches)", Math.max(0.5, Math.ceil(m2 * 2 / 10 * 2) / 2), "L");
+
+rec({ id: "mur-tasseaux", nom: "Mur en tasseaux", e: "🎋", cat: DECO, dims: [200, 240, 4], dimMin: [30, 30, 2], dimLabels: ["Largeur du mur", "Hauteur", "Largeur d'un tasseau"],
+  opts: [stp("ecart", "Écart entre tasseaux (cm)", "↔️", 2, 1, 10), chx("matiere", "Tasseaux en", [["massif", "Bois massif"], ["panneau", "MDF / mélaminé"]], "massif"), chx("fond", "Fond", [["noir", "Panneau de fond noir"], ["aucun", "Directement sur le mur"]], "noir"), stp("led", "Ruban LED sur les côtés", "💡", 0, 0, 1)],
+  build(c, p, o) {
+    const w = p.P, e = o.ecart * 10, massif = o.matiere === "massif", T = massif ? 27 : c.E, zf = o.fond === "noir" ? 5 : 0;
+    const n = Math.max(1, Math.floor((p.L + e) / (w + e))), x0 = (p.L - (n * w + (n - 1) * e)) / 2;
+    if (zf) { const k = panneauDecoupe(c, "Panneau de fond (à peindre en noir)", "dos", 0, 0, 0, p.L, p.H, 5, 0, "noir"); hw(c, "fixmur", "🔩", "Fixations murales + chevilles", 4 * k); }
+    // Un tasseau en panneau ne dépasse pas la longueur d'une feuille : au-delà, il est fait en deux morceaux.
+    const morceaux = !massif && p.H > 2400 ? 2 : 1;
+    for (let i = 0; i < n; i++) for (let m = 0; m < morceaux; m++)
+      add(c, "Tasseau " + (i + 1) + (morceaux > 1 ? (m ? " (haut)" : " (bas)") : ""), massif ? "massif" : "caisson", [x0 + i * (w + e), m * p.H / morceaux, zf, w, p.H / morceaux, T], massif ? { flags: { section: "latte" } } : { edge: 2 * p.H / morceaux });
+    // Collage par plots : environ 10 m de tasseau par cartouche.
+    hw(c, "mastic", "🧴", "Colle mastic de fixation", Math.ceil(n * p.H / 1000 / 10), "cartouche(s)");
+    hw(c, "pointes", "🔨", "Pointes sans tête", n * Math.ceil(p.H / 400) * 2);
+    vernis(c, n * (w + 2 * T) * p.H / 1e6);
+    if (o.led) { hw(c, "led", "💡", "Ruban LED + alimentation", Math.ceil(2 * p.H / 1000), "m"); [x0 - 25, p.L - x0 + 15].forEach(x => add3d(c, "led", [x, 0, zf, 10, p.H, 10])); }
+  } });
+
+rec({ id: "claustra", nom: "Claustra / séparation de pièce", e: "🎐", cat: DECO, dims: [120, 240, 7], dimMin: [30, 60, 3], dimLabels: ["Largeur", "Hauteur", "Profondeur des lattes"],
+  opts: [stp("ecart", "Écart entre lattes (cm)", "↔️", 4, 1, 20), chx("pose", "Pose", [["plafond", "Du sol au plafond"], ["pieds", "Libre, sur pieds"]], "plafond")],
+  build(c, p, o) {
+    const t = 27, d = p.P, e = o.ecart * 10, lis = 45, pied = o.pose === "pieds";
+    // Lisses haute et basse (fixées au sol et au plafond, ou posées sur deux pieds), lattes verticales entre les deux.
+    add(c, "Lisse basse", "massif", [0, pied ? 60 : 0, 0, p.L, lis, d]);
+    add(c, "Lisse haute", "massif", [0, p.H - lis, 0, p.L, lis, d]);
+    const n = Math.max(2, Math.floor((p.L + e) / (t + e))), pas = (p.L - t) / (n - 1), yb = (pied ? 60 : 0) + lis;
+    for (let i = 0; i < n; i++) add(c, "Latte " + (i + 1), "massif", [i * pas, yb, 0, t, p.H - lis - yb, d], { flags: { section: "latte" } });
+    if (pied) { [[0], [p.L - 80]].forEach(([x], i) => add(c, "Pied " + (i ? "droit" : "gauche"), "massif", [x, 0, d / 2 - 200, 80, 60, 400])); hw(c, "equerres", "📐", "Équerres d'assemblage", 4); }
+    else hw(c, "fixmur", "🔩", "Fixations sol et plafond + chevilles", 8);
+    hw(c, "visbois", "🔩", "Vis à bois 5 × 60", n * 2 + 8);
+    hw(c, "colle", "🧴", "Colle à bois", 1);
+    vernis(c, n * 2 * (t + d) * p.H / 1e6);
+  } });
+
+rec({ id: "panneau-led", nom: "Panneau mural rétroéclairé", e: "💡", cat: DECO, dims: [180, 120, 3], dimMin: [30, 30, 2], dimLabels: ["Largeur", "Hauteur", "Décollement du mur"],
+  opts: [stp("led", "Ruban LED derrière", "💡", 1, 0, 1)],
+  build(c, p, o) {
+    // Jusqu'à 3 cm de décollement, une latte de 2,7 cm suffit (moins chère qu'un chevron).
+    const T = p.P <= 30 ? 27 : Math.min(65, p.P), m = 100;
+    // Cadre de tasseaux contre le mur (en retrait de 10 cm), panneau devant : la lumière déborde tout autour.
+    add(c, "Tasseau haut", "massif", [m, p.H - m - 45, 0, p.L - 2 * m, 45, T]);
+    add(c, "Tasseau bas", "massif", [m, m, 0, p.L - 2 * m, 45, T]);
+    const nv = Math.max(2, Math.ceil((p.L - 2 * m) / 600) + 1);
+    for (let i = 0; i < nv; i++) add(c, "Tasseau vertical " + (i + 1), "massif", [m + i * (p.L - 2 * m - 45) / (nv - 1), m + 45, 0, 45, p.H - 2 * m - 90, T]);
+    panneauDecoupe(c, "Panneau", "caisson", 0, 0, T, p.L, p.H, c.E, 2 * (p.L + p.H));
+    hw(c, "fixmur", "🔩", "Fixations murales + chevilles", 2 * (nv + 2));
+    hw(c, "visbois", "🔩", "Vis à bois 4 × 40", 4 * (nv + 2));
+    if (o.led) {
+      hw(c, "led", "💡", "Ruban LED + alimentation", Math.ceil(2 * (p.L + p.H - 4 * m) / 1000), "m");
+      // Ruban collé au dos du panneau, en retrait : la 3D montre la lumière qui déborde.
+      const r = 60, z = T - 8;
+      [[r, r, p.L - 2 * r, 8], [r, p.H - r - 8, p.L - 2 * r, 8]].forEach(([x, y, w, h]) => add3d(c, "led", [x, y, z, w, h, 6]));
+      [[r, r], [p.L - r - 8, r]].forEach(([x, y]) => add3d(c, "led", [x, y, z, 8, p.H - 2 * r, 6]));
+      // Halo de lumière sur le mur, autour du panneau (visible de face).
+      const g = 90;
+      [[-g, -g, p.L + 2 * g, g], [-g, p.H, p.L + 2 * g, g], [-g, 0, g, p.H], [p.L, 0, g, p.H]].forEach(([x, y, w, h]) => add3d(c, "halo", [x, y, -2, w, h, 2]));
+    }
+  } });
+
+rec({ id: "etageres-flottantes", nom: "Étagères flottantes", e: "📏", cat: DECO, dims: [80, 5, 22], dimMin: [20, 2, 12], dimLabels: ["Longueur", "Épaisseur visible", "Profondeur"],
+  opts: [stp("nombre", "Nombre d'étagères", "📚", 3, 1, 6), stp("ecartV", "Écart entre étagères (cm)", "↕️", 35, 20, 60, 5)],
+  build(c, p, o) {
+    const E = c.E, creux = p.H > E + 4;
+    for (let k = 0; k < o.nombre; k++) {
+      const y = 1000 + k * o.ecartV * 10, nm = o.nombre > 1 ? " " + (k + 1) : "";
+      if (!creux) { add(c, "Étagère" + nm, "caisson", [0, y, 0, p.L, E, p.P], { edge: p.L + 2 * p.P }); continue; }
+      // Étagère épaisse et creuse : dessus, dessous, façade et deux joues ; elle glisse sur des tiges cachées.
+      add(c, "Dessus" + nm, "caisson", [0, y + p.H - E, 0, p.L, E, p.P - E], { edge: 0 });
+      add(c, "Dessous" + nm, "caisson", [0, y, 0, p.L, E, p.P - E], { edge: 0 });
+      add(c, "Façade" + nm, "caisson", [0, y, p.P - E, p.L, p.H, E], { edge: 2 * p.L + 2 * p.H });
+      add(c, "Joue gauche" + nm, "caisson", [0, y + E, 0, E, p.H - 2 * E, p.P - E], { edge: p.P });
+      add(c, "Joue droite" + nm, "caisson", [p.L - E, y + E, 0, E, p.H - 2 * E, p.P - E], { edge: p.P });
+    }
+    hw(c, "supinv", "🔩", "Supports invisibles (tiges)", o.nombre * Math.max(2, Math.ceil(p.L / 400)));
+    if (creux) hw(c, "colle", "🧴", "Colle à bois", 1);
+  } });
+
+rec({ id: "niches-murales", nom: "Niches murales", e: "🔳", cat: DECO, dims: [35, 35, 25], dimMin: [15, 15, 12], dimLabels: ["Largeur d'une niche", "Hauteur", "Profondeur"],
+  opts: [stp("nombre", "Nombre de niches", "🔳", 3, 1, 8), chx("dispo", "Disposition", [["ligne", "En ligne"], ["escalier", "En escalier"], ["quinconce", "En quinconce"]], "escalier"), stp("fond", "Avec fond", "▣", 1, 0, 1)],
+  build(c, p, o) {
+    for (let k = 0; k < o.nombre; k++) {
+      const x = k * (p.L + 40), y = 1000 + (o.dispo === "escalier" ? k * p.H / 2 : o.dispo === "quinconce" ? (k % 2) * (p.H + 40) : 0);
+      caisse(c, x, y, 0, p.L, p.H, p.P, { nom: "Niche " + (k + 1), socle: 0, dos: !!o.fond, colonnes: [[{ t: "niche" }]] });
+    }
+    hw(c, "fixmur", "🔩", "Fixations murales + chevilles", 2 * o.nombre);
+  } });
+
 /* Bientôt (bois massif, menuiserie de bâtiment) */
 export const BIENTOT = [];
 

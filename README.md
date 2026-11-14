@@ -6,7 +6,7 @@ Application pour les menuisiers du Sénégal : on choisit un meuble, on règle s
 
 | Fonction | Détail |
 | --- | --- |
-| 55 meubles paramétrables | Armoires, dressing, lits, mur TV, îlot de cuisine, vestiaire à casiers, poste de coiffure, bois massif… construits par un moteur à blocs (caisse, tiroirs, étagères, portes, plateaux) |
+| 60 meubles paramétrables | Armoires, dressing, lits, mur TV, îlot de cuisine, vestiaire à casiers, poste de coiffure, déco murale (mur en tasseaux, claustra, panneau LED), bois massif… construits par un moteur à blocs (caisse, tiroirs, étagères, portes, plateaux) |
 | Découpe | Optimisation en guillotine (coupes de bout en bout, comme à la scie à panneaux), trait de scie réglable, feuilles 2440 × 1220 |
 | Perçages | Vis Ø4, tourillons Ø8, taquets Ø5, charnières Ø35, placés automatiquement aux assemblages |
 | Export CNC | Un ZIP par meuble : DXF et SVG par feuille (calques découpe et perçages), liste de débit CSV |
@@ -21,7 +21,7 @@ Application pour les menuisiers du Sénégal : on choisit un meuble, on règle s
 ```bash
 npm install
 npm run dev      # serveur local
-npm test         # tests du moteur (200) et des règles de sécurité (52)
+npm test         # tests du moteur (249) et des règles de sécurité (65)
 npm run build    # version de production dans dist/
 ```
 
@@ -31,7 +31,7 @@ npm run build    # version de production dans dist/
 src/
   engine/          moteur de calcul, sans interface (testé)
     blocs.js       caisse, zones, tiroirs, portes, plateaux, lits
-    recettes.js    les 55 meubles
+    recettes.js    les 60 meubles
     decoupe.js     optimisation guillotine
     percages.js    détection des assemblages et perçages
     outils.js      outils et visserie

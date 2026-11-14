@@ -75,6 +75,41 @@ describe("Cas de référence menuisier", () => {
   });
 });
 
+describe("Déco murale", () => {
+  const ids = ["mur-tasseaux", "claustra", "panneau-led", "etageres-flottantes", "niches-murales"];
+  const ctxDe = (id, o = {}, dims) => { const r = RECIPES.find(x => x.id === id), d = {}; r.opts.forEach(x => (d[x.k] = x.def)); const [L, H, P] = dims || r.dims; return buildRecipe(id, { L: L * 10, H: H * 10, P: P * 10, ep: 18 }, { ...d, ...o }); };
+  it("les 5 modèles sont dans la famille « Déco murale »", () => {
+    for (const id of ids) expect(RECIPES.find(r => r.id === id)?.cat).toBe("Déco murale");
+  });
+  it("mur 200 × 240, tasseaux de 4 cm écartés de 2 cm : 33 tasseaux, centrés", () => {
+    const t = ctxDe("mur-tasseaux").parts.filter(p => p.name.startsWith("Tasseau"));
+    expect(t.length).toBe(33);
+    const gauche = t[0].box[0], droite = 2000 - (t[32].box[0] + t[32].box[3]);
+    expect(Math.abs(gauche - droite)).toBeLessThan(1);
+  });
+  it("tasseaux en MDF plus hauts qu'une feuille : coupés en deux morceaux qui tiennent dans la feuille", () => {
+    const ctx = ctxDe("mur-tasseaux", { matiere: "panneau" }, [100, 300, 4]);
+    const t = ctx.parts.filter(p => p.name.startsWith("Tasseau"));
+    expect(t.every(p => p.cut[0] <= 2420)).toBe(true);
+    expect(t.length).toBe(2 * 17); // 17 tasseaux de 4 cm + 16 écarts de 2 cm = 100 cm
+  });
+  it("le bois massif de chaque modèle trouve sa section (options mini et maxi)", () => {
+    for (const id of ids) for (const which of ["min", "max", "def"]) {
+      const r = RECIPES.find(x => x.id === id), o = {}; r.opts.forEach(x => (o[x.k] = x.choice ? x.def : which === "def" ? x.def : x[which]));
+      expect(debitMassif(ctxDe(id, o).parts).trop, r.nom + " " + which).toEqual([]);
+    }
+  });
+  it("fond, finition et fixations sont dans la liste de quincaillerie", () => {
+    const hw = ctxDe("mur-tasseaux", { led: 1 }).hw;
+    expect(hw.vernis.qty).toBeGreaterThan(0); expect(hw.mastic.qty).toBeGreaterThan(0); expect(hw.led.qty).toBe(5); expect(hw.fixmur.qty).toBeGreaterThan(0);
+    expect(ctxDe("etageres-flottantes").hw.supinv.qty).toBe(6);
+  });
+  it("avec LED, le plan coté garde la largeur du mur ; un panneau de 180 × 120 tient en un seul morceau", () => {
+    expect(vueFace(ctxDe("mur-tasseaux", { led: 1 })).cotes.largeur).toBe(2000);
+    expect(ctxDe("panneau-led").parts.filter(p => p.name.startsWith("Panneau")).length).toBe(1);
+  });
+});
+
 describe("Plan de façade coté", () => {
   const vue = (id, o) => { const r = RECIPES.find(x => x.id === id), d = {}; r.opts.forEach(x => (d[x.k] = x.def)); return vueFace(build(r, { ...d, ...o })); };
   it("armoire 100 × 200 : cotes totales, et socle + ouvertures + panneaux = hauteur", () => {
