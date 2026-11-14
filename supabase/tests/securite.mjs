@@ -3,7 +3,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { readFileSync } from "node:fs";
 
 const db = new PGlite();
-const migration = ["20261112000000_init.sql", "20261112000100_durcissement.sql", "20261112000200_performance.sql", "20261112000300_administration.sql", "20261112000400_comptes_par_admin.sql", "20261114000000_quincaillerie_fluide.sql"].map(f => readFileSync(new URL("../migrations/" + f, import.meta.url), "utf8")).join("\n");
+const migration = ["20261112000000_init.sql", "20261112000100_durcissement.sql", "20261112000200_performance.sql", "20261112000300_administration.sql", "20261112000400_comptes_par_admin.sql", "20261114000000_quincaillerie_fluide.sql", "20261115000000_comptes.sql"].map(f => readFileSync(new URL("../migrations/" + f, import.meta.url), "utf8")).join("\n");
 let ok = 0, ko = 0;
 const check = (cond, label) => { if (cond) { ok++; console.log("  ✅ " + label); } else { ko++; console.log("  ❌ " + label); } };
 const expectError = async (fn, label, msg) => { try { await fn(); check(false, label + " (aurait dû être refusé)"); } catch (e) { check(!msg || String(e.message).includes(msg), label + " → refusé : " + e.message.split("\n")[0]); } };
@@ -11,7 +11,7 @@ const expectError = async (fn, label, msg) => { try { await fn(); check(false, l
 // --- Simulation de Supabase : schéma auth, rôles anon/authenticated, auth.uid()
 await db.exec(`
   create schema auth;
-  create table auth.users (id uuid primary key, raw_user_meta_data jsonb default '{}'::jsonb);
+  create table auth.users (id uuid primary key, raw_user_meta_data jsonb default '{}'::jsonb, banned_until timestamptz);
   create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
   create role anon nologin; create role authenticated nologin; create role service_role nologin;
   grant usage on schema public, auth to anon, authenticated, service_role;
@@ -99,10 +99,10 @@ const qa = v.quincailleries.find(x => x.nom === "Quincaillerie Test");
 check(qa && qa.menuisiers === 1 && qa.commandes === 1 && qa.montant === 116400, "l'admin voit par quincaillerie : menuisiers, commandes, montant");
 check(v.menuisiers.find(m => m.nom === "Ali Menuiserie")?.quincaillerie === "Quincaillerie Test", "l'admin voit chaque menuisier et sa quincaillerie");
 await expectError(() => as(U.quinc, `update public.quincailleries set actif = true, abonnement_jusqu = '2030-01-01' where id = $1`, [q.id]), "une quincaillerie ne peut pas prolonger son abonnement elle-même", "modification_interdite");
-await as(ADMIN, `select public.admin_abonnement($1, false, '2026-12-31', 'impayé')`, [q.id]);
+await as(ADMIN, `select public.admin_abonnement($1, false, '2099-12-31', 'impayé')`, [q.id]);
 check((await as(U.quinc, `select actif from public.quincailleries`)).rows[0].actif === false, "l'admin suspend une quincaillerie");
 await expectError(() => as(U.ali, `insert into public.commandes (quincaillerie_id, meuble, lignes) values ($1, 'x', '[]')`, [q.id]), "une quincaillerie suspendue ne reçoit plus de commandes");
-await as(ADMIN, `select public.admin_abonnement($1, true, '2026-12-31', null)`, [q.id]);
+await as(ADMIN, `select public.admin_abonnement($1, true, '2099-12-31', null)`, [q.id]);
 check(!!(await as(U.ali, `insert into public.commandes (quincaillerie_id, meuble, lignes) values ($1, 'x', '[]') returning id`, [q.id])).rows[0], "après réactivation, les commandes reprennent");
 await expectError(() => as(U.ali, `select public.admin_abonnement($1, true)`, [q.id]), "un menuisier ne peut pas toucher aux abonnements", "reserve_admin");
 
@@ -140,6 +140,45 @@ await expectError(() => as(U.quinc, `update public.commandes set total = 1 where
 await expectError(() => as(U.quinc, `update public.commandes set reponse = '"texte"' where id = $1`, [c2.id]), "une réponse qui n'est pas un objet est refusée", "commandes_reponse_forme");
 await expectError(() => as(U.quinc, `update public.commandes set reponse = $1 where id = $2`, [{ message: "x".repeat(30000) }, c2.id]), "une réponse trop grosse est refusée", "commandes_reponse_forme");
 await expectError(() => as(U.quinc, `update public.commandes set statut = 'perdue' where id = $1`, [c2.id]), "un statut inconnu est refusé", "commandes_statut_check");
+
+console.log("\nAbonnement : 7 jours de grâce");
+const finIl = j => (j >= 0 ? `current_date - ${j}` : `current_date + ${-j}`);
+await db.exec(`select set_config('menuipro.admin','oui',false); update public.quincailleries set abonnement_jusqu = ${finIl(3)} where id = '${q.id}'; select set_config('menuipro.admin','',false);`);
+check(!!(await as(U.ali, `insert into public.commandes (quincaillerie_id, meuble, lignes) values ($1, 'grâce', '[]') returning id`, [q.id])).rows[0], "abonnement fini depuis 3 jours : les commandes passent encore (grâce)");
+await db.exec(`select set_config('menuipro.admin','oui',false); update public.quincailleries set abonnement_jusqu = ${finIl(8)} where id = '${q.id}'; select set_config('menuipro.admin','',false);`);
+await expectError(() => as(U.ali, `insert into public.commandes (quincaillerie_id, meuble, lignes) values ($1, 'x', '[]')`, [q.id]), "abonnement fini depuis 8 jours : plus de commandes");
+const vg = (await as(ADMIN, `select public.admin_vue() as v`)).rows[0].v;
+check(vg.quincailleries.find(x => x.id === q.id)?.recoit_commandes === false, "l'admin voit que cette quincaillerie ne reçoit plus de commandes");
+await as(ADMIN, `select public.admin_abonnement($1, true, '2099-12-31', null)`, [q.id]);
+check(!!(await as(U.ali, `insert into public.commandes (quincaillerie_id, meuble, lignes) values ($1, 'renouvelé', '[]') returning id`, [q.id])).rows[0], "après renouvellement, les commandes reprennent");
+
+console.log("\nActions de l'administrateur");
+await as(ADMIN, `select public.admin_rattacher($1, $2)`, [U.bob, q2.id]);
+check((await as(U.bob, `select quincaillerie_id from public.profils where id = auth.uid()`)).rows[0].quincaillerie_id === q2.id, "l'admin rattache Bob à une quincaillerie");
+await as(ADMIN, `select public.admin_rattacher($1, null)`, [U.bob]);
+check((await as(U.bob, `select quincaillerie_id from public.profils where id = auth.uid()`)).rows[0].quincaillerie_id === null, "l'admin détache Bob");
+await expectError(() => as(U.ali, `select public.admin_rattacher($1, $2)`, [U.bob, q.id]), "un menuisier ne peut pas rattacher quelqu'un", "reserve_admin");
+await expectError(() => as(ADMIN, `select public.admin_rattacher($1, $2)`, [U.quinc, q2.id]), "on ne rattache pas une quincaillerie comme un menuisier", "compte_inconnu");
+await as(ADMIN, `select public.admin_modifier_quincaillerie($1, 'Quincaillerie Test', '770000000', 'Guédiawaye')`, [q.id]);
+check((await as(U.quinc, `select commune from public.quincailleries where id = $1`, [q.id])).rows[0].commune === "Guédiawaye", "l'admin corrige la commune d'une quincaillerie");
+await expectError(() => as(U.quinc, `select public.admin_modifier_quincaillerie($1, 'X', null, null)`, [q2.id]), "une quincaillerie ne peut pas modifier une autre par cette fonction", "reserve_admin");
+await expectError(() => as(ADMIN, `select public.admin_modifier_quincaillerie($1, ' ', null, null)`, [q.id]), "un nom vide est refusé", "nom_quincaillerie_manquant");
+check(vg.menuisiers.every(m => "bloque" in m && "quincaillerie_id" in m), "la vue admin indique le blocage et le rattachement de chaque menuisier");
+
+console.log("\nAnnuler une commande");
+const ca = (await as(U.ali, `insert into public.commandes (quincaillerie_id, meuble, lignes) values ($1, 'à annuler', '[]') returning id`, [q.id])).rows[0];
+await expectError(() => as(U.bob, `select public.annuler_commande($1)`, [ca.id]), "Bob ne peut pas annuler la commande d'Ali", "annulation_impossible");
+await as(U.ali, `select public.annuler_commande($1)`, [ca.id]);
+check((await as(U.ali, `select statut from public.commandes where id = $1`, [ca.id])).rows[0].statut === "annulee", "Ali annule sa commande");
+await as(U.quinc, `update public.commandes set statut = 'prete' where id = $1`, [c2.id]);
+await expectError(() => as(U.ali, `select public.annuler_commande($1)`, [c2.id]), "une commande déjà prête ne s'annule plus", "annulation_impossible");
+
+console.log("\nLa quincaillerie et ses menuisiers");
+check((await as(U.quinc, `select id from public.profils where quincaillerie_id = $1 and role = 'menuisier'`, [q.id])).rows.some(r => r.id === U.ali), "la quincaillerie voit la liste de ses menuisiers");
+await expectError(() => as(U.autreQ, `select public.retirer_menuisier($1)`, [U.ali]), "une autre quincaillerie ne peut pas retirer Ali", "modification_interdite");
+await as(U.quinc, `select public.retirer_menuisier($1)`, [U.ali]);
+check((await as(U.ali, `select quincaillerie_id from public.profils where id = auth.uid()`)).rows[0].quincaillerie_id === null, "la quincaillerie retire Ali de sa liste");
+await expectError(() => as(U.ali, `insert into public.commandes (quincaillerie_id, meuble, lignes) values ($1, 'x', '[]')`, [q.id]), "Ali retiré ne peut plus lui commander");
 
 console.log(`\nRésultat : ${ok} réussis, ${ko} échoués`);
 process.exit(ko ? 1 : 0);

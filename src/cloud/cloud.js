@@ -21,7 +21,11 @@ const MESSAGES = {
   "Password should be at least 6 characters": "Le code PIN doit avoir 6 chiffres.",
   "reserve_admin": "Réservé à l'administrateur.",
   "Email not confirmed": "Compte pas encore activé : l'option « Confirm email » doit être désactivée dans Supabase.",
-  "row-level security policy for table \"commandes\"": "Commande impossible : la quincaillerie est suspendue ou vous n'y êtes pas rattaché."
+  "row-level security policy for table \"commandes\"": "Commande impossible : la quincaillerie ne reçoit pas de commandes en ce moment (abonnement) ou vous n'y êtes pas rattaché.",
+  "annulation_impossible": "Cette commande ne peut plus être annulée (elle est déjà prête ou livrée).",
+  "modification_interdite": "Action non autorisée.",
+  "quincaillerie_inconnue": "Quincaillerie introuvable.",
+  "nom_quincaillerie_manquant": "Entrez le nom de la quincaillerie."
 };
 export const message = e => { const m = (e && (e.message || e.error_description)) || String(e); for (const k in MESSAGES) if (m.includes(k)) return MESSAGES[k]; return "Erreur : " + m; };
 const ok = ({ data, error }) => { if (error) throw error; return data; };
@@ -65,10 +69,23 @@ export async function mesCommandes(uid) { return ok(await sb.from("commandes").s
 export async function commandesRecues(qid) { return ok(await sb.from("commandes").select("id,meuble,lignes,total,statut,reponse,repondu_le,created_at,profils(nom,telephone)").eq("quincaillerie_id", qid).order("created_at", { ascending: false }).limit(50)); }
 // Réponse de la quincaillerie : disponibilité et prix par ligne, retrait ou livraison, date, message.
 export async function repondreCommande(id, reponse, statut) { return ok(await sb.from("commandes").update({ reponse, statut }).eq("id", id)); }
+// Le menuisier annule sa commande (tant qu'elle n'est pas prête).
+export async function annulerCommande(id) { return ok(await sb.rpc("annuler_commande", { p_id: id })); }
+// La quincaillerie : liste de ses menuisiers, et retrait d'un menuisier.
+export async function mesMenuisiers(qid) { return ok(await sb.from("profils").select("id,nom,telephone,created_at").eq("quincaillerie_id", qid).eq("role", "menuisier").order("created_at", { ascending: false })); }
+export async function retirerMenuisier(id) { return ok(await sb.rpc("retirer_menuisier", { p_user: id })); }
+// Changer son code PIN : on vérifie d'abord l'ancien en se reconnectant avec.
+export async function changerPin(tel, ancien, nouveau) {
+  if (!/^\d{6}$/.test(nouveau)) throw new Error("Password should be at least 6 characters");
+  await connecter(tel, ancien);
+  return ok(await sb.auth.updateUser({ password: nouveau }));
+}
 export async function changerStatut(id, statut) { return ok(await sb.from("commandes").update({ statut }).eq("id", id)); }
 
 /* ---------- Administration ---------- */
 export async function adminVue() { return ok(await sb.rpc("admin_vue")); }
+export async function adminRattacher(user, quinc) { return ok(await sb.rpc("admin_rattacher", { p_user: user, p_quinc: quinc || null })); }
+export async function adminModifierQuincaillerie(id, nom, whatsapp, commune) { return ok(await sb.rpc("admin_modifier_quincaillerie", { p_quinc: id, p_nom: nom, p_whatsapp: whatsapp || "", p_commune: commune || "" })); }
 export async function adminAbonnement(id, actif, jusqu, note) { return ok(await sb.rpc("admin_abonnement", { p_quinc: id, p_actif: actif, p_jusqu: jusqu || null, p_note: note || null })); }
 
 /* Création de comptes et réinitialisation de PIN : passe par la fonction serveur « admin-comptes » */
@@ -76,7 +93,8 @@ const ERREURS_ADMIN = {
   deja_inscrit: "Ce numéro a déjà un compte.", telephone_invalide: "Numéro de téléphone invalide.",
   pin_invalide: "Le code PIN doit avoir exactement 6 chiffres.", code_inconnu: "Ce code de quincaillerie n'existe pas.",
   compte_inconnu: "Aucun compte avec ce numéro.", reserve_admin: "Réservé à l'administrateur.",
-  nom_quincaillerie_manquant: "Entrez le nom de la quincaillerie.", non_connecte: "Reconnectez-vous."
+  nom_quincaillerie_manquant: "Entrez le nom de la quincaillerie.", non_connecte: "Reconnectez-vous.",
+  pas_soi_meme: "Vous ne pouvez pas faire cela sur votre propre compte.", pas_un_admin: "Impossible sur un compte administrateur."
 };
 async function appelAdmin(corps) {
   const { data, error } = await sb.functions.invoke("admin-comptes", { body: corps });
@@ -89,6 +107,8 @@ async function appelAdmin(corps) {
 }
 export const adminCreerCompte = c => appelAdmin({ action: "creer", ...c });
 export const adminNouveauPin = (telephone, pin) => appelAdmin({ action: "pin", telephone, pin });
+export const adminBloquer = (user, bloquer) => appelAdmin({ action: bloquer ? "bloquer" : "debloquer", user });
+export const adminSupprimer = user => appelAdmin({ action: "supprimer", user });
 
 /* ---------- Voix (fichiers audio publics, bucket « voix ») ---------- */
 // Liste des audios disponibles : { clé: version } (la version évite l'ancien fichier en cache).

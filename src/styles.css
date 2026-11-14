@@ -291,3 +291,16 @@ body.attente::after{content:"⏳";position:fixed;inset:0;display:grid;place-item
 .porte-aide{display:grid;gap:8px;background:var(--wood-soft);border-radius:12px;padding:12px;font-size:15px}
 .porte-aide p{margin:0}
 .porte-quinc{text-align:center}
+
+/* ---------- Comptes : mon compte, abonnement, menuisiers, filtres, admin ---------- */
+.mon-compte-form{display:grid;gap:8px}
+.mon-compte-form:empty{display:none}
+.mon-compte-form .field{display:grid;gap:4px;font-weight:700;font-size:14px}
+.mon-compte-form input{font:700 18px var(--body);padding:10px 12px;border:2px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink)}
+.banner-fort{border-color:#c62828;background:#fdeceb;color:#8e1c1c}
+.line.menuisier{grid-template-columns:32px minmax(0,1fr) auto}
+.line.menuisier .acts{display:flex;gap:6px;align-items:center}
+.filtres-cmd{overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}
+.filtres-cmd button{flex:0 0 auto;font-size:14px}
+.acts-admin{display:flex;flex-wrap:wrap;gap:4px}
+.ligne-bloquee td{opacity:.7}

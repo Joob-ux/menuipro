@@ -1,6 +1,7 @@
 // MenuiPro — fonction serveur réservée à l'administrateur :
 //   « creer » : crée un compte (quincaillerie, menuisier ou administrateur) avec numéro + code PIN
 //   « pin »   : remplace le code PIN d'un compte existant
+//   « bloquer » / « debloquer » / « supprimer » : agit sur un compte (jamais un administrateur)
 // La clé de service reste sur le serveur ; l'appelant doit être connecté avec un compte « admin ».
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
@@ -30,6 +31,22 @@ Deno.serve(async (req) => {
 
   let corps: Record<string, unknown>;
   try { corps = await req.json(); } catch { return json({ erreur: "requete_invalide" }, 400); }
+
+  // 2 bis. Bloquer, débloquer ou supprimer un compte (par son identifiant). Jamais un administrateur, jamais soi-même.
+  if (["bloquer", "debloquer", "supprimer"].includes(String(corps.action))) {
+    const cible = String(corps.user ?? "");
+    if (!/^[0-9a-f-]{36}$/i.test(cible)) return json({ erreur: "compte_inconnu" }, 400);
+    if (cible === qui.user.id) return json({ erreur: "pas_soi_meme" }, 400);
+    const { data: pc } = await service.from("profils").select("role").eq("id", cible).maybeSingle();
+    if (!pc) return json({ erreur: "compte_inconnu" }, 404);
+    if (pc.role === "admin") return json({ erreur: "pas_un_admin" }, 400);
+    const { error } = corps.action === "supprimer"
+      ? await service.auth.admin.deleteUser(cible) // projets, commandes et quincaillerie du compte partent avec lui
+      : await service.auth.admin.updateUserById(cible, { ban_duration: corps.action === "bloquer" ? "876000h" : "none" });
+    if (error) return json({ erreur: error.message }, 400);
+    return json({ ok: true });
+  }
+
   const tel = normaliser(corps.telephone);
   const pin = String(corps.pin ?? "");
   if (tel.length < 11 || tel.length > 15) return json({ erreur: "telephone_invalide" }, 400);

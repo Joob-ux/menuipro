@@ -923,7 +923,16 @@ function carteCommandeMenuisier(c){
     el("div",{class:"cmd-top"},el("span",{class:"e","aria-hidden":"true"},s[0]),el("div",{},el("b",{},c.meuble),el("div",{class:"note"},new Date(c.created_at).toLocaleDateString("fr-FR")+(c.total?" · estimé "+fmt(c.total)+" F":""))),el("span",{class:"chip "+c.statut},s[1])),
     c.reponse?ligneArticles(c):null,
     resumeReponse(c)||el("div",{class:"note"},c.statut==="envoyee"?"⏳ En attente de la réponse de "+(q?q.nom:"la quincaillerie")+".":"👀 "+(q?q.nom:"La quincaillerie")+" a vu votre commande."),
-    wa?el("div",{class:"actions"},el("a",{class:"btn",href:"https://wa.me/"+wa+"?text="+encodeURIComponent("Bonjour, à propos de ma commande « "+c.meuble+" » : "),target:"_blank",rel:"noopener"},"📲 Écrire à "+q.nom)):null);
+    el("div",{class:"actions"},
+      wa?el("a",{class:"btn",href:"https://wa.me/"+wa+"?text="+encodeURIComponent("Bonjour, à propos de ma commande « "+c.meuble+" » : "),target:"_blank",rel:"noopener"},"📲 Écrire à "+q.nom):null,
+      ["envoyee","vue","confirmee"].includes(c.statut)?boutonAnnuler(c):null));
+}
+// Annuler : deux touches pour éviter une erreur.
+function boutonAnnuler(c){
+  let armed=false;const b=el("button",{type:"button",class:"btn"},"✖️ Annuler la commande");
+  b.onclick=async()=>{if(!armed){armed=true;b.textContent="Touchez encore pour annuler";return}
+    try{await cloud.annulerCommande(c.id);toast("Commande annulée");renderCompte()}catch(e){toast(cloud.message(e),true)}};
+  return b;
 }
 
 /* ----- Prévenir le menuisier quand sa quincaillerie répond ----- */
@@ -932,7 +941,8 @@ const lireVu=()=>{try{return JSON.parse(localStorage.getItem("menuipro-cmd-vu")|
 const ecrireVu=v=>{try{localStorage.setItem("menuipro-cmd-vu",JSON.stringify(v))}catch(e){}};
 function majPastille(){const b=document.querySelector('.navbtn[aria-label="Compte"]');if(!b)return;b.querySelectorAll(".pastille").forEach(n=>n.remove());if(ALERTES)b.append(el("span",{class:"pastille","aria-label":ALERTES+" nouvelle(s) réponse(s)"},String(ALERTES)))}
 async function verifierCommandes(){
-  if(!cloud.actif||!ME||!ME.quinc||estQuinc()||estAdmin())return;
+  if(!cloud.actif||!ME||!ME.quinc||estAdmin())return;
+  if(estQuinc())return verifierCommandesRecues();
   let rows;try{rows=await cloud.mesCommandes(ME.user.id)}catch(e){return}
   // Les commandes nouvelles ou changées restent « non vues » jusqu'à l'ouverture de Compte ; les autres sont mémorisées.
   const vu=lireVu(),neuf=changements(rows,vu);
@@ -1005,6 +1015,101 @@ async function ouvrirPorte(horsLigne){
   (modePorte==="inscription"?nom:tel).focus({preventScroll:true});
 }
 
+/* ----- Mon compte : nom, code PIN, déconnexion (tous les rôles) ----- */
+function panneauMonCompte(p){
+  const role=estAdmin()?"Administrateur":estQuinc()?"Quincaillerie":"Menuisier";
+  const zone=el("div",{class:"mon-compte-form"}),st=el("p",{class:"status",role:"status"});
+  let armedOut=false;const out=el("button",{type:"button",class:"btn"},"🚪 Se déconnecter");
+  out.onclick=async()=>{if(!armedOut){armedOut=true;out.textContent="Touchez encore pour vous déconnecter";return}await cloud.deconnecter();ME=null;$("count-tag").textContent="MenuiPro";toast("Déconnecté");ouvrirPorte()};
+  const champ=(lbl,attrs)=>{const i=el("input",attrs);return [i,el("label",{class:"field"},el("span",{},lbl),i)]};
+  const formNom=()=>{const [i,f]=champ("👤 Nouveau nom",{type:"text",maxlength:"80",autocomplete:"name"});i.value=p.nom||"";
+    zone.replaceChildren(f,el("div",{class:"actions"},el("button",{type:"button",class:"btn primary",onclick:async()=>{
+      const n=i.value.trim();if(n.length<2){st.className="status err";st.textContent="Entrez au moins 2 lettres.";return}
+      st.className="status";st.textContent="⏳";try{await cloud.majProfil({nom:n},ME.user.id);ME.profil.nom=n;p.nom=n;$("count-tag").textContent=(estAdmin()?"🛡️ ":"👤 ")+n;st.className="status ok";st.textContent="✅ Nom changé";zone.replaceChildren();titre.textContent=(estAdmin()?"🛡️ ":"👤 ")+n}catch(e){st.className="status err";st.textContent=cloud.message(e)}}},"💾 Enregistrer"),el("button",{type:"button",class:"btn",onclick:()=>{zone.replaceChildren();st.textContent=""}},"Annuler")));i.focus()};
+  const formPin=()=>{
+    const [a,fa]=champ("🔑 Code PIN actuel",{type:"password",inputmode:"numeric",maxlength:"6",autocomplete:"current-password"});
+    const [b,fb]=champ("🔑 Nouveau code PIN (6 chiffres)",{type:"password",inputmode:"numeric",maxlength:"6",autocomplete:"new-password"});
+    const [c,fc]=champ("🔑 Répétez le nouveau code PIN",{type:"password",inputmode:"numeric",maxlength:"6",autocomplete:"new-password"});
+    zone.replaceChildren(fa,fb,fc,el("div",{class:"actions"},el("button",{type:"button",class:"btn primary",onclick:async()=>{
+      if(!/^\d{6}$/.test(b.value)){st.className="status err";st.textContent="Le nouveau code PIN a exactement 6 chiffres.";return}
+      if(b.value!==c.value){st.className="status err";st.textContent="Les deux nouveaux codes PIN ne sont pas les mêmes.";return}
+      if(b.value===a.value){st.className="status err";st.textContent="Choisissez un code différent de l'ancien.";return}
+      st.className="status";st.textContent="⏳";try{await cloud.changerPin(p.telephone,a.value,b.value);st.className="status ok";st.textContent="✅ Code PIN changé. Retenez-le bien.";zone.replaceChildren()}catch(e){st.className="status err";st.textContent=cloud.message(e)}}},"💾 Changer le code PIN"),el("button",{type:"button",class:"btn",onclick:()=>{zone.replaceChildren();st.textContent=""}},"Annuler")));a.focus()};
+  const titre=el("h2",{},(estAdmin()?"🛡️ ":"👤 ")+(p.nom||"Mon compte"));
+  return el("section",{class:"panel"},titre,el("p",{class:"note"},"📱 "+(p.telephone||"")+" · "+role),
+    el("div",{class:"actions"},el("button",{type:"button",class:"btn",onclick:formNom},"✏️ Changer mon nom"),el("button",{type:"button",class:"btn",onclick:formPin},"🔑 Changer mon code PIN"),out),zone,st);
+}
+
+/* ----- Abonnement de la quincaillerie : alerte avant et après la date de fin (7 jours de grâce) ----- */
+const GRACE=7;
+function etatAbonnement(q){
+  if(!q)return null;
+  if(q.actif===false)return {niveau:"bloque",suspendu:true};
+  if(!q.abonnement_jusqu)return null;
+  const fin=new Date(q.abonnement_jusqu+"T23:59:59"),j=Math.ceil((fin-new Date())/86400000);
+  if(j>7)return null;
+  if(j>=0)return {niveau:"bientot",jours:j,fin};
+  if(j>=-GRACE)return {niveau:"grace",jours:GRACE+j,fin};
+  return {niveau:"bloque",fin};
+}
+function bandeauAbonnement(q){
+  const e=etatAbonnement(q);if(!e)return null;
+  const d=e.fin?e.fin.toLocaleDateString("fr-FR"):"",pl=n=>n+" jour"+(n>1?"s":"");
+  if(estQuinc()){
+    const t=e.suspendu?"⛔ Votre compte est suspendu : vos menuisiers ne peuvent plus vous envoyer de commandes. Contactez MenuiPro."
+      :e.niveau==="bientot"?"⏰ Votre abonnement se termine le "+d+(e.jours?" (dans "+pl(e.jours)+")":" (aujourd'hui)")+". Pensez à le renouveler auprès de MenuiPro."
+      :e.niveau==="grace"?"⚠️ Abonnement terminé le "+d+". Les commandes seront bloquées dans "+pl(e.jours)+" : renouvelez auprès de MenuiPro."
+      :"⛔ Abonnement terminé le "+d+" : vos menuisiers ne peuvent plus vous commander. Renouvelez auprès de MenuiPro.";
+    return el("div",{class:"banner"+(e.niveau==="bloque"?" banner-fort":"")},t,SUPPORT_WA?el("a",{class:"btn",style:"display:inline-block;margin-top:8px",href:"https://wa.me/"+SUPPORT_WA+"?text="+encodeURIComponent("Bonjour, je souhaite renouveler l'abonnement MenuiPro de "+q.nom+"."),target:"_blank",rel:"noopener"},"📲 Contacter MenuiPro"):null);
+  }
+  return e.niveau==="bloque"?el("div",{class:"banner banner-fort"},"⚠️ "+q.nom+" ne reçoit pas de commandes en ce moment. Vous pouvez toujours lui écrire sur WhatsApp."):null;
+}
+
+/* ----- Quincaillerie : ses menuisiers ----- */
+function panneauMesMenuisiers(q){
+  const liste=el("div",{class:"lines"},el("p",{class:"note"},"⏳ Chargement…"));
+  const sec=el("section",{class:"panel"},el("h2",{},"🪚 Mes menuisiers"),liste);
+  cloud.mesMenuisiers(q.id).then(rows=>{
+    sec.querySelector("h2").textContent="🪚 Mes menuisiers ("+rows.length+")";
+    if(!rows.length){liste.replaceChildren(el("p",{class:"note"},"Aucun menuisier pour l'instant. Envoyez-leur votre lien d'invitation."));return}
+    liste.replaceChildren(...rows.map(m=>{
+      const wa=waDigits(m.telephone);let armed=false;
+      const ret=el("button",{type:"button",class:"btn mini"},"Retirer");
+      ret.onclick=async()=>{if(!armed){armed=true;ret.textContent="Touchez encore pour retirer";return}try{await cloud.retirerMenuisier(m.id);toast("✅ "+(m.nom||"Menuisier")+" n'est plus rattaché à votre quincaillerie");renderCompte()}catch(e){toast(cloud.message(e),true)}};
+      return el("div",{class:"line menuisier"},el("span",{class:"e","aria-hidden":"true"},"🪚"),
+        el("div",{},el("b",{},m.nom||"Menuisier"),el("span",{},"📱 "+(m.telephone||"").replace(/^221/,"")+" · depuis le "+new Date(m.created_at).toLocaleDateString("fr-FR"))),
+        el("div",{class:"acts"},wa?el("a",{class:"btn mini",href:"https://wa.me/"+wa,target:"_blank",rel:"noopener"},"📲"):null,ret));
+    }));
+  }).catch(e=>liste.replaceChildren(el("p",{class:"status err"},cloud.message(e))));
+  return sec;
+}
+
+/* ----- Quincaillerie : commandes reçues, filtrées ----- */
+const FILTRES_CMD=[["traiter","À traiter",c=>["envoyee","vue"].includes(c.statut)],["confirmee","Confirmées",c=>c.statut==="confirmee"],["prete","Prêtes",c=>c.statut==="prete"],["livree","Livrées",c=>c.statut==="livree"],["tout","Toutes",()=>true]];
+let filtreCmd="traiter";
+function afficherCommandesRecues(rows,list){
+  marquerRecuesVues(rows);
+  if(!rows.length){list.replaceChildren(el("p",{class:"note"},"Aucune commande pour l'instant. Elles arrivent ici quand un menuisier touche « Commander »."));return}
+  const seg=el("div",{class:"seg filtres-cmd"}),corps=el("div",{class:"cmds"});
+  const dessiner=()=>{
+    seg.replaceChildren(...FILTRES_CMD.map(([k,l,f])=>{const n=rows.filter(f).length;return el("button",{type:"button","aria-pressed":String(filtreCmd===k),onclick:()=>{filtreCmd=k;dessiner()}},l+" ("+n+")")}));
+    const f=FILTRES_CMD.find(x=>x[0]===filtreCmd)[2],vis=rows.filter(f);
+    corps.replaceChildren(...(vis.length?vis.map(carteCommandeRecue):[el("p",{class:"note"},"Rien dans cette liste.")]));
+  };
+  dessiner();list.replaceChildren(seg,corps);
+}
+// Alertes de la quincaillerie : nombre de commandes à ouvrir, message à chaque nouvelle commande.
+const lireVuQ=()=>{try{return JSON.parse(localStorage.getItem("menuipro-cmd-recues-vu")||"{}")||{}}catch(e){return {}}};
+const ecrireVuQ=v=>{try{localStorage.setItem("menuipro-cmd-recues-vu",JSON.stringify(v))}catch(e){}};
+function marquerRecuesVues(rows){const vu=lireVuQ();rows.forEach(c=>vu[c.id]=1);ecrireVuQ(vu);ALERTES=rows.filter(c=>c.statut==="envoyee").length;majPastille()}
+async function verifierCommandesRecues(){
+  let rows;try{rows=await cloud.commandesRecues(ME.quinc.id)}catch(e){return}
+  const vu=lireVuQ(),premiere=!Object.keys(vu).length,nouvelles=rows.filter(c=>c.statut==="envoyee"&&!vu[c.id]);
+  ALERTES=rows.filter(c=>c.statut==="envoyee").length;majPastille();
+  if(!premiere&&nouvelles.length){const c=nouvelles[0];toast("📥 Nouvelle commande"+(c.profils&&c.profils.nom?" de "+c.profils.nom:"")+" : "+c.meuble+(nouvelles.length>1?" (+"+(nouvelles.length-1)+")":""))}
+  rows.forEach(c=>vu[c.id]=1);ecrireVuQ(vu);
+}
+
 show(location.hash.slice(1)||"concevoir");
 renderCatalog();renderControls();
 has3D=init3D();
@@ -1054,7 +1159,7 @@ function appliquerCompte(){
   else pousserAtelier();
   $("count-tag").textContent=(estAdmin()?"🛡️ ":"👤 ")+(ME.profil&&ME.profil.nom||"Connecté");
   renderPanSel();if(lastCtx)compute();
-  traiterInvitation();verifierCommandes();
+  traiterInvitation();setTimeout(verifierCommandes,3800); // après les messages de connexion, pour que l'alerte reste visible
   synchroniserProjets();
 }
 async function synchroniserProjets(){
@@ -1102,22 +1207,19 @@ async function renderCompteBase(){
     return;
   }
   const p=ME.profil||{},q=ME.quinc,parts=[];
-  let armedOut=false;const out=el("button",{type:"button",class:"btn"},"🚪 Se déconnecter");
-  out.onclick=async()=>{if(!armedOut){armedOut=true;out.textContent="Touchez encore pour vous déconnecter";return}await cloud.deconnecter();ME=null;$("count-tag").textContent="MenuiPro";toast("Déconnecté");ouvrirPorte()};
-  parts.push(el("section",{class:"panel"},el("h2",{},(estAdmin()?"🛡️ ":"👤 ")+(p.nom||"Mon compte")),el("p",{class:"note"},"📱 "+(p.telephone||"")+" · "+(estAdmin()?"Administrateur":estQuinc()?"Quincaillerie":"Menuisier")),el("div",{class:"actions"},out)));
+  parts.push(panneauMonCompte(p));
   if(estAdmin()){box.replaceChildren(...parts,...await vueAdmin());return}
-  if(q&&q.actif===false)parts.push(el("div",{class:"banner"},estQuinc()?"⚠️ Votre abonnement est suspendu : vos menuisiers ne peuvent plus vous envoyer de commandes. Contactez MenuiPro.":"⚠️ "+q.nom+" est suspendue pour le moment : les commandes sont indisponibles."));
+  const ba=bandeauAbonnement(q);if(ba)parts.push(ba);
   if(estQuinc()&&q){
     const copy=el("button",{type:"button",class:"btn"},"📋 Copier le code");copy.onclick=async()=>{try{await navigator.clipboard.writeText(q.code);toast("Code copié")}catch(e){toast("Code : "+q.code)}};
-    parts.push(el("section",{class:"panel"},el("h2",{},"🏪 "+q.nom),q.abonnement_jusqu?el("p",{class:"note"},"Abonnement valable jusqu'au "+new Date(q.abonnement_jusqu).toLocaleDateString("fr-FR")):null,el("p",{},"Code à donner à vos menuisiers :"),el("div",{class:"bigprice",style:"letter-spacing:.15em"},q.code),el("div",{class:"actions"},copy,el("a",{class:"btn",href:"#catalogue"},"🏷️ Gérer mes prix")),el("p",{class:"note"},"Chaque menuisier qui entre ce code reçoit vos prix et peut vous envoyer ses commandes.")));
+    parts.push(el("section",{class:"panel"},el("h2",{},"🏪 "+q.nom),q.abonnement_jusqu?el("p",{class:"note"},(new Date(q.abonnement_jusqu+"T23:59:59")>=new Date()?"Abonnement valable jusqu'au ":"Abonnement terminé le ")+new Date(q.abonnement_jusqu).toLocaleDateString("fr-FR")):null,el("p",{},"Code à donner à vos menuisiers :"),el("div",{class:"bigprice",style:"letter-spacing:.15em"},q.code),el("div",{class:"actions"},copy,el("a",{class:"btn",href:"#catalogue"},"🏷️ Gérer mes prix")),el("p",{class:"note"},"Chaque menuisier qui entre ce code reçoit vos prix et peut vous envoyer ses commandes.")));
     parts.push(panneauInviter(q));
     const list=el("div",{class:"cmds"},el("p",{class:"note"},"⏳ Chargement des commandes…"));
-    parts.push(el("section",{class:"panel"},el("h2",{},"📥 Commandes reçues"),list));
+    const menus=panneauMesMenuisiers(q);
+    parts.push(el("section",{class:"panel"},el("h2",{},"📥 Commandes reçues"),list),menus);
     box.replaceChildren(...parts);
     try{
-      const rows=await cloud.commandesRecues(q.id);
-      if(!rows.length){list.replaceChildren(el("p",{class:"note"},"Aucune commande pour l'instant. Elles arrivent ici quand un menuisier touche « Commander »."));return}
-      list.replaceChildren(...rows.map(carteCommandeRecue));
+      afficherCommandesRecues(await cloud.commandesRecues(q.id),list);
     }catch(e){list.replaceChildren(el("p",{class:"status err"},cloud.message(e)))}
     return;
   }
@@ -1139,9 +1241,7 @@ async function renderCompteBase(){
   const st2=el("p",{class:"status",role:"status"});
   parts.push(el("section",{class:"panel form"},el("h2",{},"🏪 Rejoindre ma quincaillerie"),el("p",{class:"note"},"Demandez le code à 6 caractères à votre quincaillerie."),el("div",{class:"field"},el("label",{for:"cCode"},"Code"),code),
     el("div",{class:"actions"},el("button",{type:"button",class:"btn primary",onclick:async()=>{st1.textContent="⏳";try{const r=await cloud.rejoindre(code.value);ME=await cloud.chargerCompte();appliquerCompte();toast("✅ Vous avez rejoint "+r.nom);renderCompte()}catch(e){st1.className="status err";st1.textContent=cloud.message(e)}}},"Rejoindre")),st1));
-  parts.push(el("section",{class:"panel form"},el("h2",{},"Vous êtes une quincaillerie ?"),el("div",{class:"grid2"},el("div",{class:"field"},el("label",{for:"qNom"},"Nom"),qn),el("div",{class:"field"},el("label",{for:"qWa"},"WhatsApp"),qw),el("div",{class:"field"},el("label",{for:"qCom"},"Commune"),qc)),
-    el("div",{class:"actions"},el("button",{type:"button",class:"btn",onclick:async()=>{if((qn.value||"").trim().length<2){st2.className="status err";st2.textContent="Entrez le nom de la quincaillerie.";return}st2.textContent="⏳";try{await cloud.creerQuincaillerie(qn.value,qw.value,qc.value);ME=await cloud.chargerCompte();appliquerCompte();pousserCatalogue();toast("✅ Quincaillerie créée");renderCompte()}catch(e){st2.className="status err";st2.textContent=cloud.message(e)}}},"Créer ma quincaillerie")),st2,
-    el("p",{class:"note"},"Vous recevrez un code à donner à vos menuisiers. Vos prix actuels deviendront le catalogue partagé.")));
+  parts.push(el("p",{class:"note"},"🏪 Vous êtes une quincaillerie ? Contactez MenuiPro pour ouvrir votre compte."));
   box.replaceChildren(...parts);
 }
 /* ----- Administration ----- */
@@ -1160,15 +1260,31 @@ async function vueAdmin(){
     const st2=el("span",{class:"note"});
     const saveQ=async(actif)=>{st2.textContent="⏳";try{await cloud.adminAbonnement(q.id,actif,date.value,note.value);q.actif=actif;q.abonnement_jusqu=date.value||null;q.note_admin=note.value;st2.textContent="✅";drawQ(search.value.trim().toLowerCase())}catch(e){st2.textContent=cloud.message(e)}};
     const statut=el("button",{type:"button",class:"chip "+(q.actif?"livre":"commande"),title:q.actif?"Suspendre":"Réactiver",onclick:()=>saveQ(!q.actif)},q.actif?"✅ Active":"⛔ Suspendue");
-    return el("tr",{},el("td",{},el("b",{},q.nom),el("div",{class:"note"},[q.commune,q.whatsapp].filter(Boolean).join(" · "))),
+    const infos=el("td",{},el("b",{},q.nom),el("div",{class:"note"},[q.commune,q.whatsapp].filter(Boolean).join(" · ")),
+      el("button",{type:"button",class:"btn mini",onclick:()=>{
+        const n=el("input",{type:"text",maxlength:"80","aria-label":"Nom"}),w=el("input",{type:"tel","aria-label":"WhatsApp",placeholder:"WhatsApp"}),c=el("input",{type:"text","aria-label":"Commune",placeholder:"Commune"});
+        n.value=q.nom;w.value=q.whatsapp||"";c.value=q.commune||"";
+        infos.replaceChildren(n,w,c,el("button",{type:"button",class:"btn mini",onclick:async()=>{st2.textContent="⏳";try{await cloud.adminModifierQuincaillerie(q.id,n.value,w.value,c.value);q.nom=n.value.trim();q.whatsapp=w.value.trim()||null;q.commune=c.value.trim()||null;drawQ(search.value.trim().toLowerCase())}catch(e){st2.textContent=cloud.message(e)}}},"💾"));
+      }},"✏️ Modifier"));
+    const voirMenus=el("button",{type:"button",class:"btn mini",title:"Voir ses menuisiers",onclick:()=>{search.value=q.nom;search.dispatchEvent(new Event("input"));mBody.closest("section").scrollIntoView({behavior:"smooth"})}},String(q.menuisiers));
+    return el("tr",{},infos,
       el("td",{},q.proprietaire||"—",el("div",{class:"note"},q.tel_proprietaire||"")),el("td",{class:"n"},q.code),
-      el("td",{class:"n"},String(q.menuisiers)),el("td",{class:"n"},String(q.commandes)),el("td",{class:"n"},fmt(q.montant)+" F"),
-      el("td",{},date,expire(q.abonnement_jusqu)?el("div",{class:"note",style:"color:var(--warn);font-weight:700"},"expiré"):null),el("td",{},note),
+      el("td",{class:"n"},voirMenus),el("td",{class:"n"},String(q.commandes)),el("td",{class:"n"},fmt(q.montant)+" F"),
+      el("td",{},date,expire(q.abonnement_jusqu)?el("div",{class:"note",style:"color:var(--warn);font-weight:700"},q.recoit_commandes===false?"expiré · commandes bloquées":"expiré · 7 jours de grâce"):null),el("td",{},note),
       el("td",{},statut,el("button",{type:"button",class:"btn",style:"margin-left:6px",onclick:()=>saveQ(q.actif)},"💾"),st2));
   }));
-  const drawM=f=>mBody.replaceChildren(...v.menuisiers.filter(m=>!f||[m.nom,m.telephone,m.quincaillerie].join(" ").toLowerCase().includes(f)).map(m=>el("tr",{},
-    el("td",{},el("b",{},m.nom||"—")),el("td",{class:"n"},m.telephone||"—"),el("td",{},m.quincaillerie||el("span",{class:"note"},"aucune")),
-    el("td",{class:"n"},String(m.projets)),el("td",{class:"n"},String(m.commandes)),el("td",{class:"n"},dt(m.cree)),el("td",{class:"n"},dt(m.derniere_activite)))));
+  const drawM=f=>mBody.replaceChildren(...v.menuisiers.filter(m=>!f||[m.nom,m.telephone,m.quincaillerie].join(" ").toLowerCase().includes(f)).map(m=>{
+    const stm=el("span",{class:"note"});
+    const sel=el("select",{"aria-label":"Quincaillerie de "+(m.nom||"ce menuisier")},el("option",{value:""},"— aucune —"),...v.quincailleries.map(q=>el("option",{value:q.id},q.nom)));sel.value=m.quincaillerie_id||"";
+    sel.onchange=async()=>{stm.textContent="⏳";try{await cloud.adminRattacher(m.id,sel.value||null);m.quincaillerie_id=sel.value||null;m.quincaillerie=(v.quincailleries.find(q=>q.id===sel.value)||{}).nom||null;stm.textContent="✅"}catch(e){stm.textContent=cloud.message(e);sel.value=m.quincaillerie_id||""}};
+    const pinB=el("button",{type:"button",class:"btn mini",title:"Nouveau code PIN",onclick:()=>{$("arTel").value=(m.telephone||"").replace(/^221/,"");$("arTel").closest("section").scrollIntoView({behavior:"smooth",block:"center"})}},"🔑");
+    const blq=el("button",{type:"button",class:"btn mini",onclick:async()=>{stm.textContent="⏳";try{await cloud.adminBloquer(m.id,!m.bloque);m.bloque=!m.bloque;drawM(search.value.trim().toLowerCase())}catch(e){stm.textContent=e.message}}},m.bloque?"✅ Débloquer":"⛔ Bloquer");
+    let armed=false;const del=el("button",{type:"button",class:"btn mini"},"🗑️");
+    del.onclick=async()=>{if(!armed){armed=true;del.textContent="🗑️ Supprimer pour de bon ?";return}stm.textContent="⏳";try{await cloud.adminSupprimer(m.id);v.menuisiers=v.menuisiers.filter(x=>x!==m);drawM(search.value.trim().toLowerCase());toast("Compte supprimé")}catch(e){stm.textContent=e.message}};
+    return el("tr",{class:m.bloque?"ligne-bloquee":""},el("td",{},el("b",{},m.nom||"—"),m.bloque?el("div",{class:"note",style:"color:var(--warn);font-weight:700"},"⛔ bloqué : ne peut plus se connecter"):null),
+      el("td",{class:"n"},m.telephone||"—"),el("td",{},sel),el("td",{class:"n"},String(m.projets)),el("td",{class:"n"},String(m.commandes)),el("td",{class:"n"},dt(m.cree)),el("td",{class:"n"},dt(m.derniere_activite)),
+      el("td",{},el("div",{class:"acts-admin"},pinB,blq,del),stm));
+  }));
   search.addEventListener("input",()=>{const f=search.value.trim().toLowerCase();drawQ(f);drawM(f)});
   drawQ("");drawM("");
   const th=(...h)=>el("thead",{},el("tr",{},h.map(x=>el("th",{},x))));
@@ -1214,10 +1330,10 @@ async function vueAdmin(){
   return [
     el("section",{class:"panel"},el("h2",{},"🛡️ Vue d'ensemble"),kpis,el("div",{class:"actions"},el("button",{type:"button",class:"btn",onclick:()=>renderCompte()},"🔄 Actualiser")),search),
     creation,reinit,await sectionVoix(),
-    el("section",{class:"panel"},el("h2",{},"🏪 Quincailleries ("+v.quincailleries.length+")"),el("p",{class:"note"},"Réglez la date de fin d'abonnement puis 💾. Touchez le statut pour suspendre ou réactiver : une quincaillerie suspendue ne reçoit plus de commandes."),
+    el("section",{class:"panel"},el("h2",{},"🏪 Quincailleries ("+v.quincailleries.length+")"),el("p",{class:"note"},"Réglez la date de fin d'abonnement puis 💾. Après cette date, 7 jours de grâce, puis les commandes sont bloquées. Touchez le statut pour suspendre ou réactiver. Touchez le nombre de menuisiers pour les voir."),
       el("div",{class:"tablewrap"},el("table",{},th("Quincaillerie","Propriétaire","Code","Menuisiers","Commandes","Montant","Abonnement jusqu'au","Note","Statut"),qBody))),
     el("section",{class:"panel"},el("h2",{},"🪚 Menuisiers ("+v.menuisiers.length+")"),
-      el("div",{class:"tablewrap"},el("table",{},th("Nom","Téléphone","Quincaillerie","Projets","Commandes","Inscrit le","Dernière activité"),mBody)))
+      el("div",{class:"tablewrap"},el("table",{},th("Nom","Téléphone","Quincaillerie","Projets","Commandes","Inscrit le","Dernière activité","Actions"),mBody)))
   ];
 }
 /* ----- Assistant vocal : note vocale en wolof → meuble rempli ----- */
