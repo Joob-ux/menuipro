@@ -8,6 +8,7 @@ export { pack, SHEET } from "./decoupe.js";
 export { outils, vis } from "./outils.js";
 export { SECTIONS_DEF, debitMassif, dimsMassif, choisirSection } from "./massif.js";
 export { holeLocal, HOLE_KINDS, computeHoles } from "./percages.js";
+export { vueFace } from "./facade.js";
 
 export function buildRecipe(id, p, opts) {
   const r = RECIPES.find(x => x.id === id);

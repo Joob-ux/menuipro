@@ -47,6 +47,8 @@ export async function majProfil(champs, id) { return ok(await sb.from("profils")
 
 export async function creerQuincaillerie(nom, whatsapp, commune) { return ok(await sb.rpc("creer_quincaillerie", { p_nom: nom, p_whatsapp: whatsapp, p_commune: commune })); }
 export async function rejoindre(code) { return ok(await sb.rpc("rejoindre_quincaillerie", { p_code: code })); }
+// Nom et commune d'une quincaillerie à partir de son code (lien d'invitation, sans compte).
+export async function apercuInvitation(code) { return ok(await sb.rpc("apercu_invitation", { p_code: code })); }
 export async function quitter() { return ok(await sb.rpc("quitter_quincaillerie")); }
 export async function sauverQuincaillerie(id, champs) { return ok(await sb.from("quincailleries").update(champs).eq("id", id)); }
 
@@ -58,9 +60,11 @@ export async function sauverProjet(p) {
 }
 export async function supprimerProjet(cloudId) { return ok(await sb.from("projets").delete().eq("id", cloudId)); }
 
-export async function envoyerCommande(c) { return ok(await sb.from("commandes").insert(c).select("id").single()); }
-export async function mesCommandes(uid) { return ok(await sb.from("commandes").select("id,meuble,total,statut,created_at").eq("menuisier_id", uid).order("created_at", { ascending: false }).limit(30)); }
-export async function commandesRecues(qid) { return ok(await sb.from("commandes").select("id,meuble,lignes,total,statut,created_at,profils(nom,telephone)").eq("quincaillerie_id", qid).order("created_at", { ascending: false }).limit(50)); }
+export async function envoyerCommande(c) { return ok(await sb.from("commandes").insert(c).select("id,statut").single()); }
+export async function mesCommandes(uid) { return ok(await sb.from("commandes").select("id,meuble,lignes,total,statut,reponse,repondu_le,created_at").eq("menuisier_id", uid).order("created_at", { ascending: false }).limit(30)); }
+export async function commandesRecues(qid) { return ok(await sb.from("commandes").select("id,meuble,lignes,total,statut,reponse,repondu_le,created_at,profils(nom,telephone)").eq("quincaillerie_id", qid).order("created_at", { ascending: false }).limit(50)); }
+// Réponse de la quincaillerie : disponibilité et prix par ligne, retrait ou livraison, date, message.
+export async function repondreCommande(id, reponse, statut) { return ok(await sb.from("commandes").update({ reponse, statut }).eq("id", id)); }
 export async function changerStatut(id, statut) { return ok(await sb.from("commandes").update({ statut }).eq("id", id)); }
 
 /* ---------- Administration ---------- */

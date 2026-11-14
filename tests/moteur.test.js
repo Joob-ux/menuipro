@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { catalogueIA, validerAction } from "../src/assistant.js";
-import { RECIPES, BIENTOT, buildRecipe, pack, holeLocal, SHEET, debitMassif, SECTIONS_DEF } from "../src/engine/index.js";
+import { RECIPES, BIENTOT, buildRecipe, pack, holeLocal, SHEET, debitMassif, SECTIONS_DEF, vueFace } from "../src/engine/index.js";
 
 const variantes = r => {
   const base = {}; r.opts.forEach(x => (base[x.k] = x.def));
@@ -72,6 +72,41 @@ describe("Cas de référence menuisier", () => {
     const r = RECIPES.find(x => x.id === "lit-double");
     const ctx = build(r, {});
     ctx.parts.filter(p => p.name.startsWith("Côté de lit")).forEach(p => expect(p.edge).toBe(2000));
+  });
+});
+
+describe("Plan de façade coté", () => {
+  const vue = (id, o) => { const r = RECIPES.find(x => x.id === id), d = {}; r.opts.forEach(x => (d[x.k] = x.def)); return vueFace(build(r, { ...d, ...o })); };
+  it("armoire 100 × 200 : cotes totales, et socle + ouvertures + panneaux = hauteur", () => {
+    const v = vue("armoire-2", { etageres: 3, penderie: 0, tiroirs: 0 });
+    expect(v.cotes.largeur).toBe(1000); expect(v.cotes.hauteur).toBe(2000); expect(v.cotes.sol).toBe(0);
+    expect(v.cotes.colonnes.map(c => c.v)).toEqual([964]);
+    const n = v.cotes.niveaux;
+    expect(n[0].v).toBe(80);
+    // socle, puis une ouverture au-dessus de chaque panneau horizontal (dessous, étagères), le dessus ferme le haut
+    expect(n.reduce((s, x) => s + x.v, 0) + n.length * 18).toBeCloseTo(2000, -1);
+  });
+  it("les portes sont dessinées devant le caisson", () => {
+    const v = vue("armoire-2", {});
+    const i = v.rects.findIndex(r => r.nature === "porte"), j = v.rects.findIndex(r => r.nom.endsWith("Côté gauche"));
+    expect(i).toBeGreaterThan(j);
+  });
+  it("meuble TV suspendu : hauteur au-dessus du sol indiquée", () => expect(vue("tv-suspendu", {}).cotes.sol).toBe(350));
+  it("commode 4 tiroirs : 4 façades cotées, de même hauteur", () => {
+    const t = vue("commode", { tiroirs: 4, colonnes: 1 }).cotes.tiroirs;
+    expect(t.length).toBe(4); expect(new Set(t.map(x => x.v)).size).toBe(1);
+  });
+  it("dressing 3 colonnes : 3 ouvertures égales", () => {
+    const c = vue("dressing", { colonnes: 3 }).cotes.colonnes;
+    expect(c.length).toBe(3); expect(new Set(c.map(x => x.v)).size).toBe(1);
+  });
+  it("chaque meuble donne une vue de face cohérente", () => {
+    for (const r of RECIPES) {
+      const v = vue(r.id, {});
+      expect(v, r.nom).toBeTruthy();
+      expect(v.cotes.largeur, r.nom).toBeGreaterThan(0); expect(v.cotes.hauteur, r.nom).toBeGreaterThan(0);
+      for (const k of ["colonnes", "niveaux"]) for (const c of v.cotes[k]) { expect(c.v, r.nom).toBeGreaterThan(0); expect(c.b, r.nom).toBeGreaterThan(c.a); }
+    }
   });
 });
 

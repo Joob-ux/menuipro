@@ -1,12 +1,14 @@
 // MenuiPro — interface de l'application
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { RECIPES, BIENTOT, buildRecipe, pack, outils, SHEET, holeLocal, HOLE_KINDS, SECTIONS_DEF, debitMassif } from "./engine/index.js";
+import { RECIPES, BIENTOT, buildRecipe, pack, outils, SHEET, holeLocal, HOLE_KINDS, SECTIONS_DEF, debitMassif, vueFace } from "./engine/index.js";
 import { HCOL, sheetHoles, cncSVG, cncDXF, makeZip, ascii } from "./export/cnc.js";
 import * as cloud from "./cloud/cloud.js";
 import { PHRASES, parler, boutonVoix, chargerVoix, aUnAudio } from "./voix.js";
 import { catalogueIA, validerAction, DUREE_MAX_S } from "./assistant.js";
 import { MODES, modeNom, acompteDu, resume, validerPaiement, prochainNumero } from "./paiements.js";
+import { DISPO, MODES_RETRAIT, reponseInitiale, totalReponse, validerReponse, dateLisible, texteReponse, cleSuivi, changements } from "./commandes.js";
+import qrcode from "qrcode-generator";
 import "./styles.css";
 
 const COLORS=[["Blanc","#efefeb"],["Gris","#8b8f90"],["Noir","#2a2a2a"],["Chêne clair","#c9a36b"],["Wengé","#4a3326"]];
@@ -125,7 +127,7 @@ function compute(refit){
   const over=[...res.caisson.over,...res.dos.over],trop=res.massif.trop;
   $("kpis").replaceChildren(...k,...(over.length?[el("p",{class:"warn",style:"grid-column:1/-1"},"⚠️ Trop grand pour une feuille : "+over.map(o=>o.name+" ("+o.l+" × "+o.w+")").join(", ")+". Réduisez les cotes ou prévoyez un joint.")]:[]),
     ...(trop.length?[el("p",{class:"warn",style:"grid-column:1/-1"},"⚠️ Aucune section de bois ne convient : "+trop.map(o=>o.name+" ("+o.L+" × "+o.W+" × "+o.T+" mm)").join(", ")+". Ajoutez une section plus grosse ou plus longue dans le catalogue.")]:[]));
-  renderPlan();renderDebit(ctx);renderKit(ctx);renderDevis();
+  renderPlan();renderFacade(ctx);renderDebit(ctx);renderKit(ctx);renderDevis();
   update3D(ctx,refit);majBarPrix();
 }
 
@@ -380,6 +382,8 @@ async function partagerImage(cv,name,titre,texte,sEl,hote){
   hote.append(el("img",{class:"apercu-doc",alt:"Image : "+titre,src:cv.toDataURL("image/png"),style:"max-width:100%;border:1px solid var(--line);border-radius:12px"}));
   sEl.className="status err";sEl.textContent="Appuyez longuement sur l'image pour l'enregistrer.";
 }
+// Met deux images l'une sous l'autre (devis puis plan).
+function empiler(a,b){const cv=document.createElement("canvas");cv.width=Math.max(a.width,b.width);cv.height=a.height+b.height;const c=cv.getContext("2d");c.fillStyle="#fff";c.fillRect(0,0,cv.width,cv.height);c.drawImage(a,0,0);c.drawImage(b,0,a.height);return cv}
 $("dImg").onclick=async()=>{
   const d=devisCalc(),r=R(st.id),pr=projetCourant(),num=pr&&pr.fin&&pr.fin.devis,ac=acompteDu(d.prix,pctAcompte());
   const W=1080,H=1540,cv=document.createElement("canvas");cv.width=W;cv.height=H;const c=cv.getContext("2d");
@@ -398,7 +402,75 @@ $("dImg").onclick=async()=>{
   c.font=police(700,76);c.fillStyle=DOC.vert;c.fillText(fmt(d.prix)+" FCFA",90,y+160);
   if(ac){c.fillStyle=DOC.encre;c.font=police(400,32);c.fillText("Acompte à la commande : "+fmt(ac)+" FCFA ("+pctAcompte()+" %)",90,y+215)}
   c.fillStyle=DOC.gris;c.font=police(400,28);c.fillText("Devis valable "+(AT.valid||15)+" jours · calculé avec MenuiPro",60,H-50);
-  await partagerImage(cv,nomFichier("devis",st.dv.client||r.nom),"Devis",devisText(),$("dStatus"),$("devisPanel"));
+  const plan=$("facadeDevis").checked?await imageFacade():null;
+  await partagerImage(plan?empiler(cv,plan):cv,nomFichier("devis",st.dv.client||r.nom),"Devis",devisText(),$("dStatus"),$("devisPanel"));
+};
+
+/* ----- Plan de face coté ----- */
+// Couleurs écrites en clair (pas de variables CSS) : le même SVG sert à l'image partagée.
+const FAC={encre:"#2b211a",bois:"#8a5226",boisClair:"#f3e4d1",cote:"#1d6b52",gris:"#6c5f55"};
+const STYLE_FACE={caisson:["#ffffff",FAC.encre],porte:[FAC.boisClair,FAC.bois],tiroir:[FAC.boisClair,FAC.bois],verre:["#d6e8f0","#5b8aa0"],miroir:["#a9bcc6","#5b7480"],plan:["#6c5f55",FAC.encre],metal:["#9a9a9a","#555"],massif:["#ecd6b0",FAC.bois]};
+let lastFace=null;
+// Construit le SVG du plan de face (texte), en millimètres, y vers le haut converti pour le SVG.
+function svgFacade(v){
+  const {x0,y0,x1,y1}=v.boite,c=v.cotes,L=x1-x0,H=y1-y0,big=Math.max(L,H+c.sol);
+  const fs=Math.max(36,big/20),sw=Math.max(3,big/400),m=fs*4.2;
+  const bas=c.sol>0?0:y0,top=y1;              // le sol est dessiné si le meuble est suspendu
+  const X=x=>x-x0+m,Y=y=>top-y+m;              // repère SVG
+  const W=L+2*m+(c.tiroirs.length&&c.niveaux.length>1?fs*1.6:0),Hs=top-bas+2*m+fs*1.2; // place pour une 2e chaîne à droite
+  const out=[];
+  const txt=(x,y,t,o={})=>out.push(`<text x="${x}" y="${y}" font-size="${o.fs||fs}" font-family="Atkinson Hyperlegible, Arial, sans-serif" font-weight="${o.gras?700:400}" fill="${o.col||FAC.cote}" text-anchor="middle"${o.rot?` transform="rotate(-90 ${x} ${y})"`:""}>${t}</text>`);
+  const ligne=(xa,ya,xb,yb,col,w)=>out.push(`<line x1="${xa}" y1="${ya}" x2="${xb}" y2="${yb}" stroke="${col}" stroke-width="${w}"/>`);
+  // Pièces, du fond vers l'avant
+  v.rects.forEach(r=>{if(r.nature==="dos")return;const [f,s]=STYLE_FACE[r.nature]||STYLE_FACE.caisson;
+    // Portes et tiroirs en transparence : on voit les étagères cotées derrière.
+    const transp=r.nature==="porte"||r.nature==="tiroir"||r.nature==="verre";
+    out.push(`<rect x="${X(r.x)}" y="${Y(r.y+r.h)}" width="${r.w}" height="${r.h}" fill="${f}"${transp?' fill-opacity="0.55"':""} stroke="${s}" stroke-width="${transp?sw*1.4:sw}"/>`)});
+  // Sol
+  if(c.sol>0){ligne(X(x0)-m*0.6,Y(0),X(x1)+m*0.6,Y(0),FAC.gris,sw*1.5);txt(X(x0)-m*0.35,Y(0)-fs*0.3,"sol",{col:FAC.gris,fs:fs*0.8})}
+  // Ligne de cote horizontale (avec traits d'attache) et verticale
+  const coteH=(a,b,y,t,fort)=>{const ya=Y(y);ligne(X(a),ya,X(b),ya,FAC.cote,sw);[a,b].forEach(x=>ligne(X(x),ya-fs*0.35,X(x),ya+fs*0.35,FAC.cote,sw));if(X(b)-X(a)>fs*1.6)txt((X(a)+X(b))/2,ya-fs*0.3,t,{gras:fort})};
+  const coteV=(a,b,x,t,fort)=>{const xa=X(x);ligne(xa,Y(a),xa,Y(b),FAC.cote,sw);[a,b].forEach(y=>ligne(xa-fs*0.35,Y(y),xa+fs*0.35,Y(y),FAC.cote,sw));if(Y(a)-Y(b)>fs*1.6)txt(xa-fs*0.3,(Y(a)+Y(b))/2,t,{gras:fort,rot:true})};
+  const bord=fs*1.5;
+  // Largeur totale en bas, ouvertures entre panneaux en haut
+  coteH(x0,x1,bas-bord,cm(c.largeur),true);
+  if(c.colonnes.length&&!(c.colonnes.length===1&&Math.abs(c.colonnes[0].v-c.largeur)<2))c.colonnes.forEach(o=>coteH(o.a,o.b,y1+bord,cm(o.v)));
+  // Hauteur totale à gauche (et hauteur au-dessus du sol), niveaux à droite
+  coteV(y0,y1,x0-bord,cm(c.hauteur),true);
+  if(c.sol>0)coteV(0,y0,x0-bord,cm(c.sol));
+  if(c.niveaux.length>1)c.niveaux.forEach(o=>coteV(o.a,o.b,x1+bord*1.2,cm(o.v)));
+  // Façades de tiroirs : deuxième chaîne, plus à droite (ou à la place des niveaux s'il n'y en a pas)
+  if(c.tiroirs.length)c.tiroirs.forEach(o=>coteV(o.a,o.b,x1+bord*(c.niveaux.length>1?2.6:1.2),cm(o.v)));
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${Hs}" role="img" aria-label="Plan de face coté, cotes en centimètres">${out.join("")}</svg>`;
+}
+function renderFacade(ctx){
+  const v=vueFace(ctx);lastFace=v;
+  if(!v){$("facade").replaceChildren();$("facadeInfo").textContent="";return}
+  $("facade").innerHTML=svgFacade(v);
+  const c=v.cotes;
+  $("facadeInfo").textContent="Cotes en cm · largeur "+cm(c.largeur)+" × hauteur "+cm(c.hauteur)+" × profondeur "+cm(c.profondeur)+" (façades comprises)"+(c.sol?" · posé à "+cm(c.sol)+" cm du sol":"")+". En haut : largeur des ouvertures ; à droite : hauteur des niveaux.";
+}
+// Image du plan : en-tête de l'atelier, nom du meuble, plan, profondeur.
+async function imageFacade(W=1080){
+  if(!lastFace)return null;
+  const img=new Image(),svg=svgFacade(lastFace);
+  img.src="data:image/svg+xml;charset=utf-8,"+encodeURIComponent(svg);
+  await new Promise(res=>{img.onload=res;img.onerror=res});
+  if(!img.width&&!img.naturalWidth)return null;
+  const vb=svg.match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/),ratio=vb?(+vb[2])/(+vb[1]):1;
+  const iw=W-120,ih=Math.min(1100,iw*ratio),sc=Math.min(iw,ih/ratio);
+  const H=170+120+sc*ratio+140,cv=document.createElement("canvas");cv.width=W;cv.height=H;const c=cv.getContext("2d");
+  enteteDoc(c,W,"Plan",null);
+  c.fillStyle=DOC.encre;c.font=police(700,40);c.fillText(R(st.id).nom,60,240);
+  c.drawImage(img,60+(iw-sc)/2,280,sc,sc*ratio);
+  const k=lastFace.cotes;c.fillStyle=DOC.gris;c.font=police(400,28);
+  c.fillText("Cotes en cm · profondeur "+cm(k.profondeur)+" cm (façades comprises)"+(k.sol?" · à "+cm(k.sol)+" cm du sol":""),60,H-60);
+  return cv;
+}
+$("facadeImg").onclick=async()=>{
+  const cv=await imageFacade();const sEl=$("facadeStatus");
+  if(!cv){sEl.className="status err";sEl.textContent="Le plan n'a pas pu être préparé.";return}
+  await partagerImage(cv,nomFichier("plan",R(st.id).nom),"Plan","Plan de face : "+R(st.id).nom+" — "+dimsText(),sEl,$("facadePanel"));
 };
 
 /* ----- Projets ----- */
@@ -599,6 +671,7 @@ function show(v){
   if(!VIEWS.find(x=>x[0]===v))v="concevoir";
   VIEWS.forEach(([k])=>$("v-"+k).hidden=k!==v);
   $("appnav").replaceChildren(...VIEWS.map(([k,ic,l,c])=>el("button",{type:"button",class:"navbtn","aria-current":k===v?"page":"false","aria-label":l,onclick:()=>go(k)},el("span",{class:"ic","aria-hidden":"true"},ic),el("span",{class:"long"},l),el("span",{class:"court","aria-hidden":"true"},c))));
+  majPastille();
   if(v==="projets")renderProjects();
   if(v==="catalogue")renderCatalogue();
   if(v==="atelier")renderAtelier();
@@ -706,6 +779,169 @@ function setupTap(){
   });
 }
 
+/* ----- Invitation d'une quincaillerie (lien ?invite=CODE) ----- */
+const lienInvitation=code=>location.origin+"/?invite="+encodeURIComponent(code);
+let INVITE=null;try{INVITE=localStorage.getItem("menuipro-invitation")}catch(e){}
+// Le lien ouvre l'appli sur « Compte » ; le code est gardé jusqu'à la connexion.
+(function lireInvitation(){
+  try{const u=new URL(location.href),c=(u.searchParams.get("invite")||"").trim().toUpperCase();
+    if(!/^[0-9A-Z]{6}$/.test(c))return;
+    INVITE=c;try{localStorage.setItem("menuipro-invitation",c)}catch(e){}
+    u.searchParams.delete("invite");history.replaceState(null,"",u.pathname+u.search+"#compte");
+  }catch(e){}
+})();
+function oublierInvitation(){INVITE=null;try{localStorage.removeItem("menuipro-invitation")}catch(e){}}
+// Après la connexion : rattachement automatique (ou question si déjà rattaché ailleurs).
+let invitationEnCours=false;
+async function traiterInvitation(){
+  if(!INVITE||!ME||invitationEnCours)return;
+  if(estQuinc()||estAdmin()){oublierInvitation();toast("Ce lien d'invitation est fait pour les menuisiers.",true);return}
+  if(ME.quinc&&ME.quinc.code===INVITE){oublierInvitation();return}
+  if(ME.quinc)return; // déjà rattaché à une autre : on demande dans l'écran Compte
+  invitationEnCours=true;
+  try{const r=await cloud.rejoindre(INVITE);oublierInvitation();ME=await cloud.chargerCompte();appliquerCompte();toast("✅ Vous êtes rattaché à "+r.nom+" : ses prix sont dans vos listes d'achat");if(!$("v-compte").hidden)renderCompte()}
+  catch(e){oublierInvitation();toast(cloud.message(e),true)}
+  finally{invitationEnCours=false}
+}
+// Bandeau en haut de l'écran Compte quand une invitation attend.
+async function bandeauInvitation(){
+  if(!INVITE||!cloud.actif)return null;
+  let a=null;try{a=await cloud.apercuInvitation(INVITE)}catch(e){}
+  if(!a){oublierInvitation();return el("div",{class:"banner"},"Ce lien d'invitation n'est plus valable. Demandez un nouveau lien à votre quincaillerie.")}
+  const nom=a.nom+(a.commune?" ("+a.commune+")":"");
+  if(!ME)return el("section",{class:"panel invitation"},el("div",{class:"inv-ic","aria-hidden":"true"},"🏪"),el("div",{},el("b",{},nom+" vous invite"),el("p",{class:"note"},"Connectez-vous ou créez votre compte ci-dessous : vous serez rattaché automatiquement et vous verrez ses prix.")));
+  if(ME.quinc&&ME.quinc.code!==INVITE&&!estQuinc())return el("section",{class:"panel invitation"},el("div",{class:"inv-ic","aria-hidden":"true"},"🏪"),
+    el("div",{},el("b",{},nom+" vous invite"),el("p",{class:"note"},"Vous êtes rattaché à "+ME.quinc.nom+". Changer de quincaillerie ?"),
+      el("div",{class:"actions"},el("button",{type:"button",class:"btn primary",onclick:async()=>{try{const r=await cloud.rejoindre(INVITE);oublierInvitation();ME=await cloud.chargerCompte();appliquerCompte();toast("✅ Vous êtes rattaché à "+r.nom);renderCompte()}catch(e){toast(cloud.message(e),true)}}},"Oui, changer"),
+        el("button",{type:"button",class:"btn",onclick:()=>{oublierInvitation();renderCompte()}},"Non, garder "+ME.quinc.nom))));
+  return null;
+}
+// QR code du lien (bibliothèque qrcode-generator, licence MIT).
+function qrSvg(texte){const q=qrcode(0,"M");q.addData(texte);q.make();return q.createSvgTag({cellSize:6,margin:2,scalable:true})}
+function panneauInviter(q){
+  const lien=lienInvitation(q.code),msg="Bonjour, c'est "+q.nom+(q.commune?" ("+q.commune+")":"")+". Pour voir mes prix et me commander vos matériaux depuis MenuiPro, ouvrez ce lien : "+lien;
+  const qr=el("div",{class:"qr",role:"img","aria-label":"QR code du lien d'invitation"});qr.innerHTML=qrSvg(lien);
+  const st=el("p",{class:"status",role:"status"});
+  return el("section",{class:"panel"},el("h2",{},"📲 Inviter mes menuisiers"),
+    el("p",{class:"note"},"Envoyez ce lien sur WhatsApp, ou faites scanner le QR code au comptoir. Le menuisier est rattaché tout seul : plus de code à recopier."),
+    qr,
+    el("div",{class:"actions"},
+      el("a",{class:"btn primary",href:"https://wa.me/?text="+encodeURIComponent(msg),target:"_blank",rel:"noopener"},"📲 Envoyer sur WhatsApp"),
+      el("button",{type:"button",class:"btn",onclick:async()=>{try{await navigator.clipboard.writeText(lien);st.className="status ok";st.textContent="✅ Lien copié"}catch(e){st.className="status";st.textContent=lien}}},"🔗 Copier le lien")),
+    st);
+}
+
+/* ----- Commandes : réponse de la quincaillerie ----- */
+const STAT_FLUX=["prete","livree"];
+function ligneArticles(c){
+  const rep=c.reponse;
+  return el("ul",{class:"cmd-lignes"},...(c.lignes||[]).map((l,i)=>{const r=rep&&rep.lignes&&rep.lignes.find(x=>x.i===i);
+    return el("li",{class:r&&r.dispo==="non"?"barre-txt":""},el("span",{"aria-hidden":"true"},r?DISPO[r.dispo][0]+" ":"• "),el("b",{},l.article),
+      " · "+l.detail,r&&r.remplacement?el("span",{class:"rempl"}," → "+r.remplacement):"",
+      r?(r.dispo==="non"?el("span",{class:"pr-ligne"},"pas dispo"):el("span",{class:"pr-ligne"},fmt(r.prix)+" F")):(l.total!=null?el("span",{class:"pr-ligne estime"},"~"+fmt(l.total)+" F"):""))}));
+}
+function resumeReponse(c){
+  const r=c.reponse;if(!r)return null;
+  const m=MODES_RETRAIT[r.mode]||MODES_RETRAIT.retrait,ecart=c.total&&r.total!==c.total;
+  return el("div",{class:"cmd-rep"},
+    el("div",{class:"cmd-total"},el("span",{},"Total confirmé"),el("b",{},fmt(r.total)+" F")),
+    ecart?el("div",{class:"note"},"Estimé au départ : "+fmt(c.total)+" F"):null,
+    el("div",{},m[0]+" "+m[1]+(r.date?" · "+dateLisible(r.date):"")),
+    r.message?el("div",{class:"cmd-msg"},"💬 "+r.message):null);
+}
+// Carte d'une commande reçue (écran de la quincaillerie)
+function carteCommandeRecue(c){
+  const carte=el("div",{class:"cmd"});
+  const dessiner=()=>{
+    const s=STAT_CMD[c.statut]||STAT_CMD.envoyee,tel=c.profils&&c.profils.telephone;
+    const who=c.profils?(c.profils.nom||"Menuisier")+(tel?" · "+tel:""):"Menuisier";
+    const statuts=el("div",{class:"seg"},...STAT_FLUX.map(k=>el("button",{type:"button","aria-pressed":String(c.statut===k),onclick:async()=>{try{await cloud.changerStatut(c.id,k);c.statut=k;dessiner()}catch(e){toast(cloud.message(e),true)}}},STAT_CMD[k][0]+" "+STAT_CMD[k][1])));
+    carte.replaceChildren(
+      el("div",{class:"cmd-top"},el("span",{class:"e","aria-hidden":"true"},s[0]),el("div",{},el("b",{},c.meuble),el("div",{class:"note"},who+" · "+new Date(c.created_at).toLocaleString("fr-FR",{dateStyle:"short",timeStyle:"short"}))),el("span",{class:"chip "+c.statut},s[1])),
+      ligneArticles(c),
+      resumeReponse(c)||el("div",{class:"note"},c.total?"Estimé par le menuisier : "+fmt(c.total)+" F":""),
+      el("div",{class:"actions"},
+        el("button",{type:"button",class:c.reponse?"btn":"btn primary",onclick:()=>formReponse(c,carte,dessiner)},c.reponse?"✏️ Modifier la réponse":"✍️ Répondre"),
+        tel&&c.reponse?el("a",{class:"btn",href:"https://wa.me/"+waDigits(tel)+"?text="+encodeURIComponent(texteReponse(c,c.reponse,ME.quinc&&ME.quinc.nom)),target:"_blank",rel:"noopener"},"📲 Prévenir sur WhatsApp"):null),
+      c.reponse?statuts:null);
+  };
+  dessiner();return carte;
+}
+// Formulaire de réponse : chaque article disponible / remplacé / pas dispo, prix réel, retrait ou livraison, date.
+function formReponse(c,carte,redessiner){
+  if(c.statut==="envoyee"){cloud.changerStatut(c.id,"vue").then(()=>{c.statut="vue"}).catch(()=>{})}
+  const rep=reponseInitiale(c.lignes||[],c.reponse);
+  const err=el("p",{class:"status err",role:"alert"}),total=el("b",{});
+  const majTotal=()=>{total.textContent=fmt(totalReponse(rep))+" F"};
+  const lignes=(c.lignes||[]).map((l,i)=>{
+    const r=rep.lignes[i];
+    const prix=el("input",{type:"number",min:"0",step:"500",inputmode:"numeric","aria-label":"Prix : "+l.article});prix.value=r.prix??"";
+    prix.addEventListener("input",()=>{r.prix=prix.value;err.textContent="";majTotal()});
+    const rempl=el("input",{type:"text",maxlength:"80",placeholder:"Remplacé par…","aria-label":"Remplacé par"});rempl.value=r.remplacement||"";
+    rempl.addEventListener("input",()=>{r.remplacement=rempl.value;err.textContent=""});
+    const seg=el("div",{class:"seg dispo"});
+    const maj=()=>{seg.replaceChildren(...Object.entries(DISPO).map(([k,[ic,lb]])=>el("button",{type:"button","aria-pressed":String(r.dispo===k),title:lb,onclick:()=>{r.dispo=k;err.textContent="";maj();majTotal()}},el("span",{class:"ic","aria-hidden":"true"},ic),el("span",{},lb))));
+      rempl.hidden=r.dispo!=="remplace";prix.disabled=r.dispo==="non"};
+    maj();
+    return el("div",{class:"rep-ligne"},el("div",{},el("b",{},l.article),el("span",{class:"note"}," · "+l.detail)),seg,el("div",{class:"rep-prix"},rempl,el("label",{class:"prix-f"},prix," F")));
+  });
+  const modes=el("div",{class:"seg"});
+  const majModes=()=>modes.replaceChildren(...Object.entries(MODES_RETRAIT).map(([k,[ic,lb]])=>el("button",{type:"button","aria-pressed":String(rep.mode===k),onclick:()=>{rep.mode=k;majModes()}},ic+" "+lb)));majModes();
+  const jour=d=>{const x=new Date();x.setDate(x.getDate()+d);return x.toISOString().slice(0,10)};
+  const date=el("input",{type:"date","aria-label":"Date"});date.value=rep.date;
+  const dates=el("div",{class:"seg"});
+  const majDates=()=>dates.replaceChildren(...[["Aujourd'hui",0],["Demain",1],["Après-demain",2]].map(([lb,d])=>el("button",{type:"button","aria-pressed":String(rep.date===jour(d)),onclick:()=>{rep.date=jour(d);date.value=rep.date;majDates()}},lb)),date);
+  date.addEventListener("change",()=>{rep.date=date.value;majDates()});majDates();
+  const msg=el("textarea",{maxlength:"300",rows:"2",placeholder:"Message (facultatif) : ex. le blanc est fini, j'ai le chêne."});msg.value=rep.message;msg.addEventListener("input",()=>{rep.message=msg.value});
+  majTotal();
+  const envoyer=el("button",{type:"button",class:"btn primary"},"📤 Envoyer la réponse");
+  envoyer.onclick=async()=>{
+    const v=validerReponse(rep,(c.lignes||[]).length);if(!v.ok){err.textContent=v.erreur;return}
+    envoyer.disabled=true;envoyer.textContent="⏳ Envoi…";
+    try{await cloud.repondreCommande(c.id,v.reponse,["prete","livree"].includes(c.statut)?c.statut:"confirmee");
+      c.reponse=v.reponse;if(!["prete","livree"].includes(c.statut))c.statut="confirmee";redessiner();
+      toast("✅ Réponse envoyée. Touchez « Prévenir sur WhatsApp » pour lui écrire.")}
+    catch(e){err.textContent=cloud.message(e);envoyer.disabled=false;envoyer.textContent="📤 Envoyer la réponse"}
+  };
+  carte.querySelectorAll(".rep-form").forEach(n=>n.remove());
+  carte.append(el("div",{class:"rep-form"},el("div",{class:"label"},"Pour chaque article"),...lignes,
+    el("div",{class:"label"},"Le menuisier vient chercher ou vous livrez ?"),modes,
+    el("div",{class:"label"},"Prêt pour quand ?"),dates,msg,
+    el("div",{class:"cmd-total"},el("span",{},"Total confirmé"),total),err,
+    el("div",{class:"actions"},envoyer,el("button",{type:"button",class:"btn",onclick:()=>carte.querySelector(".rep-form").remove()},"Annuler"))));
+}
+// Carte d'une commande envoyée (écran du menuisier)
+function carteCommandeMenuisier(c){
+  const s=STAT_CMD[c.statut]||STAT_CMD.envoyee,q=ME&&ME.quinc,wa=q&&waDigits(q.whatsapp);
+  return el("div",{class:"cmd"+(c.reponse?" repondue":"")},
+    el("div",{class:"cmd-top"},el("span",{class:"e","aria-hidden":"true"},s[0]),el("div",{},el("b",{},c.meuble),el("div",{class:"note"},new Date(c.created_at).toLocaleDateString("fr-FR")+(c.total?" · estimé "+fmt(c.total)+" F":""))),el("span",{class:"chip "+c.statut},s[1])),
+    c.reponse?ligneArticles(c):null,
+    resumeReponse(c)||el("div",{class:"note"},c.statut==="envoyee"?"⏳ En attente de la réponse de "+(q?q.nom:"la quincaillerie")+".":"👀 "+(q?q.nom:"La quincaillerie")+" a vu votre commande."),
+    wa?el("div",{class:"actions"},el("a",{class:"btn",href:"https://wa.me/"+wa+"?text="+encodeURIComponent("Bonjour, à propos de ma commande « "+c.meuble+" » : "),target:"_blank",rel:"noopener"},"📲 Écrire à "+q.nom)):null);
+}
+
+/* ----- Prévenir le menuisier quand sa quincaillerie répond ----- */
+let ALERTES=0;const DEJA_ANNONCE=new Set();
+const lireVu=()=>{try{return JSON.parse(localStorage.getItem("menuipro-cmd-vu")||"{}")||{}}catch(e){return {}}};
+const ecrireVu=v=>{try{localStorage.setItem("menuipro-cmd-vu",JSON.stringify(v))}catch(e){}};
+function majPastille(){const b=document.querySelector('.navbtn[aria-label="Compte"]');if(!b)return;b.querySelectorAll(".pastille").forEach(n=>n.remove());if(ALERTES)b.append(el("span",{class:"pastille","aria-label":ALERTES+" nouvelle(s) réponse(s)"},String(ALERTES)))}
+async function verifierCommandes(){
+  if(!cloud.actif||!ME||!ME.quinc||estQuinc()||estAdmin())return;
+  let rows;try{rows=await cloud.mesCommandes(ME.user.id)}catch(e){return}
+  // Les commandes nouvelles ou changées restent « non vues » jusqu'à l'ouverture de Compte ; les autres sont mémorisées.
+  const vu=lireVu(),neuf=changements(rows,vu);
+  rows.forEach(c=>{if(!vu[c.id]&&!neuf.includes(c))vu[c.id]=cleSuivi(c)});
+  ecrireVu(vu);
+  ALERTES=neuf.length;majPastille();
+  const aAnnoncer=neuf.filter(c=>!DEJA_ANNONCE.has(c.id+cleSuivi(c)));aAnnoncer.forEach(c=>DEJA_ANNONCE.add(c.id+cleSuivi(c)));
+  if(aAnnoncer.length){const c=aAnnoncer[0],r=c.reponse,m=r&&MODES_RETRAIT[r.mode],neuf=aAnnoncer;
+    toast("📦 "+ME.quinc.nom+" : "+(c.statut==="prete"?"votre commande est prête":c.statut==="livree"?"commande livrée":r?"réponse reçue · "+fmt(r.total)+" F"+(m?" · "+m[1].toLowerCase()+(r.date?" "+dateLisible(r.date):""):""):STAT_CMD[c.statut][1].toLowerCase())+(neuf.length>1?" (+"+(neuf.length-1)+")":""))}
+}
+// Les réponses affichées dans « Compte » sont marquées comme vues.
+function marquerVues(rows){const vu=lireVu();rows.forEach(c=>vu[c.id]=cleSuivi(c));ecrireVu(vu);ALERTES=0;majPastille()}
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")verifierCommandes()});
+setInterval(()=>{if(document.visibilityState==="visible")verifierCommandes()},120000);
+
 show(location.hash.slice(1)||"concevoir");
 renderCatalog();renderControls();
 has3D=init3D();
@@ -738,7 +974,7 @@ function enregistrerCommande(){
   const txt=orderText();if(txt===derniereCommande)return;derniereCommande=txt;
   const pr=PROJ.find(x=>x.id===st.projId);
   cloud.envoyerCommande({quincaillerie_id:ME.quinc.id,projet_id:pr&&pr.cloudId||null,meuble:(R(st.id).nom+" "+dimsText()).slice(0,200),lignes:lastBuy.lines.map(l=>({article:l.label,detail:l.detail,total:l.total})),total:lastBuy.total?Math.round(lastBuy.total):null})
-    .then(()=>toast("📦 Commande enregistrée chez "+ME.quinc.nom)).catch(e=>{derniereCommande="";toast(cloud.message(e),true)});
+    .then(r=>{if(r&&r.id){const v=lireVu();v[r.id]=cleSuivi(r);ecrireVu(v)}toast("📦 Commande envoyée à "+ME.quinc.nom+" : sa réponse arrivera dans « Compte »")}).catch(e=>{derniereCommande="";toast(cloud.message(e),true)});
 }
 function appliquerCompte(){
   if(!ME)return;
@@ -755,6 +991,7 @@ function appliquerCompte(){
   else pousserAtelier();
   $("count-tag").textContent=(estAdmin()?"🛡️ ":"👤 ")+(ME.profil&&ME.profil.nom||"Connecté");
   renderPanSel();if(lastCtx)compute();
+  traiterInvitation();verifierCommandes();
   synchroniserProjets();
 }
 async function synchroniserProjets(){
@@ -773,8 +1010,14 @@ async function synchroniserProjets(){
     if(!$("v-projets").hidden)renderProjects();
   }catch(e){toast("Projets en ligne : "+cloud.message(e),true)}
 }
-const STAT_CMD={envoyee:["📨","Envoyée"],vue:["👀","Vue"],prete:["✅","Prête"],livree:["🚚","Livrée"],annulee:["✖️","Annulée"]};
+const STAT_CMD={envoyee:["📨","Envoyée"],vue:["👀","Vue"],confirmee:["📋","Confirmée"],prete:["✅","Prête"],livree:["🚚","Livrée"],annulee:["✖️","Annulée"]};
 async function renderCompte(){
+  await renderCompteBase();
+  const b=await bandeauInvitation(),box=$("compteBox");
+  box.querySelectorAll(".bandeau-inv").forEach(n=>n.remove()); // l'écran peut être dessiné deux fois de suite
+  if(b&&!$("v-compte").hidden){b.classList.add("bandeau-inv");box.prepend(b)}
+}
+async function renderCompteBase(){
   majMicro();
   const box=$("compteBox");
   if(!cloud.actif){box.replaceChildren(el("section",{class:"panel"},el("h2",{},"Connexion en ligne"),el("p",{},"La connexion en ligne n'est pas encore activée sur cette version. L'application fonctionne entièrement sur ce téléphone.")));return}
@@ -804,19 +1047,14 @@ async function renderCompte(){
   if(estQuinc()&&q){
     const copy=el("button",{type:"button",class:"btn"},"📋 Copier le code");copy.onclick=async()=>{try{await navigator.clipboard.writeText(q.code);toast("Code copié")}catch(e){toast("Code : "+q.code)}};
     parts.push(el("section",{class:"panel"},el("h2",{},"🏪 "+q.nom),q.abonnement_jusqu?el("p",{class:"note"},"Abonnement valable jusqu'au "+new Date(q.abonnement_jusqu).toLocaleDateString("fr-FR")):null,el("p",{},"Code à donner à vos menuisiers :"),el("div",{class:"bigprice",style:"letter-spacing:.15em"},q.code),el("div",{class:"actions"},copy,el("a",{class:"btn",href:"#catalogue"},"🏷️ Gérer mes prix")),el("p",{class:"note"},"Chaque menuisier qui entre ce code reçoit vos prix et peut vous envoyer ses commandes.")));
-    const list=el("div",{class:"lines"},el("p",{class:"note"},"⏳ Chargement des commandes…"));
+    parts.push(panneauInviter(q));
+    const list=el("div",{class:"cmds"},el("p",{class:"note"},"⏳ Chargement des commandes…"));
     parts.push(el("section",{class:"panel"},el("h2",{},"📥 Commandes reçues"),list));
     box.replaceChildren(...parts);
     try{
       const rows=await cloud.commandesRecues(q.id);
       if(!rows.length){list.replaceChildren(el("p",{class:"note"},"Aucune commande pour l'instant. Elles arrivent ici quand un menuisier touche « Commander »."));return}
-      list.replaceChildren(...rows.map(c=>{
-        const seg=el("div",{class:"seg"},["vue","prete","livree"].map(k=>el("button",{type:"button","aria-pressed":String(c.statut===k),onclick:async()=>{try{await cloud.changerStatut(c.id,k);c.statut=k;renderCompte()}catch(e){toast(cloud.message(e),true)}}},STAT_CMD[k][0]+" "+STAT_CMD[k][1])));
-        const who=c.profils?((c.profils.nom||"Menuisier")+" · "+(c.profils.telephone||"")):"Menuisier";
-        return el("div",{class:"line",style:"grid-template-columns:32px minmax(0,1fr)"},el("span",{class:"e"},STAT_CMD[c.statut][0]),
-          el("div",{},el("b",{},c.meuble),el("span",{},who+" · "+new Date(c.created_at).toLocaleString("fr-FR",{dateStyle:"short",timeStyle:"short"})+(c.total?" · "+fmt(c.total)+" F":"")),
-            el("details",{},el("summary",{},(c.lignes||[]).length+" articles"),el("ul",{},(c.lignes||[]).map(l=>el("li",{},l.article+" : "+l.detail)))),seg));
-      }));
+      list.replaceChildren(...rows.map(carteCommandeRecue));
     }catch(e){list.replaceChildren(el("p",{class:"status err"},cloud.message(e)))}
     return;
   }
@@ -824,11 +1062,11 @@ async function renderCompte(){
     let armedQ=false;const leave=el("button",{type:"button",class:"btn"},"Quitter cette quincaillerie");
     leave.onclick=async()=>{if(!armedQ){armedQ=true;leave.textContent="Touchez encore pour quitter";return}try{await cloud.quitter();ME=await cloud.chargerCompte();toast("Vous avez quitté la quincaillerie");renderCompte()}catch(e){toast(cloud.message(e),true)}};
     parts.push(el("section",{class:"panel"},el("h2",{},"🏪 Ma quincaillerie"),el("p",{},el("b",{},q.nom),q.commune?" · "+q.commune:""),el("p",{class:"note"},"Vos listes d'achat utilisent ses prix. Vos commandes lui arrivent directement."),el("div",{class:"actions"},leave)));
-    const list=el("div",{class:"lines"},el("p",{class:"note"},"⏳ Chargement…"));
+    const list=el("div",{class:"cmds"},el("p",{class:"note"},"⏳ Chargement…"));
     parts.push(el("section",{class:"panel"},el("h2",{},"📦 Mes commandes"),list));
     box.replaceChildren(...parts);
     try{const rows=await cloud.mesCommandes(ME.user.id);
-      list.replaceChildren(...(rows.length?rows.map(c=>el("div",{class:"line"},el("span",{class:"e"},STAT_CMD[c.statut][0]),el("div",{},el("b",{},c.meuble),el("span",{},new Date(c.created_at).toLocaleDateString("fr-FR"))),el("span",{class:"pr"},STAT_CMD[c.statut][1]))):[el("p",{class:"note"},"Aucune commande. Touchez « Commander » dans la liste d'achat d'un meuble.")]))}
+      list.replaceChildren(...(rows.length?rows.map(carteCommandeMenuisier):[el("p",{class:"note"},"Aucune commande. Touchez « Commander » dans la liste d'achat d'un meuble.")]));marquerVues(rows)}
     catch(e){list.replaceChildren(el("p",{class:"status err"},cloud.message(e)))}
     return;
   }

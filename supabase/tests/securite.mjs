@@ -3,7 +3,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { readFileSync } from "node:fs";
 
 const db = new PGlite();
-const migration = ["20261112000000_init.sql", "20261112000100_durcissement.sql", "20261112000200_performance.sql", "20261112000300_administration.sql", "20261112000400_comptes_par_admin.sql"].map(f => readFileSync(new URL("../migrations/" + f, import.meta.url), "utf8")).join("\n");
+const migration = ["20261112000000_init.sql", "20261112000100_durcissement.sql", "20261112000200_performance.sql", "20261112000300_administration.sql", "20261112000400_comptes_par_admin.sql", "20261114000000_quincaillerie_fluide.sql"].map(f => readFileSync(new URL("../migrations/" + f, import.meta.url), "utf8")).join("\n");
 let ok = 0, ko = 0;
 const check = (cond, label) => { if (cond) { ok++; console.log("  ✅ " + label); } else { ko++; console.log("  ❌ " + label); } };
 const expectError = async (fn, label, msg) => { try { await fn(); check(false, label + " (aurait dû être refusé)"); } catch (e) { check(!msg || String(e.message).includes(msg), label + " → refusé : " + e.message.split("\n")[0]); } };
@@ -118,6 +118,28 @@ await db.query(`insert into auth.users (id, raw_user_meta_data) values ('7777777
 const r2 = (await asService(`select public.svc_configurer_compte('77777777-7777-7777-7777-777777777777', 'menuisier', null, null, null, $1) as r`, [r1.code])).rows[0].r;
 check(r2.quincaillerie === "Quinc Rufisque", "le serveur crée un menuisier déjà rattaché à sa quincaillerie");
 check((await as("77777777-7777-7777-7777-777777777777", `select nom from public.quincailleries`)).rows[0]?.nom === "Quinc Rufisque", "ce menuisier voit tout de suite les prix de sa quincaillerie");
+
+console.log("\nLien d'invitation");
+const ap = (await as(null, `select public.apercu_invitation($1) as a`, [q.code.toLowerCase()])).rows[0].a;
+check(ap && ap.nom === "Quincaillerie Test" && ap.commune === "Pikine", "sans compte, le lien montre le nom et la commune de la quincaillerie");
+check(ap && ap.whatsapp === undefined && ap.catalogue === undefined && ap.id === undefined, "l'aperçu ne révèle ni WhatsApp, ni catalogue, ni identifiant");
+check((await as(null, `select public.apercu_invitation('ZZZZZZ') as a`)).rows[0].a === null, "un code inconnu ne montre rien");
+check((await as(null, `select public.apercu_invitation('') as a`)).rows[0].a === null, "un code vide ne montre rien");
+
+console.log("\nRéponse aux commandes");
+const c2 = (await as(U.ali, `insert into public.commandes (quincaillerie_id, meuble, lignes, total) values ($1, 'Commode', '[{"article":"Mélaminé 18 mm blanc","detail":"2 feuilles","total":44000}]', 44000) returning id`, [q.id])).rows[0];
+const rep = { lignes: [{ i: 0, dispo: "remplace", prix: 46000, remplacement: "Mélaminé 18 mm chêne" }], total: 46000, mode: "retrait", date: "2026-11-15", message: "Le blanc est fini, j'ai le chêne." };
+const rq = (await as(U.quinc, `update public.commandes set reponse = $1, statut = 'confirmee' where id = $2 returning statut, repondu_le`, [rep, c2.id])).rows[0];
+check(rq && rq.statut === "confirmee" && rq.repondu_le, "la quincaillerie répond (dispo, prix réel, retrait, date) et la base date la réponse");
+const lu = (await as(U.ali, `select reponse, statut from public.commandes where id = $1`, [c2.id])).rows[0];
+check(lu && lu.statut === "confirmee" && lu.reponse.total === 46000 && lu.reponse.lignes[0].remplacement === "Mélaminé 18 mm chêne", "Ali voit la réponse et le prix confirmé");
+check((await as(U.ali, `update public.commandes set reponse = '{"total":1}' where id = $1 returning id`, [c2.id])).rows.length === 0, "Ali ne peut pas écrire la réponse à la place de la quincaillerie");
+check((await as(U.autreQ, `update public.commandes set reponse = '{"total":1}' where id = $1 returning id`, [c2.id])).rows.length === 0, "une autre quincaillerie ne peut pas répondre");
+check((await as(U.bob, `select * from public.commandes where id = $1`, [c2.id])).rows.length === 0, "Bob ne voit pas cette commande ni sa réponse");
+await expectError(() => as(U.quinc, `update public.commandes set total = 1 where id = $1`, [c2.id]), "en répondant, la quincaillerie ne peut pas changer le montant de la commande", "modification_interdite");
+await expectError(() => as(U.quinc, `update public.commandes set reponse = '"texte"' where id = $1`, [c2.id]), "une réponse qui n'est pas un objet est refusée", "commandes_reponse_forme");
+await expectError(() => as(U.quinc, `update public.commandes set reponse = $1 where id = $2`, [{ message: "x".repeat(30000) }, c2.id]), "une réponse trop grosse est refusée", "commandes_reponse_forme");
+await expectError(() => as(U.quinc, `update public.commandes set statut = 'perdue' where id = $1`, [c2.id]), "un statut inconnu est refusé", "commandes_statut_check");
 
 console.log(`\nRésultat : ${ok} réussis, ${ko} échoués`);
 process.exit(ko ? 1 : 0);
