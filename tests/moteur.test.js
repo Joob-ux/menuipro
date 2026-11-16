@@ -194,7 +194,7 @@ describe("Assistant vocal : contrôle des actions de l'IA", () => {
   it("le catalogue envoyé à l'IA contient tous les meubles et reste léger", () => {
     const c = catalogueIA(RECIPES);
     expect(c.length).toBe(RECIPES.length);
-    expect(JSON.stringify(c).length).toBeLessThan(20000);
+    expect(JSON.stringify(c).length).toBeLessThan(28000); // la fonction serveur refuse au-delà de 30 000
   });
   it("une demande valide est appliquée, les valeurs hors limites sont bornées", () => {
     const r = RECIPES.find(x => x.id === "armoire-2");

@@ -1,6 +1,8 @@
 // MenuiPro — interface de l'application
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
+import { MODELES_KILIFEU, FAMILLES_KILIFEU, KILIFEU } from "./kilifeu.js";
 import { RECIPES, BIENTOT, buildRecipe, pack, outils, SHEET, holeLocal, HOLE_KINDS, SECTIONS_DEF, debitMassif, vueFace } from "./engine/index.js";
 import { HCOL, sheetHoles, cncSVG, cncDXF, makeZip, ascii } from "./export/cnc.js";
 import * as cloud from "./cloud/cloud.js";
@@ -18,6 +20,9 @@ const $=id=>document.getElementById(id);
 const el=(t,a={},...c)=>{const n=document.createElement(t);for(const k in a){if(k==="class")n.className=a[k];else if(k.startsWith("on"))n.addEventListener(k.slice(2),a[k]);else n.setAttribute(k,a[k])}c.flat().forEach(x=>x!=null&&n.append(x.nodeType?x:document.createTextNode(x)));return n};
 const fmt=n=>Math.round(n).toLocaleString("fr-FR");
 const R=id=>RECIPES.find(r=>r.id===id);
+// Nom affiché : celui du modèle partenaire (ex. « Lawson Bleu ») s'il a été choisi pour ce meuble.
+const modeleActif=()=>st.modele&&st.modele.recette===st.id?st.modele:null;
+const nomMeuble=r=>{const m=modeleActif();return m&&(!r||r.id===st.id)?m.nom:(r||R(st.id)).nom};
 
 let st={id:"armoire-2",per:{},color:0,kerf:4,ep:18,panneau:"mela18",rot:true,room:null,etape:"choisir",dv:{client:"",tel:"",jours:null,pose:0},projId:null};
 try{const s=JSON.parse(localStorage.getItem("menuipro-v2")||"null");if(s&&R(s.id))st={...st,...s}}catch(e){}
@@ -28,21 +33,42 @@ function cfg(){const r=R(st.id);if(!st.per[r.id]){const o={};r.opts.forEach(x=>o
 let query="";
 // Familles de meubles : gros boutons d'abord, puis les meubles de la famille choisie.
 const FAMILLES=[["Chambre","🛏️"],["Salon","🛋️"],["Cuisine","🍳"],["Bureau","🖥️"],["Boutique","🛍️"],["Déco murale","🎨"],["Portes et autres","🚪"]];
-function choisirMeuble(id){st.id=id;openState=false;sel=0;save();renderCatalog();renderControls();compute(true);setEtape("regler")}
+function choisirMeuble(id,garderModele){st.id=id;if(!garderModele)st.modele=null;openState=false;sel=0;save();renderCatalog();renderControls();compute(true);setEtape("regler")}
+// Modèle partenaire : ouvre le meuble de base avec les cotes, le style et la couleur du modèle.
+function choisirModele(m){
+  const r=R(m.recette),o={};r.opts.forEach(x=>o[x.k]=x.def);Object.assign(o,m.o);
+  st.per[r.id]={L:m.dims[0],H:m.dims[1],P:m.dims[2],o};
+  if(m.couleur!=null)st.color=m.couleur;
+  st.modele={id:m.id,nom:m.nom,photo:m.photo,page:m.page,recette:r.id};
+  choisirMeuble(r.id,true);
+}
+function tuileModele(m){const actif=modeleActif();return el("button",{type:"button",class:"meuble kmodele","aria-pressed":String(!!actif&&actif.id===m.id),onclick:()=>choisirModele(m)},
+  el("img",{src:KILIFEU.photo(m.photo,240),alt:"",loading:"lazy"}),el("span",{class:"knom"},m.nom))}
 function tuileMeuble(r){return el("button",{type:"button",class:"meuble","aria-pressed":String(r.id===st.id),onclick:()=>choisirMeuble(r.id)},el("span",{class:"e","aria-hidden":"true"},r.e),r.nom)}
 function renderCatalog(){
   // st.room : null = familles, "*" = tous les meubles, sinon le nom de la famille.
   const q=query.trim().toLowerCase(),fam=st.room==="*"||(ROOMS.includes(st.room)&&st.room!=="Tous")?st.room:null;
+  // Espace partenaire ETS KILIFEU : sous-familles puis modèles en photo.
+  if(st.room==="KILIFEU"&&!q){
+    const kf=FAMILLES_KILIFEU.some(f=>f[0]===st.kfam)?st.kfam:FAMILLES_KILIFEU[0][0];
+    $("familles").hidden=true;$("famHead").hidden=false;
+    $("famHead").replaceChildren(retourFamilles(),el("b",{},"🏷️ "+KILIFEU.nom));
+    $("meubles").replaceChildren(el("div",{class:"kfams",role:"group","aria-label":"Familles KILIFEU"},...FAMILLES_KILIFEU.map(([f,e])=>el("button",{type:"button",class:"chip","aria-pressed":String(f===kf),onclick:()=>{st.kfam=f;save();renderCatalog()}},e+" "+f+" ("+MODELES_KILIFEU.filter(m=>m.famille===f).length+")"))),
+      ...MODELES_KILIFEU.filter(m=>m.famille===kf).map(tuileModele));
+    $("count-tag").textContent=RECIPES.length+" meubles";return;
+  }
   const liste=q?RECIPES.filter(r=>r.nom.toLowerCase().includes(q)):fam==="*"?RECIPES:fam?RECIPES.filter(r=>r.cat===fam):[];
+  const modelesTrouves=q?MODELES_KILIFEU.filter(m=>m.nom.toLowerCase().includes(q)):[];
   // Sans recherche ni famille : on montre les familles.
   const voirFamilles=!q&&!fam;
   $("familles").hidden=!voirFamilles;
-  $("familles").replaceChildren(...FAMILLES.map(([nom,e])=>{const n=RECIPES.filter(r=>r.cat===nom).length;return el("button",{type:"button",class:"famille",onclick:()=>{st.room=nom;save();renderCatalog()}},el("span",{class:"e","aria-hidden":"true"},e),el("b",{},nom),el("span",{class:"nb"},n+" meubles"))}),
+  $("familles").replaceChildren(el("button",{type:"button",class:"famille partenaire",onclick:()=>{st.room="KILIFEU";query="";save();renderCatalog()}},
+      el("img",{src:KILIFEU.photo("products/salon_v1_351",300),alt:"",loading:"lazy"}),el("b",{},KILIFEU.nom),el("span",{class:"nb"},MODELES_KILIFEU.length+" modèles en 3D")),...FAMILLES.map(([nom,e])=>{const n=RECIPES.filter(r=>r.cat===nom).length;return el("button",{type:"button",class:"famille",onclick:()=>{st.room=nom;save();renderCatalog()}},el("span",{class:"e","aria-hidden":"true"},e),el("b",{},nom),el("span",{class:"nb"},n+" meubles"))}),
     el("button",{type:"button",class:"famille tous",onclick:()=>{st.room="*";save();renderCatalog()}},el("span",{class:"e","aria-hidden":"true"},"📋"),el("b",{},"Tous les meubles"),el("span",{class:"nb"},RECIPES.length)));
   $("famHead").hidden=voirFamilles;
   $("famHead").replaceChildren(...(voirFamilles?[]:[retourFamilles(),el("b",{},q?"Résultats":fam==="*"?"Tous les meubles":fam)]));
-  $("meubles").replaceChildren(...liste.map(tuileMeuble));
-  if(q&&!liste.length)$("meubles").append(el("p",{class:"note"},"Aucun meuble ne correspond. Essayez un autre mot."));
+  $("meubles").replaceChildren(...liste.map(tuileMeuble),...modelesTrouves.map(tuileModele));
+  if(q&&!liste.length&&!modelesTrouves.length)$("meubles").append(el("p",{class:"note"},"Aucun meuble ne correspond. Essayez un autre mot."));
   $("count-tag").textContent=RECIPES.length+" meubles";
 }
 function retourFamilles(){return el("button",{type:"button",class:"btn",onclick:()=>{st.room=null;query="";$("search").value="";save();renderCatalog()}},"← Familles")}
@@ -67,7 +93,7 @@ function majBarPrix(){
   const d=devisCalc(),prix=d.prix&&!lastBuy.missing?fmt(d.prix)+" F":lastBuy.total?fmt(lastBuy.total)+" F":"prix ?";
   b.hidden=false;
   b.replaceChildren(el("div",{class:"wrap"},
-    el("button",{type:"button",class:"bp-meuble",onclick:()=>setEtape("choisir"),"aria-label":"Changer de meuble"},el("span",{"aria-hidden":"true"},r.e),el("b",{},r.nom)),
+    el("button",{type:"button",class:"bp-meuble",onclick:()=>setEtape("choisir"),"aria-label":"Changer de meuble"},el("span",{"aria-hidden":"true"},r.e),el("b",{},nomMeuble(r))),
     el("span",{class:"bp-val"},el("b",{},n18||nb),n18?" feuille"+(n18>1?"s":""):" barre"+(nb>1?"s":"")),
     el("span",{class:"bp-val bp-prix"},el("b",{},prix),d.prix&&!lastBuy.missing?" client":lastBuy.total?" matériel":"")));
 }
@@ -75,7 +101,10 @@ function majBarPrix(){
 /* ----- Configurateur ----- */
 function renderControls(){
   const r=R(st.id),c=cfg();
-  $("current").replaceChildren(el("span",{class:"e","aria-hidden":"true"},r.e),el("div",{},el("b",{},r.nom),el("div",{class:"note"},r.cat)));
+  const mod=modeleActif();
+  $("current").replaceChildren(...(mod?[el("img",{class:"kphoto",src:KILIFEU.photo(mod.photo,200),alt:"",loading:"lazy"}),
+      el("div",{},el("b",{},mod.nom),el("div",{class:"note"},KILIFEU.nom+" · "+r.nom),el("a",{href:KILIFEU.site+mod.page,target:"_blank",rel:"noopener",class:"note"},"Voir sur le site ↗"))]
+    :[el("span",{class:"e","aria-hidden":"true"},r.e),el("div",{},el("b",{},r.nom),el("div",{class:"note"},r.cat))]));
   const labels=r.dimLabels||["Largeur","Hauteur","Profondeur"];
   $("dims").replaceChildren(...["L","H","P"].map((k,i)=>{const inp=el("input",{id:"d"+k,type:"number",inputmode:"numeric",min:String((r.dimMin||[10,10,10])[i]),max:"2000"});inp.value=c[k];inp.addEventListener("input",e=>{c[k]=parseFloat(e.target.value)||0;compute()});return el("div",{class:"num"},el("label",{for:"d"+k},labels[i]),inp,el("small",{},["↔","↕","⤢"][i]))}));
   $("optsLabel").hidden=!r.opts.length;
@@ -207,7 +236,7 @@ function debitCSV(){
   lastCtx.parts.filter(p=>p.mat).forEach(p=>rows.push([p.name.replace(/ \(×2\)/,""),p.qty,p.cut[0],p.cut[1],ascii(matiere(p)),p.edge?(p.edge*p.qty/1000).toFixed(2):"0",(p.holes||[]).length]));
   return "﻿"+rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(";")).join("\r\n");
 }
-function slug(){return ascii(R(st.id).nom).toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")}
+function slug(){return ascii(nomMeuble()).toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")}
 async function offer(filename,data,fallbackText){
   const sEl=$("expStatus");$("expFallback").hidden=true;
   if(saveFile(filename,data)){sEl.className="status ok";sEl.textContent="✅ Fichier téléchargé : "+filename;return}
@@ -318,7 +347,7 @@ function optsText(r=R(st.id),c=cfg()){return r.opts.map(x=>x.choice?(x.options.f
 function orderText(){
   const bl=lastBuy,r=R(st.id);
   const lines=bl.lines.map(l=>"- "+l.label+" : "+l.detail.replace(/ \(.*\)$/,""));
-  return ["Bonjour"+(CAT.boutique.nom?" "+CAT.boutique.nom:"")+",","Commande pour "+r.nom.toLowerCase()+" ("+dimsText()+") :",...lines,bl.total?"Total estimé : "+fmt(bl.total)+" FCFA"+(bl.missing?" (hors articles sans prix)":""):"",(AT.nom||AT.tel)?"— "+[AT.nom,AT.tel].filter(Boolean).join(" · "):"","(calculé avec MenuiPro)"].filter(Boolean).join("\n");
+  return ["Bonjour"+(CAT.boutique.nom?" "+CAT.boutique.nom:"")+",","Commande pour "+nomMeuble(r)+" ("+dimsText()+") :",...lines,bl.total?"Total estimé : "+fmt(bl.total)+" FCFA"+(bl.missing?" (hors articles sans prix)":""):"",(AT.nom||AT.tel)?"— "+[AT.nom,AT.tel].filter(Boolean).join(" · "):"","(calculé avec MenuiPro)"].filter(Boolean).join("\n");
 }
 async function copyText(text,statusEl,ta){
   try{await navigator.clipboard.writeText(text);statusEl.className="status ok";statusEl.textContent="✅ Copié. Collez-le dans WhatsApp.";ta.hidden=true}
@@ -357,7 +386,7 @@ function pctAcompte(){return st.dv.acompte??AT.acompte??50}
 function projetCourant(){return PROJ.find(x=>x.id===st.projId)}
 function devisText(){
   const d=devisCalc(),r=R(st.id),pr=projetCourant(),num=pr&&pr.fin&&pr.fin.devis,ac=acompteDu(d.prix,pctAcompte());
-  return ["DEVIS"+(num?" N° "+num:"")+(AT.nom?" — "+AT.nom:""),AT.tel?"Tél. "+AT.tel:"","Date : "+new Date().toLocaleDateString("fr-FR"),st.dv.client?"Client : "+st.dv.client:"","",r.nom+" — "+dimsText(),optsText(),"Couleur : "+COLORS[st.color][0]+" · "+panLabel(),"","Prix : "+fmt(d.prix)+" FCFA",ac?"Acompte à la commande : "+fmt(ac)+" FCFA ("+pctAcompte()+" %)":"","Devis valable "+(AT.valid||15)+" jours."].filter((x,i,a)=>x!==""||a[i-1]!=="").join("\n");
+  return ["DEVIS"+(num?" N° "+num:"")+(AT.nom?" — "+AT.nom:""),AT.tel?"Tél. "+AT.tel:"","Date : "+new Date().toLocaleDateString("fr-FR"),st.dv.client?"Client : "+st.dv.client:"","",nomMeuble(r)+" — "+dimsText(),optsText(),"Couleur : "+COLORS[st.color][0]+" · "+panLabel(),"","Prix : "+fmt(d.prix)+" FCFA",ac?"Acompte à la commande : "+fmt(ac)+" FCFA ("+pctAcompte()+" %)":"","Devis valable "+(AT.valid||15)+" jours."].filter((x,i,a)=>x!==""||a[i-1]!=="").join("\n");
 }
 $("dCopy").onclick=()=>copyText(devisText(),$("dStatus"),$("dText"));
 function wrapText(c,t,maxW){const w=t.split(" "),out=[];let line="";w.forEach(x=>{const tt=line?line+" "+x:x;if(c.measureText(tt).width>maxW&&line){out.push(line);line=x}else line=tt});if(line)out.push(line);return out}
@@ -396,7 +425,7 @@ $("dImg").onclick=async()=>{
     const cvs=renderer.domElement;if(!cvs.width||!cvs.height){renderer.setSize(900,900,false);camera.aspect=1;camera.updateProjectionMatrix();fitCamera()}
     renderer.render(scene,camera);const img=new Image();img.src=renderer.domElement.toDataURL("image/png");await new Promise(res=>{img.onload=res;img.onerror=res});
     if(img.width){const sc=Math.min((W-120)/img.width,640/img.height),iw=img.width*sc,ih=img.height*sc;c.drawImage(img,60+(W-120-iw)/2,280+(640-ih)/2,iw,ih)}}
-  c.fillStyle=DOC.encre;c.font=police(700,48);c.fillText(r.nom,60,1000);
+  c.fillStyle=DOC.encre;c.font=police(700,48);c.fillText(nomMeuble(r),60,1000);
   c.font=police(400,34);c.fillStyle=DOC.gris;let y=1050;
   [dimsText(),optsText(),"Couleur : "+COLORS[st.color][0]+" · "+panLabel()].filter(Boolean).forEach(t=>wrapText(c,t,W-120).forEach(l=>{c.fillText(l,60,y);y+=46}));
   c.fillStyle=DOC.vertClair;c.fillRect(60,y+20,W-120,ac?230:170);
@@ -405,7 +434,7 @@ $("dImg").onclick=async()=>{
   if(ac){c.fillStyle=DOC.encre;c.font=police(400,32);c.fillText("Acompte à la commande : "+fmt(ac)+" FCFA ("+pctAcompte()+" %)",90,y+215)}
   c.fillStyle=DOC.gris;c.font=police(400,28);c.fillText("Devis valable "+(AT.valid||15)+" jours · calculé avec MenuiPro",60,H-50);
   const plan=$("facadeDevis").checked?await imageFacade():null;
-  await partagerImage(plan?empiler(cv,plan):cv,nomFichier("devis",st.dv.client||r.nom),"Devis",devisText(),$("dStatus"),$("devisPanel"));
+  await partagerImage(plan?empiler(cv,plan):cv,nomFichier("devis",st.dv.client||nomMeuble(r)),"Devis",devisText(),$("dStatus"),$("devisPanel"));
 };
 
 /* ----- Plan de face coté ----- */
@@ -463,7 +492,7 @@ async function imageFacade(W=1080){
   const iw=W-120,ih=Math.min(1100,iw*ratio),sc=Math.min(iw,ih/ratio);
   const H=170+120+sc*ratio+140,cv=document.createElement("canvas");cv.width=W;cv.height=H;const c=cv.getContext("2d");
   enteteDoc(c,W,"Plan",null);
-  c.fillStyle=DOC.encre;c.font=police(700,40);c.fillText(R(st.id).nom,60,240);
+  c.fillStyle=DOC.encre;c.font=police(700,40);c.fillText(nomMeuble(),60,240);
   c.drawImage(img,60+(iw-sc)/2,280,sc,sc*ratio);
   const k=lastFace.cotes;c.fillStyle=DOC.gris;c.font=police(400,28);
   c.fillText("Cotes en cm · profondeur "+cm(k.profondeur)+" cm (façades comprises)"+(k.sol?" · à "+cm(k.sol)+" cm du sol":""),60,H-60);
@@ -472,7 +501,7 @@ async function imageFacade(W=1080){
 $("facadeImg").onclick=async()=>{
   const cv=await imageFacade();const sEl=$("facadeStatus");
   if(!cv){sEl.className="status err";sEl.textContent="Le plan n'a pas pu être préparé.";return}
-  await partagerImage(cv,nomFichier("plan",R(st.id).nom),"Plan","Plan de face : "+R(st.id).nom+" — "+dimsText(),sEl,$("facadePanel"));
+  await partagerImage(cv,nomFichier("plan",nomMeuble()),"Plan","Plan de face : "+nomMeuble()+" — "+dimsText(),sEl,$("facadePanel"));
 };
 
 /* ----- Projets ----- */
@@ -485,7 +514,7 @@ const finDe=pr=>(pr.fin||(pr.fin={paiements:[]}),pr.fin.paiements||(pr.fin.paiem
 function synchroProjet(pr){if(ME)pousserProjet(pr).catch(e=>toast("En ligne : "+cloud.message(e),true))}
 $("dSave").onclick=()=>{
   const d=devisCalc(),r=R(st.id);
-  const data={recipe:st.id,cfg:JSON.parse(JSON.stringify(cfg())),color:st.color,panneau:st.panneau,dv:{...st.dv},prix:d.prix,materiel:lastBuy.total,nom:st.dv.client||r.nom,date:new Date().toISOString()};
+  const data={recipe:st.id,cfg:JSON.parse(JSON.stringify(cfg())),color:st.color,panneau:st.panneau,dv:{...st.dv},prix:d.prix,materiel:lastBuy.total,nom:st.dv.client||nomMeuble(r),modele:modeleActif(),date:new Date().toISOString()};
   let pr=PROJ.find(x=>x.id===st.projId);
   if(pr)Object.assign(pr,data);else{pr={id:"p"+Date.now(),statut:"devis",...data};PROJ.unshift(pr);st.projId=pr.id}
   const fin=finDe(pr);if(!fin.devis)fin.devis=numero("devis");
@@ -733,19 +762,37 @@ function update3D(ctx,refit){
     top:new THREE.MeshStandardMaterial({color:0x6b6560,roughness:0.5}),
     noir:new THREE.MeshStandardMaterial({color:0x232323,roughness:0.8}),
     led:new THREE.MeshStandardMaterial({color:0xffe2a0,emissive:0xffb347,emissiveIntensity:1.4}),
-    halo:new THREE.MeshBasicMaterial({color:0xffd27a,transparent:true,opacity:0.55})
+    halo:new THREE.MeshBasicMaterial({color:0xffd27a,transparent:true,opacity:0.55}),
+    or:new THREE.MeshStandardMaterial({color:0xc9a14a,roughness:0.3,metalness:0.85}),
+    drap:new THREE.MeshStandardMaterial({color:0xf4f2ee,roughness:0.95})
   };
+  // Tissu : un matériau par couleur (velours mat) ; « sombre » pour le socle, « bouton » pour le capitonnage.
+  const tissus={};
+  const matTissu=(hex,ton=1)=>{const k=hex+ton;if(!tissus[k]){const c=new THREE.Color(hex).multiplyScalar(ton);tissus[k]=new THREE.MeshStandardMaterial({color:c,roughness:0.92,metalness:0})}return tissus[k]};
   const lineMat=new THREE.LineBasicMaterial({color:st.color===2||st.color===4?0x888888:0x333333,transparent:true,opacity:0.3});
-  const boxes=ctx.parts.filter(p=>p.box);
+  const boxes=ctx.parts.filter(p=>p.box&&!p.sous3d);
   let mn=[1e9,1e9,1e9],mx=[-1e9,-1e9,-1e9];
   boxes.forEach(p=>{for(let i=0;i<3;i++){mn[i]=Math.min(mn[i],p.box[i]);mx[i]=Math.max(mx[i],p.box[i]+p.box[i+3])}});
   const cx=(mn[0]+mx[0])/2000,cz=(mn[2]+mx[2])/2000;
   bbox.size=[(mx[0]-mn[0])/1000,(mx[1]-mn[1])/1000,(mx[2]-mn[2])/1000];
   boxes.forEach(p=>{
     const [x,y,z,sx,sy,sz]=p.box.map(v=>v/1000);
-    const geo=new THREE.BoxGeometry(sx,sy,sz);
-    const mesh=new THREE.Mesh(geo,M[p.look]||M.case);
-    if(p.look!=="glass"&&p.look!=="halo"&&p.look!=="led")mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo),lineMat));
+    const doux=p.look==="tissu"||p.look==="drap"||p.look==="bouton"||p.round;
+    let geo;
+    if(p.forme==="arche"){
+      // Arche : rectangle surmonté d'un demi-cercle, extrudé sur l'épaisseur.
+      const r=Math.min(sx/2,sy*0.6),sh=new THREE.Shape();
+      sh.moveTo(-sx/2,-sy/2);sh.lineTo(sx/2,-sy/2);sh.lineTo(sx/2,sy/2-r);sh.absarc(0,sy/2-r,sx/2,0,Math.PI,false);sh.lineTo(-sx/2,-sy/2);
+      const b=Math.min(0.02,sz/4,sx/6);
+      geo=new THREE.ExtrudeGeometry(sh,{depth:Math.max(0.001,sz-2*b),bevelEnabled:true,bevelThickness:b,bevelSize:b,bevelSegments:4,curveSegments:24});
+      geo.translate(0,0,-(sz-2*b)/2);
+    }else if(p.round){
+      const r=Math.min(p.round/1000,sx/2-1e-4,sy/2-1e-4,sz/2-1e-4);
+      geo=r>0.002?new RoundedBoxGeometry(sx,sy,sz,4,r):new THREE.BoxGeometry(sx,sy,sz);
+    }else geo=new THREE.BoxGeometry(sx,sy,sz);
+    const mat=p.look==="tissu"?matTissu(p.teinte||"#cbb89c",p.sombre?0.55:1):p.look==="bouton"?matTissu(p.teinte||"#cbb89c",0.45):(M[p.look]||M.case);
+    const mesh=new THREE.Mesh(geo,mat);
+    if(!doux&&p.look!=="glass"&&p.look!=="halo"&&p.look!=="led"&&p.look!=="or")mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo),lineMat));
     const px=x+sx/2-cx,py=y+sy/2,pz=z+sz/2-cz;
     (p.holes||[]).forEach(h=>{
       const r=Math.max(h.d/2,4)/1000, g=new THREE.CylinderGeometry(r,r,0.003,16);
@@ -1162,7 +1209,7 @@ function enregistrerCommande(){
   if(!cloud.actif||!ME||!ME.quinc||estQuinc()||!lastCtx)return;
   const txt=orderText();if(txt===derniereCommande)return;derniereCommande=txt;
   const pr=PROJ.find(x=>x.id===st.projId);
-  cloud.envoyerCommande({quincaillerie_id:ME.quinc.id,projet_id:pr&&pr.cloudId||null,meuble:(R(st.id).nom+" "+dimsText()).slice(0,200),lignes:lastBuy.lines.map(l=>({article:l.label,detail:l.detail,total:l.total})),total:lastBuy.total?Math.round(lastBuy.total):null})
+  cloud.envoyerCommande({quincaillerie_id:ME.quinc.id,projet_id:pr&&pr.cloudId||null,meuble:(nomMeuble()+" "+dimsText()).slice(0,200),lignes:lastBuy.lines.map(l=>({article:l.label,detail:l.detail,total:l.total})),total:lastBuy.total?Math.round(lastBuy.total):null})
     .then(r=>{if(r&&r.id){const v=lireVu();v[r.id]=cleSuivi(r);ecrireVu(v)}toast("📦 Commande envoyée à "+ME.quinc.nom+" : sa réponse arrivera dans « Compte »")}).catch(e=>{derniereCommande="";toast(cloud.message(e),true)});
 }
 function appliquerCompte(){

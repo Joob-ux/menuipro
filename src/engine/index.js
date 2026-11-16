@@ -1,6 +1,7 @@
 // MenuiPro — point d'entrée du moteur
 import { newCtx } from "./blocs.js";
 import { RECIPES } from "./recettes.js";
+import "./rembourre.js"; // enregistre les meubles rembourrés dans RECIPES
 import { computeHoles } from "./percages.js";
 
 export { RECIPES, BIENTOT } from "./recettes.js";
@@ -9,6 +10,7 @@ export { outils, vis } from "./outils.js";
 export { SECTIONS_DEF, debitMassif, dimsMassif, choisirSection } from "./massif.js";
 export { holeLocal, HOLE_KINDS, computeHoles } from "./percages.js";
 export { vueFace } from "./facade.js";
+export { TISSUS, teinte, COMPOSITIONS } from "./rembourre.js";
 
 export function buildRecipe(id, p, opts) {
   const r = RECIPES.find(x => x.id === id);
