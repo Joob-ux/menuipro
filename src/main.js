@@ -284,11 +284,15 @@ const ARTICLES=[
  ["boulons","🔩","Boulon de lit 8 × 120","pièce"],["visbois","🔩","Vis à bois","boîte de 100",100],["chevilles","🔩","Cheville + vis","pièce"],["colle","🧴","Colle à bois","pot"],
  ["patins","⚪","Patin de pied","pièce"],["sangles","🧵","Sangle élastique","m"],["mousse","🟨","Mousse 10 cm","m²"],["tissu","🧶","Tissu d'ameublement","m"],
  ["led","💡","Ruban LED + alimentation","m"],["moraillon","🔒","Moraillon porte-cadenas","pièce"],
- ["supinv","🔩","Support invisible d'étagère","pièce"],["mastic","🧴","Colle mastic de fixation","cartouche"],["vernis","🖌️","Vernis ou peinture","litre"]];
+ ["supinv","🔩","Support invisible d'étagère","pièce"],["mastic","🧴","Colle mastic de fixation","cartouche"],["vernis","🖌️","Vernis ou peinture","litre"],
+ ["mousse12","🟨","Mousse d'assise 12 cm (D35)","m²"],["mousse5","🟨","Mousse 5 cm","m²"],["ouate","☁️","Ouate (dacron)","m"],["toile","▫️","Toile de dessous","m"],
+ ["agrafes","📎","Agrafes de tapissier","boîte"],["colleContact","🧴","Colle contact néoprène","pot"],["boutons","🔘","Bouton de capitonnage","pièce"],
+ ["piedsBois","🦵","Pied bois tourné","pièce"],["piedsMetal","🦵","Pied métal doré","pièce"]];
 const EX_JOUR=10000; // prix de journée d'exemple (FCFA)
 const EX_PRIX={mela18:22000,mela16:20000,cp18:25000,mdf18:20000,cp5:9000,chant:300,vis440:1500,vis3516:1500,tourillons:1500,charn:750,charnv:2500,poignees:500,coulisses:2500,taquets:25,tringle:1500,supports:250,rail:3000,galets:5000,cuvettes:500,verre:15000,miroir:10000,pieds:2000,piedsreg:750,pdt:15000,roulettes:500,lattes:1000,tasseaux:750,poutre:1500,equerres:150,fixmur:1000,fixhaut:1000,pointes:1000,vasque:25000,
   paumelles:500,serrure:6000,espagnolette:3500,pattes:150,boulons:300,visbois:1500,chevilles:50,colle:2500,patins:100,sangles:500,mousse:12000,tissu:3000,led:2500,moraillon:500,supinv:1500,mastic:3500,vernis:6000,
-  lame:2500,latte:2000,planche:6000,chevron:5000,madrier:15000};
+  lame:2500,latte:2000,planche:6000,chevron:5000,madrier:15000,
+  mousse12:15000,mousse5:6000,ouate:1500,toile:800,agrafes:1500,colleContact:4000,boutons:100,piedsBois:1000,piedsMetal:2500};
 const DEF_CAT=()=>({boutique:{nom:"",wa:"",commune:""},exemple:false,panneaux:[{id:"mela18",nom:"Mélaminé",ep:18,prix:0},{id:"mela16",nom:"Mélaminé",ep:16,prix:0},{id:"cp18",nom:"Contreplaqué",ep:18,prix:0},{id:"mdf18",nom:"MDF",ep:18,prix:0},{id:"cp5",nom:"Contreplaqué",ep:5,prix:0,dos:true}],sections:SECTIONS_DEF.map(x=>({...x,prix:0})),prix:{}});
 let CAT=DEF_CAT(),AT={nom:"",tel:"",jour:0,marge:20,valid:15};
 try{const c=JSON.parse(localStorage.getItem("menuipro-catalogue")||"null");if(c&&c.panneaux)CAT={...DEF_CAT(),...c};if(!CAT.sections||!CAT.sections.length)CAT.sections=DEF_CAT().sections}catch(e){}
