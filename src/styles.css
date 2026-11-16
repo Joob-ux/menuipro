@@ -304,14 +304,3 @@ body.attente::after{content:"⏳";position:fixed;inset:0;display:grid;place-item
 .filtres-cmd button{flex:0 0 auto;font-size:14px}
 .acts-admin{display:flex;flex-wrap:wrap;gap:4px}
 .ligne-bloquee td{opacity:.7}
-
-/* Partenaire ETS KILIFEU */
-.famille.partenaire{grid-column:1/-1;grid-template-columns:auto 1fr;grid-template-rows:auto auto;justify-items:start;align-items:center;text-align:left;padding:10px;border-color:var(--accent)}
-.famille.partenaire img{grid-row:1/3;width:120px;height:80px;object-fit:cover;border-radius:10px}
-.kfams{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px}
-.kfams .chip{border:2px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:8px 14px;font:inherit;font-weight:700;cursor:pointer}
-.kfams .chip[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
-.meuble.kmodele{padding:0;overflow:hidden;display:grid;grid-template-rows:auto auto;align-content:start}
-.meuble.kmodele img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block;background:var(--line)}
-.meuble.kmodele .knom{padding:8px 6px;font-weight:700}
-.current .kphoto{width:84px;height:64px;object-fit:cover;border-radius:10px;flex:none}

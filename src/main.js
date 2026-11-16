@@ -2,7 +2,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
-import { MODELES_KILIFEU, FAMILLES_KILIFEU, KILIFEU } from "./kilifeu.js";
+import { MODELES_KILIFEU as MODELES } from "./kilifeu.js";
 import { RECIPES, BIENTOT, buildRecipe, pack, outils, SHEET, holeLocal, HOLE_KINDS, SECTIONS_DEF, debitMassif, vueFace } from "./engine/index.js";
 import { HCOL, sheetHoles, cncSVG, cncDXF, makeZip, ascii } from "./export/cnc.js";
 import * as cloud from "./cloud/cloud.js";
@@ -42,34 +42,25 @@ function choisirModele(m){
   st.modele={id:m.id,nom:m.nom,photo:m.photo,page:m.page,recette:r.id};
   choisirMeuble(r.id,true);
 }
-function tuileModele(m){const actif=modeleActif();return el("button",{type:"button",class:"meuble kmodele","aria-pressed":String(!!actif&&actif.id===m.id),onclick:()=>choisirModele(m)},
-  el("img",{src:KILIFEU.photo(m.photo,240),alt:"",loading:"lazy"}),el("span",{class:"knom"},m.nom))}
+function tuileModele(m){const actif=modeleActif(),r=R(m.recette);return el("button",{type:"button",class:"meuble","aria-pressed":String(!!actif&&actif.id===m.id),onclick:()=>choisirModele(m)},el("span",{class:"e","aria-hidden":"true"},r.e),m.nom)}
 function tuileMeuble(r){return el("button",{type:"button",class:"meuble","aria-pressed":String(r.id===st.id),onclick:()=>choisirMeuble(r.id)},el("span",{class:"e","aria-hidden":"true"},r.e),r.nom)}
 function renderCatalog(){
   // st.room : null = familles, "*" = tous les meubles, sinon le nom de la famille.
   const q=query.trim().toLowerCase(),fam=st.room==="*"||(ROOMS.includes(st.room)&&st.room!=="Tous")?st.room:null;
-  // Espace partenaire ETS KILIFEU : sous-familles puis modèles en photo.
-  if(st.room==="KILIFEU"&&!q){
-    const kf=FAMILLES_KILIFEU.some(f=>f[0]===st.kfam)?st.kfam:FAMILLES_KILIFEU[0][0];
-    $("familles").hidden=true;$("famHead").hidden=false;
-    $("famHead").replaceChildren(retourFamilles(),el("b",{},"🏷️ "+KILIFEU.nom));
-    $("meubles").replaceChildren(el("div",{class:"kfams",role:"group","aria-label":"Familles KILIFEU"},...FAMILLES_KILIFEU.map(([f,e])=>el("button",{type:"button",class:"chip","aria-pressed":String(f===kf),onclick:()=>{st.kfam=f;save();renderCatalog()}},e+" "+f+" ("+MODELES_KILIFEU.filter(m=>m.famille===f).length+")"))),
-      ...MODELES_KILIFEU.filter(m=>m.famille===kf).map(tuileModele));
-    $("count-tag").textContent=RECIPES.length+" meubles";return;
-  }
   const liste=q?RECIPES.filter(r=>r.nom.toLowerCase().includes(q)):fam==="*"?RECIPES:fam?RECIPES.filter(r=>r.cat===fam):[];
-  const modelesTrouves=q?MODELES_KILIFEU.filter(m=>m.nom.toLowerCase().includes(q)):[];
+  // Les modèles nommés (Lawson, Gatsby…) sont rangés dans la famille de leur meuble de base.
+  const famModele=m=>R(m.recette).cat;
+  const modelesTrouves=q?MODELES.filter(m=>m.nom.toLowerCase().includes(q)):fam==="*"?MODELES:fam?MODELES.filter(m=>famModele(m)===fam):[];
   // Sans recherche ni famille : on montre les familles.
   const voirFamilles=!q&&!fam;
   $("familles").hidden=!voirFamilles;
-  $("familles").replaceChildren(el("button",{type:"button",class:"famille partenaire",onclick:()=>{st.room="KILIFEU";query="";save();renderCatalog()}},
-      el("img",{src:KILIFEU.photo("products/salon_v1_351",300),alt:"",loading:"lazy"}),el("b",{},KILIFEU.nom),el("span",{class:"nb"},MODELES_KILIFEU.length+" modèles en 3D")),...FAMILLES.map(([nom,e])=>{const n=RECIPES.filter(r=>r.cat===nom).length;return el("button",{type:"button",class:"famille",onclick:()=>{st.room=nom;save();renderCatalog()}},el("span",{class:"e","aria-hidden":"true"},e),el("b",{},nom),el("span",{class:"nb"},n+" meubles"))}),
-    el("button",{type:"button",class:"famille tous",onclick:()=>{st.room="*";save();renderCatalog()}},el("span",{class:"e","aria-hidden":"true"},"📋"),el("b",{},"Tous les meubles"),el("span",{class:"nb"},RECIPES.length)));
+  $("familles").replaceChildren(...FAMILLES.map(([nom,e])=>{const n=RECIPES.filter(r=>r.cat===nom).length+MODELES.filter(m=>R(m.recette).cat===nom).length;return el("button",{type:"button",class:"famille",onclick:()=>{st.room=nom;save();renderCatalog()}},el("span",{class:"e","aria-hidden":"true"},e),el("b",{},nom),el("span",{class:"nb"},n+" meubles"))}),
+    el("button",{type:"button",class:"famille tous",onclick:()=>{st.room="*";save();renderCatalog()}},el("span",{class:"e","aria-hidden":"true"},"📋"),el("b",{},"Tous les meubles"),el("span",{class:"nb"},RECIPES.length+MODELES.length)));
   $("famHead").hidden=voirFamilles;
   $("famHead").replaceChildren(...(voirFamilles?[]:[retourFamilles(),el("b",{},q?"Résultats":fam==="*"?"Tous les meubles":fam)]));
   $("meubles").replaceChildren(...liste.map(tuileMeuble),...modelesTrouves.map(tuileModele));
   if(q&&!liste.length&&!modelesTrouves.length)$("meubles").append(el("p",{class:"note"},"Aucun meuble ne correspond. Essayez un autre mot."));
-  $("count-tag").textContent=RECIPES.length+" meubles";
+  $("count-tag").textContent=(RECIPES.length+MODELES.length)+" meubles";
 }
 function retourFamilles(){return el("button",{type:"button",class:"btn",onclick:()=>{st.room=null;query="";$("search").value="";save();renderCatalog()}},"← Familles")}
 $("search").addEventListener("input",e=>{query=e.target.value;renderCatalog()});
@@ -102,9 +93,7 @@ function majBarPrix(){
 function renderControls(){
   const r=R(st.id),c=cfg();
   const mod=modeleActif();
-  $("current").replaceChildren(...(mod?[el("img",{class:"kphoto",src:KILIFEU.photo(mod.photo,200),alt:"",loading:"lazy"}),
-      el("div",{},el("b",{},mod.nom),el("div",{class:"note"},KILIFEU.nom+" · "+r.nom),el("a",{href:KILIFEU.site+mod.page,target:"_blank",rel:"noopener",class:"note"},"Voir sur le site ↗"))]
-    :[el("span",{class:"e","aria-hidden":"true"},r.e),el("div",{},el("b",{},r.nom),el("div",{class:"note"},r.cat))]));
+  $("current").replaceChildren(el("span",{class:"e","aria-hidden":"true"},r.e),el("div",{},el("b",{},mod?mod.nom:r.nom),el("div",{class:"note"},mod?r.nom:r.cat)));
   const labels=r.dimLabels||["Largeur","Hauteur","Profondeur"];
   $("dims").replaceChildren(...["L","H","P"].map((k,i)=>{const inp=el("input",{id:"d"+k,type:"number",inputmode:"numeric",min:String((r.dimMin||[10,10,10])[i]),max:"2000"});inp.value=c[k];inp.addEventListener("input",e=>{c[k]=parseFloat(e.target.value)||0;compute()});return el("div",{class:"num"},el("label",{for:"d"+k},labels[i]),inp,el("small",{},["↔","↕","⤢"][i]))}));
   $("optsLabel").hidden=!r.opts.length;
