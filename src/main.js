@@ -58,7 +58,16 @@ function renderCatalog(){
     el("button",{type:"button",class:"famille tous",onclick:()=>{st.room="*";save();renderCatalog()}},el("span",{class:"e","aria-hidden":"true"},"📋"),el("b",{},"Tous les meubles"),el("span",{class:"nb"},RECIPES.length+MODELES.length)));
   $("famHead").hidden=voirFamilles;
   $("famHead").replaceChildren(...(voirFamilles?[]:[retourFamilles(),el("b",{},q?"Résultats":fam==="*"?"Tous les meubles":fam)]));
-  $("meubles").replaceChildren(...liste.map(tuileMeuble),...modelesTrouves.map(tuileModele));
+  // Dans une famille : les modèles nommés d'abord, rangés sous un petit titre (Canapés, Salons complets…), puis les meubles de base.
+  if(fam&&!q){
+    const groupes=[];
+    for(const m of modelesTrouves){let g=groupes.find(x=>x.nom===m.famille);if(!g)groupes.push(g={nom:m.famille,mod:[]});g.mod.push(m)}
+    const ORDRE=["Salons complets","Canapés","Fauteuils et poufs","Lits","Armoires de chambre","Mobilier bois"];
+    groupes.sort((x,y)=>ORDRE.indexOf(x.nom)-ORDRE.indexOf(y.nom));
+    const titre=t=>el("h3",{class:"sousfam"},t);
+    $("meubles").replaceChildren(...groupes.flatMap(g=>[titre(g.nom+" ("+g.mod.length+")"),...g.mod.map(tuileModele)]),
+      ...(liste.length?[titre(groupes.length?"Autres meubles":""),...liste.map(tuileMeuble)]:[]));
+  }else $("meubles").replaceChildren(...liste.map(tuileMeuble),...modelesTrouves.map(tuileModele));
   if(q&&!liste.length&&!modelesTrouves.length)$("meubles").append(el("p",{class:"note"},"Aucun meuble ne correspond. Essayez un autre mot."));
   $("count-tag").textContent=(RECIPES.length+MODELES.length)+" meubles";
 }

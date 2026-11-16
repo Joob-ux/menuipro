@@ -304,3 +304,8 @@ body.attente::after{content:"⏳";position:fixed;inset:0;display:grid;place-item
 .filtres-cmd button{flex:0 0 auto;font-size:14px}
 .acts-admin{display:flex;flex-wrap:wrap;gap:4px}
 .ligne-bloquee td{opacity:.7}
+
+/* Petits titres dans une famille (Canapés, Salons complets…) */
+.sousfam{grid-column:1/-1;margin:14px 0 2px;font-family:var(--display);font-size:17px;color:var(--ink)}
+.sousfam:first-child{margin-top:0}
+.sousfam:empty{display:none}
