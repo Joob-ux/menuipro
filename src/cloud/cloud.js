@@ -137,7 +137,8 @@ const ERREURS_ASSISTANT = {
 const versBase64 = blob => new Promise((ok, ko) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1] || ""); r.onerror = ko; r.readAsDataURL(blob); });
 export async function assistant(blob, catalogue, contexte, duree) {
   const audio = await versBase64(blob);
-  const { data, error } = await sb.functions.invoke("assistant-voix", { body: { audio, catalogue, contexte, duree } });
+  const mime = String(blob.type || "audio/wav").split(";")[0];
+  const { data, error } = await sb.functions.invoke("assistant-voix", { body: { audio, mime, catalogue, contexte, duree } });
   if (error) {
     let code = error.message, corps = null;
     try { corps = await error.context.json(); code = corps.erreur || code; } catch (e) { /* réponse sans JSON */ }

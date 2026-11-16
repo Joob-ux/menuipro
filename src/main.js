@@ -6,6 +6,7 @@ import { HCOL, sheetHoles, cncSVG, cncDXF, makeZip, ascii } from "./export/cnc.j
 import * as cloud from "./cloud/cloud.js";
 import { PHRASES, parler, boutonVoix, chargerVoix, aUnAudio } from "./voix.js";
 import { catalogueIA, validerAction, DUREE_MAX_S } from "./assistant.js";
+import { versWav } from "./audio-wav.js";
 import { MODES, modeNom, acompteDu, resume, validerPaiement, prochainNumero } from "./paiements.js";
 import { DISPO, MODES_RETRAIT, reponseInitiale, totalReponse, validerReponse, dateLisible, texteReponse, cleSuivi, changements } from "./commandes.js";
 import qrcode from "qrcode-generator";
@@ -1386,7 +1387,8 @@ $("micBtn").onclick=async()=>{
     if(duree<1){bulle("🤔","Trop court. Appuyez, parlez, puis appuyez encore.");return}
     btn.classList.add("wait");btn.textContent="⏳";bulle("⏳","Je réfléchis…");
     try{
-      const res=await cloud.assistant(new Blob(morceaux,{type:r.mimeType||"audio/webm"}),CAT_IA,{recette:st.id,nom:R(st.id).nom,...cfg()},duree);
+      let note=new Blob(morceaux,{type:r.mimeType||"audio/webm"});try{note=await versWav(note)}catch(e){/* on envoie le format d'origine */}
+      const res=await cloud.assistant(note,CAT_IA,{recette:st.id,nom:R(st.id).nom,...cfg()},duree);
       const a=validerAction(res.action,RECIPES,st.id)||{action:"inconnu",reponse:"pas_compris"};
       const ic={compris:"👍",modifie:"🔁",pas_compris:"🤔",limite:"⛔"}[a.reponse]||"💡";
       bulle(ic+" "+(a.recette?R(a.recette).nom:""),[res.texte?"« "+res.texte+" »":"",a.resume].filter(Boolean).join(" → "));

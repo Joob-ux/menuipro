@@ -1,8 +1,9 @@
-// MenuiPro — assistant vocal en wolof.
-//   1. Google Speech-to-Text v2, modèle Chirp 3, langue wo-SN : note vocale → texte wolof
-//   2. Gemini (Vertex AI) : texte → action JSON (meuble, cotes, options) choisie dans le catalogue envoyé
+// MenuiPro — assistant vocal en wolof. Deux voies, choisies selon les secrets présents :
+//   A. GEMINI_API_KEY (Google AI Studio, offre gratuite, sans carte) : Gemini écoute la note vocale
+//      et renvoie en une fois la transcription wolof et l'action JSON.
+//   B. GOOGLE_SA_JSON (Google Cloud, facturation active) : Chirp 3 (wo-SN) transcrit, puis Gemini sur Vertex AI comprend.
 // L'appli contrôle l'action (src/assistant.js) puis répond avec des phrases enregistrées.
-// Secrets : GOOGLE_SA_JSON (clé JSON du compte de service), facultatifs GEMINI_MODEL, ASSISTANT_LIMITE_JOUR.
+// Facultatifs : GEMINI_MODEL, ASSISTANT_LIMITE_JOUR.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
@@ -14,7 +15,9 @@ const CORS = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 
-const MODELE = Deno.env.get("GEMINI_MODEL") || "gemini-3.5-flash-lite";
+const MODELE_VERTEX = Deno.env.get("GEMINI_MODEL") || "gemini-3.5-flash-lite";
+const MODELE_STUDIO = Deno.env.get("GEMINI_MODEL") || "gemini-flash-latest";
+const MIMES = ["audio/wav", "audio/mp3", "audio/mpeg", "audio/aac", "audio/ogg", "audio/flac", "audio/aiff", "audio/webm", "audio/mp4"];
 const LIMITE = Number(Deno.env.get("ASSISTANT_LIMITE_JOUR") || 40);
 const AUDIO_MAX = 1_500_000; // octets (≈ 30 s de note vocale)
 
@@ -80,7 +83,7 @@ Réponds avec ce JSON exact :
 - "inconnu" : rien de clair → reponse "pas_compris". N'invente jamais de cote non dite.`;
 
 async function comprendre(jeton: string, projet: string, texte: string, catalogue: unknown, contexte: unknown) {
-  const url = `https://aiplatform.googleapis.com/v1/projects/${projet}/locations/global/publishers/google/models/${MODELE}:generateContent`;
+  const url = `https://aiplatform.googleapis.com/v1/projects/${projet}/locations/global/publishers/google/models/${MODELE_VERTEX}:generateContent`;
   const r = await fetch(url, {
     method: "POST", headers: { Authorization: "Bearer " + jeton, "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -95,6 +98,29 @@ async function comprendre(jeton: string, projet: string, texte: string, catalogu
   try { return JSON.parse(brut); } catch { return { action: "inconnu", reponse: "pas_compris" }; }
 }
 
+/* ---------- Voie A : Gemini (AI Studio) écoute directement la note vocale ---------- */
+async function ecouterEtComprendre(cle: string, audioB64: string, mime: string, catalogue: unknown, contexte: unknown) {
+  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODELE_STUDIO}:generateContent`, {
+    method: "POST", headers: { "x-goog-api-key": cle, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: CONSIGNE + `\n\nTu reçois directement la NOTE VOCALE (pas de transcription). Écoute-la et ajoute au JSON le champ "transcription" : ce que tu entends, écrit en wolof (orthographe du CLAD), mots français tels quels. Si l'audio est vide ou inaudible : transcription "" et action "inconnu".` }] },
+      contents: [{ role: "user", parts: [
+        { inline_data: { mime_type: mime, data: audioB64 } },
+        { text: "CATALOGUE :\n" + JSON.stringify(catalogue) + "\n\nMEUBLE AFFICHÉ :\n" + JSON.stringify(contexte) },
+      ] }],
+      generationConfig: { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 800 },
+    }),
+  });
+  const d = await r.json();
+  if (!r.ok) throw new Error("gemini_studio: " + (d.error?.status || "") + " " + (d.error?.message || r.status));
+  const brut = d.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("") || "{}";
+  let a: any;
+  try { a = JSON.parse(brut); } catch { a = { action: "inconnu", reponse: "pas_compris" }; }
+  const texte = String(a.transcription || "").trim();
+  delete a.transcription;
+  return { texte, action: a };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ erreur: "methode" }, 405);
@@ -105,17 +131,20 @@ Deno.serve(async (req) => {
   if (errQui || !qui?.user) return json({ erreur: "non_connecte" }, 401);
   const uid = qui.user.id;
 
-  const saBrut = Deno.env.get("GOOGLE_SA_JSON");
-  if (!saBrut) return json({ erreur: "assistant_non_configure" }, 503);
-  let sa: { client_email: string; private_key: string; project_id: string };
-  try { sa = JSON.parse(saBrut); } catch { return json({ erreur: "assistant_non_configure" }, 503); }
+  const cleStudio = Deno.env.get("GEMINI_API_KEY") || "";
+  const saBrut = Deno.env.get("GOOGLE_SA_JSON") || "";
+  let sa: { client_email: string; private_key: string; project_id: string } | null = null;
+  if (!cleStudio) {
+    if (!saBrut) return json({ erreur: "assistant_non_configure" }, 503);
+    try { sa = JSON.parse(saBrut); } catch { return json({ erreur: "assistant_non_configure" }, 503); }
+  }
 
   // Quota du jour (protège le budget)
   const depuis = new Date(); depuis.setUTCHours(0, 0, 0, 0);
   const { count } = await service.from("assistant_journal").select("id", { count: "exact", head: true }).eq("user_id", uid).gte("created_at", depuis.toISOString());
   if ((count ?? 0) >= LIMITE) return json({ erreur: "limite", action: { action: "inconnu", reponse: "limite" } }, 429);
 
-  let corps: { audio?: string; catalogue?: unknown; contexte?: unknown; duree?: number };
+  let corps: { audio?: string; mime?: string; catalogue?: unknown; contexte?: unknown; duree?: number };
   try { corps = await req.json(); } catch { return json({ erreur: "requete_invalide" }, 400); }
   const audio = String(corps.audio || "");
   if (!audio || audio.length > AUDIO_MAX * 4 / 3 + 16) return json({ erreur: "audio_invalide" }, 400);
@@ -123,9 +152,15 @@ Deno.serve(async (req) => {
 
   const debut = Date.now();
   try {
-    const jeton = await jetonGoogle(sa);
-    const texte = await transcrire(jeton, sa.project_id, audio);
-    const action = texte ? await comprendre(jeton, sa.project_id, texte, corps.catalogue, corps.contexte) : { action: "inconnu", reponse: "pas_compris" };
+    let texte = "", action: unknown;
+    if (cleStudio) {
+      const mime = MIMES.includes(String(corps.mime)) ? String(corps.mime) : "audio/wav";
+      ({ texte, action } = await ecouterEtComprendre(cleStudio, audio, mime, corps.catalogue, corps.contexte));
+    } else {
+      const jeton = await jetonGoogle(sa!);
+      texte = await transcrire(jeton, sa!.project_id, audio);
+      action = texte ? await comprendre(jeton, sa!.project_id, texte, corps.catalogue, corps.contexte) : { action: "inconnu", reponse: "pas_compris" };
+    }
     await service.from("assistant_journal").insert({ user_id: uid, duree_s: Math.min(60, Math.round(Number(corps.duree) || 0)), texte: texte.slice(0, 1000), action, ms: Date.now() - debut });
     return json({ texte, action });
   } catch (e) {
