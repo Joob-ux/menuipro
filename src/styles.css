@@ -105,7 +105,7 @@ nav.appnav .wrap::-webkit-scrollbar{display:none}
 .navbtn[aria-current="page"]{border-color:var(--accent);background:var(--accent);color:var(--surface)}
 .navbtn .ic{margin-right:6px}.navbtn .court{display:none}
 @media (max-width:600px){
-  nav.appnav .wrap{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;padding-inline:8px}
+  nav.appnav .wrap{display:grid;grid-template-columns:repeat(var(--nav-n,5),minmax(0,1fr));gap:4px;padding-inline:8px}
   .navbtn{display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 2px;font-size:12px;border-radius:10px;min-width:0}
   .navbtn .ic{margin:0;font-size:22px;line-height:1}.navbtn .long{display:none}.navbtn .court{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 }
@@ -173,7 +173,7 @@ body.avec-etapes{padding-bottom:calc(76px + env(safe-area-inset-bottom,0px))}
 .suivant{justify-self:stretch;padding:14px;font-size:17px;border-radius:14px}
 @media (min-width:600px){.suivant{justify-self:end;padding-inline:22px}}
 .etapes{display:none}
-body.avec-etapes .etapes{display:grid;position:fixed;left:0;right:0;bottom:0;z-index:30;grid-template-columns:repeat(5,minmax(0,1fr));background:var(--surface);border-top:1px solid var(--line);padding:6px max(6px,env(safe-area-inset-right,0px)) calc(6px + env(safe-area-inset-bottom,0px)) max(6px,env(safe-area-inset-left,0px));box-shadow:0 -4px 14px rgba(43,33,26,.06)}
+body.avec-etapes .etapes{display:grid;position:fixed;left:0;right:0;bottom:0;z-index:30;grid-template-columns:repeat(var(--nav-n,5),minmax(0,1fr));background:var(--surface);border-top:1px solid var(--line);padding:6px max(6px,env(safe-area-inset-right,0px)) calc(6px + env(safe-area-inset-bottom,0px)) max(6px,env(safe-area-inset-left,0px));box-shadow:0 -4px 14px rgba(43,33,26,.06)}
 .etp{display:flex;flex-direction:column;align-items:center;gap:2px;border:0;background:none;color:var(--muted);font:inherit;font-size:12px;font-weight:700;padding:4px 2px;border-radius:10px;cursor:pointer;min-width:0}
 .etp .ic{font-size:22px;line-height:1.1;filter:grayscale(1);opacity:.7}
 .etp span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
