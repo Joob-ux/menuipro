@@ -137,25 +137,77 @@ export function basCuisine(c, x, W, o) {
   caisse(c, x, 0, 0, W, H - 38, D, { nom: o.nom, socle: 100, dessus: false, colonnes: [zones] });
   hw(c, "piedsreg", "🦵", "Pieds réglables de cuisine", 4);
 }
-export function hautCuisine(c, x, W, nom) {
-  caisse(c, x, 1450, 0, W, 700, 330, { nom, colonnes: [[{ t: "etageres", n: 1, portes: { n: W > 600 ? 2 : 1 } }]] });
+export function hautCuisine(c, x, W, nom, y = 1450) {
+  caisse(c, x, y, 0, W, 700, 330, { nom, colonnes: [[{ t: "etageres", n: 1, portes: { n: W > 600 ? 2 : 1 } }]] });
   hw(c, "fixhaut", "🔩", "Fixations meubles hauts", 2);
 }
-rec({ id: "cuisine-bas", nom: "Meuble bas de cuisine", e: "🧽", cat: "Cuisine", dims: [60, 87, 56], fixedHP: true, opts: [stp("tiroirs", "Tiroirs", "🗄️", 1, 0, 4)], build(c, p, o) { basCuisine(c, 0, p.L, { tiroirs: o.tiroirs }); planTravail(c, 0, 832, 0, p.L, 600); } });
-rec({ id: "cuisine-haut", nom: "Meuble haut de cuisine", e: "⬆️", cat: "Cuisine", dims: [80, 70, 33], opts: [stp("etageres", "Étagères", "📚", 1, 0, 3)], build(c, p, o) {
+/* Caisson évier : pas de dos ni d'étagère (passage des tuyaux et du siphon), deux traverses en haut
+   pour tenir le plan de travail, portes battantes. L'évier se pose dans une découpe du plan de travail. */
+export function evierCuisine(c, x, W, o = {}) {
+  const E = c.E, H = 870 - 38, D = 560, nm = (o.nom || "Évier") + " · ";
+  caisse(c, x, 0, 0, W, H, D, { nom: o.nom || "Évier", socle: 100, dessus: false, dos: false, colonnes: [[{ t: "etageres", n: 0, portes: { n: W > 600 ? 2 : 1 } }]] });
+  add(c, nm + "Traverse avant", "caisson", [x + E, H - E, D - 100, W - 2 * E, E, 100], { edge: W - 2 * E });
+  add(c, nm + "Traverse arrière", "caisson", [x + E, H - E, 0, W - 2 * E, E, 100], { edge: 0 });
+  hw(c, "piedsreg", "🦵", "Pieds réglables de cuisine", 4);
+  // Évier, robinet et évacuation : visibles en 3D, comptés dans la liste d'achat.
+  const bacs = W >= 1000 ? 2 : 1, lb = Math.min(W - 160, bacs === 2 ? 860 : 500), y = 870;
+  for (let b = 0; b < bacs; b++) add3d(c, "metal", [x + (W - lb) / 2 + b * (lb / bacs) + 10, y - 2, 120, lb / bacs - 20, 6, 380]);
+  add3d(c, "metal", [x + W / 2 - 15, y, 40, 30, 260, 30]);
+  add3d(c, "metal", [x + W / 2 - 12, y + 230, 40, 24, 24, 190]);
+  hw(c, "evier", "🚰", bacs === 2 ? "Évier inox 2 bacs" : "Évier inox 1 bac", 1);
+  hw(c, "robinet", "🚿", "Robinet mitigeur d'évier", 1);
+  hw(c, "siphon", "🔧", "Siphon + bonde d'évier", 1);
+  hw(c, "silicone", "🧴", "Silicone sanitaire (joint évier)", 1, "tube");
+  hw(c, "decoupe", "🪚", "Découpe de l'évier dans le plan de travail", 1);
+}
+
+/* Cuisine en caissons : la longueur est partagée en modules d'environ 60 cm autour du caisson évier.
+   Renvoie la liste des modules [{ x, W, type }] (utile aux tests et au dessin). */
+export function modulesCuisine(L, o) {
+  const We = Math.min(Number(o.evier) || 1000, Math.max(600, L - 300));
+  const reste = Math.max(0, L - We);
+  let partage = o.position === "gauche" ? [0, reste] : o.position === "droite" ? [reste, 0] : [Math.floor(reste / 2 / 10) * 10, reste - Math.floor(reste / 2 / 10) * 10];
+  // Cuisine courte : pas la place d'un caisson de chaque côté → un seul caisson, à droite de l'évier.
+  if (o.position !== "gauche" && o.position !== "droite" && partage[0] < 300 && reste >= 300) partage = [0, reste];
+  const cote = l => { if (l < 300) return []; const n = Math.max(1, Math.round(l / 600)); return Array(n).fill(l / n); };
+  const gauche = cote(partage[0]), droite = cote(partage[1]);
+  // Un petit reste (< 30 cm) agrandit l'évier plutôt que de laisser un trou.
+  const WeR = We + (partage[0] < 300 ? partage[0] : 0) + (partage[1] < 300 ? partage[1] : 0);
+  const mods = []; let x = 0;
+  gauche.forEach(W => { mods.push({ x, W, type: "bas" }); x += W; });
+  mods.push({ x, W: WeR, type: "evier" }); x += WeR;
+  droite.forEach(W => { mods.push({ x, W, type: "bas" }); x += W; });
+  // Les modules à tiroirs se placent juste à côté de l'évier (droite d'abord, puis gauche).
+  const ie = mods.findIndex(m => m.type === "evier"), ordre = [];
+  for (let d = 1; d < mods.length; d++) { if (mods[ie + d]) ordre.push(ie + d); if (mods[ie - d]) ordre.push(ie - d); }
+  ordre.slice(0, o.tiroirs || 0).forEach(i => mods[i].type = "tiroirs");
+  return mods;
+}
+rec({ id: "cuisine-bas", nom: "Caisson bas de cuisine", e: "🧽", cat: "Cuisine", dims: [60, 87, 56], fixedHP: true, opts: [stp("tiroirs", "Tiroirs", "🗄️", 1, 0, 4)], build(c, p, o) { basCuisine(c, 0, p.L, { tiroirs: o.tiroirs }); planTravail(c, 0, 832, 0, p.L, 600); } });
+rec({ id: "cuisine-haut", nom: "Caisson haut de cuisine", e: "⬆️", cat: "Cuisine", dims: [80, 70, 33], opts: [stp("etageres", "Étagères", "📚", 1, 0, 3)], build(c, p, o) {
   caisse(c, 0, 0, 0, p.L, p.H, p.P, { colonnes: [[{ t: "etageres", n: o.etageres, portes: { n: p.L > 600 ? 2 : 1 } }]] }); hw(c, "fixhaut", "🔩", "Fixations meubles hauts", 2);
 } });
-rec({ id: "cuisine-colonne", nom: "Colonne (frigo, four)", e: "🧊", cat: "Cuisine", dims: [60, 215, 58], opts: [chx("usage", "Usage", [["four", "Four + rangement"], ["rangement", "Rangement"]], "four")], build(c, p, o) {
+rec({ id: "cuisine-colonne", nom: "Caisson colonne (frigo, four)", e: "🧊", cat: "Cuisine", dims: [60, 215, 58], opts: [chx("usage", "Usage", [["four", "Four + rangement"], ["rangement", "Rangement"]], "four")], build(c, p, o) {
   const zones = o.usage === "four" ? [{ t: "etageres", n: 1, h: 700, portes: { n: 1 } }, { t: "niche", h: 600 }, { t: "etageres", n: 1, portes: { n: 1 } }] : [{ t: "etageres", n: 2, portes: { n: 1 } }, { t: "etageres", n: 1, h: 600, portes: { n: 1 } }];
   caisse(c, 0, 0, 0, p.L, p.H, p.P, { socle: 100, colonnes: [zones] });
 } });
-rec({ id: "cuisine-complete", nom: "Cuisine complète", e: "🍳", cat: "Cuisine", dims: [300, 220, 60], dimLabels: ["Longueur totale", "Hauteur", "Profondeur"], opts: [stp("hauts", "Meubles hauts", "⬆️", 1, 0, 1), stp("tiroirs", "Modules à tiroirs", "🗄️", 1, 0, 3)], build(c, p, o) {
-  const n = Math.max(1, Math.round(p.L / 600)), W = p.L / n;
-  for (let i = 0; i < n; i++) {
-    basCuisine(c, i * W, W, { nom: "Bas " + (i + 1), tiroirs: i < o.tiroirs ? 3 : 0 });
-    if (o.hauts) hautCuisine(c, i * W, W, "Haut " + (i + 1));
-  }
-  planTravail(c, 0, 832, 0, p.L, 600);
+rec({ id: "cuisine-complete", nom: "Cuisine en caissons (évier au milieu)", e: "🍳", cat: "Cuisine", dims: [300, 220, 60], dimMin: [120, 150, 50], dimLabels: ["Longueur totale", "Hauteur jusqu'en haut", "Profondeur"],
+  opts: [chx("position", "Place de l'évier", [["milieu", "🚰 Au milieu"], ["gauche", "⬅️ À gauche"], ["droite", "➡️ À droite"]], "milieu"),
+    chx("evier", "Caisson évier", [[800, "80 cm"], [1000, "100 cm"], [1200, "120 cm (2 bacs)"]], 1000),
+    stp("tiroirs", "Caissons à tiroirs", "🗄️", 1, 0, 4), stp("hauts", "Caissons hauts", "⬆️", 1, 0, 1), stp("hautEvier", "Caisson haut au-dessus de l'évier", "🪟", 0, 0, 1)],
+  build(c, p, o) {
+    const mods = modulesCuisine(p.L, o), yHaut = Math.max(1350, p.H - 700);
+    let nb = 0, nh = 0;
+    mods.forEach(m => {
+      if (m.type === "evier") evierCuisine(c, m.x, m.W, { nom: "Caisson évier" });
+      else basCuisine(c, m.x, m.W, { nom: "Caisson bas " + (++nb), tiroirs: m.type === "tiroirs" ? 3 : 1 });
+      // Au-dessus de l'évier : souvent une fenêtre. Un caisson haut seulement si on le demande.
+      if (o.hauts && (m.type !== "evier" || o.hautEvier)) hautCuisine(c, m.x, m.W, "Caisson haut " + (++nh), yHaut);
+    });
+    planTravail(c, 0, 832, 0, p.L, 600);
+  } });
+rec({ id: "caisson-evier", nom: "Caisson évier (sous-évier)", e: "🚰", cat: "Cuisine", dims: [100, 87, 56], dimMin: [60, 87, 56], fixedHP: true, opts: [], build(c, p) {
+  evierCuisine(c, 0, p.L, { nom: "Caisson évier" }); planTravail(c, 0, 832, 0, p.L, 600);
 } });
 rec({ id: "placard", nom: "Placard de rangement", e: "🚪", cat: "Cuisine", dims: [80, 200, 45], opts: [stp("portes", "Portes", "🚪", 2, 1, 4), stp("etageres", "Étagères", "📚", 4, 0, 8)], build(c, p, o) { armoire(c, p, { portes: o.portes, etageres: o.etageres, socle: 60 }); } });
 

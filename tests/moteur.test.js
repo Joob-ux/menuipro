@@ -274,3 +274,49 @@ describe("Mon dessin (croquis → meuble)", () => {
     expect(et[1].box[3] / et[0].box[3]).toBeGreaterThan(2.5);
   });
 });
+
+import { modulesCuisine } from "../src/engine/recettes.js";
+describe("Cuisine en caissons", () => {
+  const P = { L: 3000, H: 2200, P: 600, ep: 18 };
+  const opts = (o = {}) => ({ position: "milieu", evier: 1000, tiroirs: 1, hauts: 1, hautEvier: 0, ...o });
+  it("3 m : l'évier est au milieu, entouré de caissons d'environ 60 cm, sans trou", () => {
+    const m = modulesCuisine(3000, opts());
+    const ie = m.findIndex(x => x.type === "evier");
+    expect(ie).toBeGreaterThan(0); expect(ie).toBeLessThan(m.length - 1);
+    expect(m.reduce((s, x) => s + x.W, 0)).toBeCloseTo(3000, 6);
+    m.filter(x => x.type !== "evier").forEach(x => { expect(x.W).toBeGreaterThanOrEqual(300); expect(x.W).toBeLessThanOrEqual(900); });
+    const gauche = m.slice(0, ie).reduce((s, x) => s + x.W, 0), droite = m.slice(ie + 1).reduce((s, x) => s + x.W, 0);
+    expect(Math.abs(gauche - droite)).toBeLessThanOrEqual(10);
+  });
+  it("l'évier peut aller à gauche ou à droite", () => {
+    expect(modulesCuisine(3000, opts({ position: "gauche" }))[0].type).toBe("evier");
+    expect(modulesCuisine(3000, opts({ position: "droite" })).at(-1).type).toBe("evier");
+  });
+  it("les tiroirs sont à côté de l'évier", () => {
+    const m = modulesCuisine(3000, opts({ tiroirs: 2 })), ie = m.findIndex(x => x.type === "evier");
+    expect(m[ie + 1].type).toBe("tiroirs"); expect(m[ie - 1].type).toBe("tiroirs");
+  });
+  it("le caisson évier n'a pas de dos ni d'étagère, et apporte évier, robinet et siphon", () => {
+    const ctx = buildRecipe("cuisine-complete", P, opts());
+    const ev = ctx.parts.filter(p => p.name.startsWith("Caisson évier"));
+    expect(ev.some(p => p.name.includes("Dos"))).toBe(false);
+    expect(ev.some(p => p.name.includes("Étagère"))).toBe(false);
+    expect(ev.some(p => p.name.includes("Traverse avant"))).toBe(true);
+    for (const k of ["evier", "robinet", "siphon", "decoupe"]) expect(ctx.hw[k]).toBeTruthy();
+    // pas de caisson haut au-dessus de l'évier par défaut
+    const nbBas = ctx.parts.filter(p => /^Caisson (bas \d+|évier) · Côté gauche$/.test(p.name)).length;
+    const nbHaut = ctx.parts.filter(p => /^Caisson haut \d+ · Côté gauche$/.test(p.name)).length;
+    expect(nbHaut).toBe(nbBas - 1);
+    expect(buildRecipe("cuisine-complete", P, opts({ hautEvier: 1 })).parts.filter(p => /^Caisson haut \d+ · Côté gauche$/.test(p.name)).length).toBe(nbBas);
+  });
+  it("évier de 120 cm : 2 bacs", () => {
+    expect(buildRecipe("cuisine-complete", P, opts({ evier: 1200 })).hw.evier.label).toContain("2 bacs");
+    expect(buildRecipe("caisson-evier", { L: 800, H: 870, P: 560, ep: 18 }, {}).hw.evier.label).toContain("1 bac");
+  });
+  it("petite cuisine (1,40 m) : évier + un caisson, toujours sans trou", () => {
+    const m = modulesCuisine(1400, opts());
+    expect(m.reduce((s, x) => s + x.W, 0)).toBeCloseTo(1400, 6);
+    expect(m.filter(x => x.type === "evier").length).toBe(1);
+    expect(m.length).toBe(2);
+  });
+});
