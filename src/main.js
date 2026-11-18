@@ -12,6 +12,8 @@ import { versWav } from "./audio-wav.js";
 import { MODES, modeNom, acompteDu, resume, validerPaiement, prochainNumero } from "./paiements.js";
 import { DISPO, MODES_RETRAIT, reponseInitiale, totalReponse, validerReponse, dateLisible, texteReponse, cleSuivi, changements } from "./commandes.js";
 import qrcode from "qrcode-generator";
+import { editeurCroquis } from "./croquis-ui.js";
+import * as imp3d from "./import3d.js";
 import "./styles.css";
 
 const COLORS=[["Blanc","#efefeb"],["Gris","#8b8f90"],["Noir","#2a2a2a"],["Chêne clair","#c9a36b"],["Wengé","#4a3326"]];
@@ -53,7 +55,7 @@ function renderCatalog(){
   const modelesTrouves=q?MODELES.filter(m=>m.nom.toLowerCase().includes(q)):fam==="*"?MODELES:fam?MODELES.filter(m=>famModele(m)===fam):[];
   // Sans recherche ni famille : on montre les familles.
   const voirFamilles=!q&&!fam;
-  $("familles").hidden=!voirFamilles;
+  $("familles").hidden=!voirFamilles;$("creer").hidden=!voirFamilles;
   $("familles").replaceChildren(...FAMILLES.map(([nom,e])=>{const n=RECIPES.filter(r=>r.cat===nom).length+MODELES.filter(m=>R(m.recette).cat===nom).length;return el("button",{type:"button",class:"famille",onclick:()=>{st.room=nom;save();renderCatalog()}},el("span",{class:"e","aria-hidden":"true"},e),el("b",{},nom),el("span",{class:"nb"},n+" meubles"))}),
     el("button",{type:"button",class:"famille tous",onclick:()=>{st.room="*";save();renderCatalog()}},el("span",{class:"e","aria-hidden":"true"},"📋"),el("b",{},"Tous les meubles"),el("span",{class:"nb"},RECIPES.length+MODELES.length)));
   $("famHead").hidden=voirFamilles;
@@ -99,14 +101,21 @@ function majBarPrix(){
 }
 
 /* ----- Configurateur ----- */
+let editeurActif=null; // éditeur « Mon dessin » affiché dans Régler
 function renderControls(){
   const r=R(st.id),c=cfg();
   const mod=modeleActif();
   $("current").replaceChildren(el("span",{class:"e","aria-hidden":"true"},r.e),el("div",{},el("b",{},mod?mod.nom:r.nom),el("div",{class:"note"},mod?r.nom:r.cat)));
   const labels=r.dimLabels||["Largeur","Hauteur","Profondeur"];
-  $("dims").replaceChildren(...["L","H","P"].map((k,i)=>{const inp=el("input",{id:"d"+k,type:"number",inputmode:"numeric",min:String((r.dimMin||[10,10,10])[i]),max:"2000"});inp.value=c[k];inp.addEventListener("input",e=>{c[k]=parseFloat(e.target.value)||0;compute()});return el("div",{class:"num"},el("label",{for:"d"+k},labels[i]),inp,el("small",{},["↔","↕","⤢"][i]))}));
+  $("dims").replaceChildren(...["L","H","P"].map((k,i)=>{const inp=el("input",{id:"d"+k,type:"number",inputmode:"numeric",min:String((r.dimMin||[10,10,10])[i]),max:"2000"});inp.value=c[k];inp.addEventListener("input",e=>{c[k]=parseFloat(e.target.value)||0;compute();if(editeurActif&&c[k]>=10)editeurActif.redessiner()});return el("div",{class:"num"},el("label",{for:"d"+k},labels[i]),inp,el("small",{},["↔","↕","⤢"][i]))}));
   $("optsLabel").hidden=!r.opts.length;
+  $("optsLabel").textContent=r.dessin?"✏️ Dessinez la façade":"Les options";
+  editeurActif=null;
   $("opts").replaceChildren(...r.opts.map(x=>{
+    if(x.croquis){
+      editeurActif=editeurCroquis({croquis:c.o[x.k],dims:()=>({L:c.L,H:c.H,ep:st.ep}),onChange:k=>{c.o[x.k]=k;compute()}});
+      return editeurActif;
+    }
     if(x.choice)return el("div",{style:"display:grid;gap:6px"},el("span",{class:"name",style:"font-weight:700"},x.label),el("div",{class:"seg"},x.options.map(([v,l])=>el("button",{type:"button","aria-pressed":String(c.o[x.k]===v),onclick:()=>{c.o[x.k]=v;renderControls();compute()}},l))));
     const out=el("output",{},String(c.o[x.k]));
     const chg=d=>{c.o[x.k]=Math.max(x.min,Math.min(x.max,c.o[x.k]+d*(x.step||1)));out.textContent=c.o[x.k];compute()};
@@ -773,6 +782,9 @@ let bbox={size:[1,1,1]};
 function fitCamera(){const [sx,sy,sz]=bbox.size,r=Math.max(sx,sy,sz);camera.position.set(r*1.2,sy*0.75+r*0.45,r*1.9);controls.target.set(0,sy/2,0);controls.update()}
 function update3D(ctx,refit){
   if(!has3D||!ctx)return;
+  majBarreImport();
+  if(vueImportee()){afficherImport(refit);return}
+  jetonImport++; // une 3D importée en cours de lecture ne remplacera pas ce meuble
   if(group)scene.remove(group);
   group=new THREE.Group();movers=[];markers=[];
   const col=new THREE.Color(COLORS[st.color][1]);
@@ -863,6 +875,87 @@ function setupTap(){
       if(o){const isOpen=Math.abs(o.userData.target-o.userData.open)<1e-6;o.userData.target=isOpen?(o.userData.kind==="door"?0:o.userData.base):o.userData.open;$("hint3d").hidden=true;return}
       break;}
   });
+}
+
+
+/* ----- 3D importée par le menuisier (montrer au client) ----- */
+const fichierImport=el("input",{type:"file",accept:imp3d.ACCEPT,hidden:"hidden"});document.body.append(fichierImport);
+let importCible=null,importCotes=false,jetonImport=0,importIndispo=null,tailleImport=null;
+const cache3D=new Map(); // id du fichier → objet 3D déjà lu
+const couleurImport=()=>new THREE.Color(COLORS[st.color][1]).getHex();
+const vueImportee=()=>{const f=cfg().fichier3d;return !!f&&st.vue3d!=="menuipro"&&importIndispo!==f.id};
+function demanderImport(idMeuble,prendreCotes){importCible=idMeuble;importCotes=!!prendreCotes;fichierImport.value="";fichierImport.click()}
+fichierImport.onchange=()=>{const f=fichierImport.files[0];if(f)importer3D(f,importCible||st.id,importCotes)};
+$("btnDessiner").onclick=()=>choisirMeuble("croquis");
+$("btnImporter").onclick=()=>demanderImport("croquis",true); // nouveau dessin aux cotes de la 3D
+async function importer3D(f,idMeuble,prendreCotes){
+  const err=imp3d.verifierFichier(f);if(err){toast(err,true);return}
+  toast("⏳ Lecture de la 3D…");
+  const ext=imp3d.extension(f.name);let obj;
+  try{obj=await imp3d.lireObjet(f,ext,couleurImport())}catch(e){toast("Impossible de lire ce fichier 3D. Essayez de l'exporter en GLB.",true);return}
+  const id="m"+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+  const fi={id,nom:f.name.slice(0,80),ext,octets:f.size,largeur:imp3d.devinerLargeurCm(imp3d.tailleBrute(obj)),quart:0,couche:0,chemin:null};
+  cache3D.set(id,obj);
+  try{await imp3d.garderLocal(id,f)}catch(e){}
+  if(st.id!==idMeuble){st.id=idMeuble;st.modele=null;openState=false;sel=0}
+  const c=cfg();c.fichier3d=fi;st.vue3d="import";importIndispo=null;
+  // « Mon dessin » prend les cotes de la 3D : le menuisier n'a plus qu'à tracer les cases.
+  if(prendreCotes&&R(st.id).dessin){const t=imp3d.placer(obj,fi).taille.map(v=>Math.max(30,Math.round(v*100)));c.L=t[0];c.H=t[1];c.P=Math.max(20,t[2])}
+  save();renderCatalog();renderControls();compute(true);setEtape("voir");
+  toast("✅ 3D importée. Réglez la largeur réelle sous la 3D si la taille n'est pas bonne.");
+  if(ME)cloud.envoyerModele3D(id+"."+ext,f).then(ch=>{fi.chemin=ch;save();majBarreImport()}).catch(e=>toast("3D gardée sur ce téléphone seulement : "+cloud.message(e),true));
+}
+async function afficherImport(refit){
+  const f=cfg().fichier3d,j=++jetonImport;
+  let obj=cache3D.get(f.id);
+  if(!obj){
+    $("imp3d").prepend(el("p",{class:"note"},"⏳ Ouverture de votre 3D…"));
+    try{
+      let blob=await imp3d.lireLocal(f.id);
+      if(!blob&&f.chemin&&ME){blob=await cloud.telechargerModele3D(f.chemin);imp3d.garderLocal(f.id,blob).catch(()=>{})}
+      if(!blob)throw new Error("absent");
+      obj=await imp3d.lireObjet(blob,f.ext,couleurImport());cache3D.set(f.id,obj);
+    }catch(e){if(j===jetonImport){importIndispo=f.id;update3D(lastCtx,true)}return}
+  }
+  if(j!==jetonImport||!vueImportee())return;
+  if(f.ext==="obj"||f.ext==="stl")obj.traverse(m=>{if(m.isMesh&&m.material&&m.material.color)m.material.color.setHex(couleurImport())});
+  if(group)scene.remove(group);
+  const {groupe,taille}=imp3d.placer(obj,f);
+  group=groupe;movers=[];markers=[];scene.add(group);
+  bbox.size=taille;tailleImport=taille;
+  $("openBtn").hidden=true;$("hint3d").hidden=true;$("holesBtn").hidden=true;
+  if(refit)fitCamera();
+  majBarreImport();
+}
+// Barre sous la 3D : importer, basculer « Ma 3D / MenuiPro », régler la taille et le sens.
+function majBarreImport(){
+  const box=$("imp3d");if(!box)return;
+  const c=cfg(),f=c.fichier3d;
+  $("holesBtn").hidden=!!f&&vueImportee();
+  if(!f){box.replaceChildren(el("button",{type:"button",class:"btn",onclick:()=>demanderImport(st.id)},"📤 Mettre ma propre 3D (GLB, OBJ, STL, FBX)"));return}
+  const voir=v=>{st.vue3d=v;save();openState=false;update3D(lastCtx,true)};
+  const imp=vueImportee();
+  const seg=el("div",{class:"seg"},
+    el("button",{type:"button","aria-pressed":String(imp),onclick:()=>{importIndispo=null;voir("import")}},"📤 Ma 3D"),
+    el("button",{type:"button","aria-pressed":String(!imp),onclick:()=>voir("menuipro")},"🪚 3D MenuiPro"));
+  const parts=[seg];
+  if(importIndispo===f.id)parts.push(el("p",{class:"warn"},f.chemin||!cloud.actif?"Votre 3D « "+f.nom+" » n'a pas pu être ouverte. Vérifiez Internet ou importez-la à nouveau.":"Votre 3D « "+f.nom+" » est restée sur l'autre téléphone. Importez-la à nouveau ici."));
+  if(imp){
+    const larg=el("input",{type:"number",inputmode:"numeric",min:"5",max:"2000",id:"impLarg"});larg.value=f.largeur;
+    larg.addEventListener("change",()=>{const v=parseFloat(larg.value);if(v>=5&&v<=2000){f.largeur=Math.round(v);save();afficherImport(true)}});
+    const t=tailleImport?tailleImport.map(v=>Math.round(v*100)):null;
+    parts.push(
+      el("div",{class:"imp-ligne"},el("label",{for:"impLarg"},"📏 Largeur réelle (cm)"),larg,
+        el("button",{type:"button",class:"btn",onclick:()=>{f.quart=((f.quart||0)+1)%4;save();afficherImport(true)}},"🔄 Tourner"),
+        el("button",{type:"button",class:"btn",onclick:()=>{f.couche=f.couche?0:1;save();afficherImport(true)}},"⤴️ Redresser")),
+      t?el("p",{class:"note"},"Taille : "+t[0]+" × "+t[1]+" × "+t[2]+" cm · "+(f.chemin?"☁️ sauvegardée en ligne":ME?"⏳ envoi en ligne…":"📱 sur ce téléphone")):null,
+      el("p",{class:"note"},"La découpe et le prix viennent du meuble MenuiPro"+(R(st.id).dessin?" : dessinez ses cases à l'étape Régler ✏️.":" (étape Régler).")),
+      el("div",{class:"actions"},
+        R(st.id).dessin&&t?el("button",{type:"button",class:"btn",onclick:()=>{c.L=Math.max(30,t[0]);c.H=Math.max(30,t[1]);c.P=Math.max(20,t[2]);save();renderControls();compute();toast("📐 Cotes du dessin : "+c.L+" × "+c.H+" × "+c.P+" cm")}},"📐 Prendre ces cotes pour le dessin"):null,
+        el("button",{type:"button",class:"btn",onclick:()=>demanderImport(st.id)},"📤 Changer de fichier"),
+        el("button",{type:"button",class:"btn",onclick:()=>{delete c.fichier3d;st.vue3d=null;save();update3D(lastCtx,true)}},"🗑️ Retirer ma 3D")));
+  }
+  box.replaceChildren(...parts.filter(Boolean));
 }
 
 /* ----- Invitation d'une quincaillerie (lien ?invite=CODE) ----- */
@@ -1437,7 +1530,8 @@ async function vueAdmin(){
   ];
 }
 /* ----- Assistant vocal : note vocale en wolof → meuble rempli ----- */
-const CAT_IA=catalogueIA(RECIPES);
+// « Mon dessin » se fait au doigt, pas à la voix : il reste hors de l'assistant.
+const RECETTES_IA=RECIPES.filter(r=>!r.dessin),CAT_IA=catalogueIA(RECETTES_IA);
 let micRec=null;
 function bulle(gros,petit){const b=$("micBulle");b.hidden=!gros;b.replaceChildren(el("b",{},gros||""),petit?el("div",{class:"note"},petit):"")}
 function appliquerAction(a){
@@ -1468,7 +1562,7 @@ $("micBtn").onclick=async()=>{
     try{
       let note=new Blob(morceaux,{type:r.mimeType||"audio/webm"});try{note=await versWav(note)}catch(e){/* on envoie le format d'origine */}
       const res=await cloud.assistant(note,CAT_IA,{recette:st.id,nom:R(st.id).nom,...cfg()},duree);
-      const a=validerAction(res.action,RECIPES,st.id)||{action:"inconnu",reponse:"pas_compris"};
+      const a=validerAction(res.action,RECETTES_IA,st.id)||{action:"inconnu",reponse:"pas_compris"};
       const ic={compris:"👍",modifie:"🔁",pas_compris:"🤔",limite:"⛔"}[a.reponse]||"💡";
       bulle(ic+" "+(a.recette?R(a.recette).nom:""),[res.texte?"« "+res.texte+" »":"",a.resume].filter(Boolean).join(" → "));
       appliquerAction(a);

@@ -148,3 +148,13 @@ export async function assistant(blob, catalogue, contexte, duree) {
   }
   return data;
 }
+
+/* ---------- Fichiers 3D importés (bucket privé « modeles3d », dossier = id du compte) ---------- */
+export async function envoyerModele3D(nomFichier, blob) {
+  const s = await session();
+  if (!s) throw new Error("non_connecte");
+  const chemin = s.user.id + "/" + nomFichier;
+  ok(await sb.storage.from("modeles3d").upload(chemin, blob, { upsert: true, contentType: blob.type || "application/octet-stream", cacheControl: "31536000" }));
+  return chemin;
+}
+export async function telechargerModele3D(chemin) { return ok(await sb.storage.from("modeles3d").download(chemin)); }

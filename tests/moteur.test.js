@@ -215,3 +215,62 @@ describe("Assistant vocal : contrôle des actions de l'IA", () => {
     expect(a.reponse).toBe("compris");
   });
 });
+
+import { croquisDefaut, normaliserCroquis, lireTrait, appliquerTrait, appliquerOutil, deplacerLigne, bordsColonnes } from "../src/engine/index.js";
+describe("Mon dessin (croquis → meuble)", () => {
+  const r = RECIPES.find(x => x.id === "croquis");
+  const P = { L: 1200, H: 2000, P: 550, ep: 18 };
+  const noms = ctx => ctx.parts.map(p => p.name);
+  it("le croquis par défaut donne un meuble complet (caisse, séparation, tiroirs, portes, penderie)", () => {
+    const ctx = buildRecipe("croquis", P, { croquis: croquisDefaut() });
+    expect(noms(ctx)).toContain("Séparation 1");
+    expect(noms(ctx).some(n => n.includes("Façade tiroir"))).toBe(true);
+    expect(ctx.hw.tringle).toBeTruthy(); expect(ctx.hw.charn).toBeTruthy();
+  });
+  it("un croquis abîmé ou vide ne plante jamais", () => {
+    for (const k of [null, {}, { cols: [] }, { cols: [{ zones: [{ t: "???", n: -4, f: "x" }] }] }, { cols: Array(30).fill({ f: 1 }) }])
+      expect(() => buildRecipe("croquis", P, { croquis: k })).not.toThrow();
+    expect(normaliserCroquis({ cols: Array(30).fill({ f: 1 }) }).cols.length).toBe(8);
+  });
+  it("un trait vertical coupe la colonne, un trait horizontal coupe la case", () => {
+    const k = { socle: 0, cols: [{ f: 1, zones: [{ f: 1, t: "vide" }] }] };
+    const v = lireTrait([[0.5, 0.1], [0.51, 0.5], [0.49, 0.9]]);
+    expect(v.sens).toBe("vertical");
+    const k2 = appliquerTrait(k, v, P.L, P.H);
+    expect(k2.cols.length).toBe(2);
+    const h = lireTrait([[0.05, 0.3], [0.45, 0.31]]);
+    expect(h.sens).toBe("horizontal");
+    const k3 = appliquerTrait(k2, h, P.L, P.H);
+    expect(k3.cols[0].zones.length).toBe(2); expect(k3.cols[1].zones.length).toBe(1);
+    // la case du haut fait environ 30 % de la hauteur
+    expect(k3.cols[0].zones[1].f / (k3.cols[0].zones[0].f + k3.cols[0].zones[1].f)).toBeCloseTo(0.3, 2);
+  });
+  it("un gribouillis ou une case trop petite est refusé", () => {
+    expect(lireTrait([[0.1, 0.1], [0.4, 0.4]])).toBe(null);
+    const k = { cols: [{ f: 1, zones: [{ f: 1, t: "vide" }] }] };
+    expect(appliquerTrait(k, { sens: "vertical", pos: 0.02 }, 1200, 2000)).toBe(null);
+  });
+  it("les outils remplissent la case et la gomme fusionne", () => {
+    let k = { cols: [{ f: 1, zones: [{ f: 1, t: "vide" }, { f: 1, t: "vide" }] }] };
+    k = appliquerOutil(k, 0, 0, "tiroir"); k = appliquerOutil(k, 0, 0, "tiroir");
+    expect(k.cols[0].zones[0]).toMatchObject({ t: "tiroirs", n: 2 });
+    k = appliquerOutil(k, 0, 1, "porte"); k = appliquerOutil(k, 0, 1, "porte");
+    expect(k.cols[0].zones[1].portes).toBe(2);
+    k = appliquerOutil(k, 0, 0, "gomme");
+    expect(k.cols[0].zones.length).toBe(1);
+    const ctx = buildRecipe("croquis", P, { croquis: k });
+    expect(ctx.hw.charn).toBeTruthy();
+  });
+  it("déplacer une séparation garde les bornes", () => {
+    const k = { cols: [{ f: 1, zones: [{ f: 1, t: "vide" }] }, { f: 1, zones: [{ f: 1, t: "vide" }] }] };
+    const k2 = deplacerLigne(k, "col", 0, 0, 0.75, 1200, 2000);
+    expect(bordsColonnes(k2)[0][1]).toBeCloseTo(0.75, 3);
+    expect(bordsColonnes(deplacerLigne(k, "col", 0, 0, 0.999, 1200, 2000))[0][1]).toBeLessThan(0.91);
+  });
+  it("la largeur des colonnes suit le dessin", () => {
+    const k = { socle: 0, cols: [{ f: 1, zones: [{ f: 1, t: "etageres", n: 1 }] }, { f: 3, zones: [{ f: 1, t: "etageres", n: 1 }] }] };
+    const ctx = buildRecipe("croquis", P, { croquis: k });
+    const et = ctx.parts.filter(p => p.name.includes("Étagère"));
+    expect(et[1].box[3] / et[0].box[3]).toBeGreaterThan(2.5);
+  });
+});

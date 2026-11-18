@@ -309,3 +309,47 @@ body.attente::after{content:"⏳";position:fixed;inset:0;display:grid;place-item
 .sousfam{grid-column:1/-1;margin:14px 0 2px;font-family:var(--display);font-size:17px;color:var(--ink)}
 .sousfam:first-child{margin-top:0}
 .sousfam:empty{display:none}
+
+/* ----- Créer : dessiner ou importer ----- */
+.creer{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:10px}
+.creer[hidden]{display:none}
+.creer-btn{display:grid;justify-items:center;gap:4px;border:2px dashed var(--accent);background:var(--accent-soft);color:var(--ink);border-radius:16px;padding:16px 8px;font:inherit;cursor:pointer;text-align:center}
+.creer-btn .e{font-size:38px;line-height:1.1}
+.creer-btn b{font-family:var(--display);font-size:17px}
+.creer-btn .nb{font-size:13px;color:var(--muted)}
+
+/* ----- Éditeur « Mon dessin » ----- */
+.croquis{display:grid;gap:8px}
+.cq-outils{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.cq-outil{display:flex;flex-direction:column;align-items:center;gap:2px;border:2px solid var(--line);background:var(--surface);color:var(--ink);border-radius:12px;padding:6px 2px;font:inherit;font-size:12px;font-weight:700;cursor:pointer;min-width:0}
+.cq-outil .ic{font-size:24px;line-height:1}
+.cq-outil span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.cq-outil[aria-pressed="true"]{border-color:var(--accent);background:var(--accent);color:var(--surface)}
+.cq-zone{display:flex;justify-content:center;background:var(--wood-soft);border-radius:14px;padding:10px}
+.croquis-svg{width:100%;max-height:58vh;touch-action:none;user-select:none;-webkit-user-select:none}
+.cq-caisse{fill:#c9a36b;stroke:#8a5226;stroke-width:3}
+.cq-socle{fill:#8a5226}
+.cq-fond{fill:#fffaf2;stroke:#8a5226;stroke-width:2}
+.cq-ligne{stroke:#8a5226;stroke-width:10}
+.cq-sep{fill:#8a5226}
+.cq-etagere{stroke:#8a5226;stroke-width:9;stroke-linecap:round}
+.cq-tiroir{fill:#f3e4d1;stroke:#8a5226;stroke-width:3}
+.cq-porte{fill:rgba(29,107,82,.16);stroke:var(--accent);stroke-width:4}
+.cq-poignee{stroke:#2b211a;stroke-width:8;stroke-linecap:round}
+.cq-tringle{stroke:#6f7376;stroke-width:9;stroke-linecap:round}
+.cq-emoji{font-size:64px}
+.cq-badge{fill:var(--accent)}
+.cq-badge-t{fill:#fff;font:700 28px system-ui,sans-serif}
+.cq-cote{fill:var(--muted);font:600 24px system-ui,sans-serif}
+.cq-cote-l{fill:var(--ink);font:700 30px system-ui,sans-serif}
+.cq-trait{fill:none;stroke:#d9480f;stroke-width:9;stroke-linecap:round;stroke-linejoin:round}
+.croquis-msg{margin:0;min-height:1.2em;font-size:14px;font-weight:700;color:var(--accent)}
+.croquis-msg.err{color:#b3261e}
+.cq-actions{flex-wrap:wrap}
+
+/* ----- 3D importée ----- */
+.imp3d{display:grid;gap:8px;margin-top:8px}
+.imp-ligne{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.imp-ligne label{font-weight:700}
+.imp-ligne input{width:90px;font:inherit;font-size:17px;padding:8px;border:2px solid var(--line);border-radius:10px}
+@media (max-width:420px){.cq-outil{font-size:10px}.cq-outil .ic{font-size:21px}}
