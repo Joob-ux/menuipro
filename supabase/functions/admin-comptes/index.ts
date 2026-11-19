@@ -1,5 +1,5 @@
 // MenuiPro — fonction serveur réservée à l'administrateur :
-//   « creer » : crée un compte (quincaillerie, menuisier ou administrateur) avec numéro + code PIN
+//   « creer » : crée un compte (quincaillerie, menuisier ou administrateur) et sa carte QR ; code PIN facultatif
 //   « pin »   : remplace le code PIN d'un compte existant
 //   « bloquer » / « debloquer » / « supprimer » : agit sur un compte (jamais un administrateur)
 // La clé de service reste sur le serveur ; l'appelant doit être connecté avec un compte « admin ».
@@ -13,6 +13,9 @@ const CORS = {
 };
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
+const b64url = (b: Uint8Array) => btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const empreinte = async (cle: string) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(cle)))).map(x => x.toString(16).padStart(2, "0")).join("");
+const nouvelleCle = () => b64url(crypto.getRandomValues(new Uint8Array(32)));
 const normaliser = (t: unknown) => { let d = String(t ?? "").replace(/\D/g, ""); if (d.length === 9) d = "221" + d; return d; };
 
 Deno.serve(async (req) => {
@@ -50,7 +53,8 @@ Deno.serve(async (req) => {
   const tel = normaliser(corps.telephone);
   const pin = String(corps.pin ?? "");
   if (tel.length < 11 || tel.length > 15) return json({ erreur: "telephone_invalide" }, 400);
-  if (!/^\d{6}$/.test(pin)) return json({ erreur: "pin_invalide" }, 400);
+  // Code PIN : obligatoire pour le changer, facultatif à la création (la carte QR suffit pour se connecter).
+  if (!/^\d{6}$/.test(pin) && !(corps.action === "creer" && pin === "")) return json({ erreur: "pin_invalide" }, 400);
   const email = `${tel}@menuipro.app`;
 
   // 2. Réinitialiser un code PIN
@@ -68,7 +72,7 @@ Deno.serve(async (req) => {
     if (!["quincaillerie", "menuisier", "admin"].includes(type)) return json({ erreur: "type_inconnu" }, 400);
     const nom = String(corps.nom ?? "").trim().slice(0, 80);
     const { data: cree, error } = await service.auth.admin.createUser({
-      email, password: pin, email_confirm: true, user_metadata: { telephone: tel, nom },
+      email, password: pin || nouvelleCle() + nouvelleCle(), email_confirm: true, user_metadata: { telephone: tel, nom },
     });
     if (error) return json({ erreur: /already|registered|exists/i.test(error.message) ? "deja_inscrit" : error.message }, 400);
     const { data: conf, error: errConf } = await service.rpc("svc_configurer_compte", {
@@ -80,7 +84,11 @@ Deno.serve(async (req) => {
       await service.auth.admin.deleteUser(cree.user.id); // on n'en laisse pas à moitié créé
       return json({ erreur: errConf.message }, 400);
     }
-    return json({ ok: true, telephone: tel, type, ...(conf ?? {}) });
+    // Carte QR du nouveau compte : la clé n'est montrée qu'ici, la base n'en garde que l'empreinte.
+    const cle = nouvelleCle();
+    const { error: errCarte } = await service.rpc("svc_poser_carte", { p_user: cree.user.id, p_empreinte: await empreinte(cle), p_par: qui.user.id });
+    if (errCarte) { await service.auth.admin.deleteUser(cree.user.id); return json({ erreur: errCarte.message }, 400); }
+    return json({ ok: true, telephone: tel, type, cle, ...(conf ?? {}) });
   }
   return json({ erreur: "action_inconnue" }, 400);
 });

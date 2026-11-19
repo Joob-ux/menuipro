@@ -14,6 +14,7 @@ import { DISPO, MODES_RETRAIT, reponseInitiale, totalReponse, validerReponse, da
 import qrcode from "qrcode-generator";
 import { editeurCroquis } from "./croquis-ui.js";
 import * as imp3d from "./import3d.js";
+import { ouvrirScanner } from "./scanner.js";
 import "./styles.css";
 
 const COLORS=[["Blanc","#efefeb"],["Gris","#8b8f90"],["Noir","#2a2a2a"],["Chêne clair","#c9a36b"],["Wengé","#4a3326"]];
@@ -1165,7 +1166,7 @@ function panneauInviter(q){
   const qr=el("div",{class:"qr",role:"img","aria-label":"QR code du lien d'invitation"});qr.innerHTML=qrSvg(lien);
   const st=el("p",{class:"status",role:"status"});
   return el("section",{class:"panel"},el("h2",{},"📲 Inviter mes menuisiers"),
-    el("p",{class:"note"},"Envoyez ce lien sur WhatsApp, ou faites scanner le QR code au comptoir. Le menuisier est rattaché tout seul : plus de code à recopier."),
+    el("p",{class:"note"},"Au comptoir, le menuisier scanne ce QR code : il crée son compte avec son nom et son numéro, et il est rattaché à vous tout de suite. Vous pouvez aussi envoyer le lien sur WhatsApp."),
     qr,
     el("div",{class:"actions"},
       el("a",{class:"btn primary",href:"https://wa.me/?text="+encodeURIComponent(msg),target:"_blank",rel:"noopener"},"📲 Envoyer sur WhatsApp"),
@@ -1297,63 +1298,163 @@ setInterval(()=>{if(document.visibilityState==="visible")verifierCommandes()},12
 /* ----- Page de connexion : on ne voit l'application qu'après s'être connecté ----- */
 // Numéro WhatsApp du support (variable VITE_SUPPORT_WHATSAPP sur Render) pour « Code PIN oublié ».
 const SUPPORT_WA=waDigits(import.meta.env.VITE_SUPPORT_WHATSAPP||"");
-let modePorte="connexion";
 function entrerDansAppli(){
   document.body.classList.remove("verrou","attente");$("porte").hidden=true;$("porte").replaceChildren();
   show(location.hash.slice(1)||vueAccueil());
 }
+/* ----- Carte MenuiPro : le QR code personnel qui ouvre le compte sur n'importe quel téléphone ----- */
+const lienCarte=cle=>location.origin+"/?carte="+encodeURIComponent(cle);
+function carteGardee(){try{const c=JSON.parse(localStorage.getItem("menuipro-carte")||"null");return c&&ME&&c.user===ME.user.id?c.cle:(c&&!ME?c.cle:null)}catch(e){return null}}
+function garderCarte(cle,user){try{localStorage.setItem("menuipro-carte",JSON.stringify({cle,user}))}catch(e){}}
+const ROLE_NOM={menuisier:"Menuisier",quincaillerie:"Quincaillerie",admin:"Administrateur"};
+// Image de la carte (à garder en photo, ou à envoyer sur WhatsApp).
+async function imageCarte(nom,role,cle){
+  const q=qrcode(0,"M");q.addData(lienCarte(cle));q.make();
+  const n=q.getModuleCount(),cell=Math.floor(560/(n+8)),W=cell*(n+8)+80,cv=document.createElement("canvas");cv.width=W;cv.height=W+230;
+  const g=cv.getContext("2d");g.fillStyle="#fffaf2";g.fillRect(0,0,cv.width,cv.height);
+  g.fillStyle="#8a5226";g.fillRect(0,0,cv.width,120);g.fillStyle="#fff";g.font="bold 44px system-ui,sans-serif";g.textAlign="center";g.fillText("🪚 MenuiPro",W/2,78);
+  const x0=40+cell*4,y0=150+cell*4;g.fillStyle="#fff";g.fillRect(40,150,cell*(n+8),cell*(n+8));g.fillStyle="#1b1410";
+  for(let r=0;r<n;r++)for(let c=0;c<n;c++)if(q.isDark(r,c))g.fillRect(x0+c*cell,y0+r*cell,cell,cell);
+  g.fillStyle="#1b1410";g.font="bold 36px system-ui,sans-serif";g.fillText((nom||"Mon compte").slice(0,28),W/2,W+130);
+  g.fillStyle="#6b5a4c";g.font="26px system-ui,sans-serif";g.fillText((ROLE_NOM[role]||"")+" · Ma carte MenuiPro",W/2,W+172);
+  g.font="22px system-ui,sans-serif";g.fillText("Scannez-la pour ouvrir votre compte. Ne la montrez à personne.",W/2,W+210);
+  return await new Promise(ok=>cv.toBlob(ok,"image/png"));
+}
+async function partagerCarte(nom,role,cle){
+  const blob=await imageCarte(nom,role,cle),f=new File([blob],"carte-menuipro.png",{type:"image/png"});
+  try{if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f],title:"Ma carte MenuiPro"});return}}catch(e){if(e&&e.name==="AbortError")return}
+  const a=el("a",{href:URL.createObjectURL(blob),download:"carte-menuipro.png"});document.body.append(a);a.click();a.remove();
+  toast("⬇️ Carte enregistrée dans vos téléchargements");
+}
+// Bloc « carte » : QR code + enregistrer + WhatsApp. tel : numéro à qui l'envoyer (menuisier d'une quincaillerie…).
+function blocCarte({nom,role,cle,tel,pourMoi}){
+  const qr=el("div",{class:"qr carte-qr",role:"img","aria-label":"QR code de la carte MenuiPro de "+(nom||"ce compte")});qr.innerHTML=qrSvg(lienCarte(cle));
+  const msg=(pourMoi?"Ma carte MenuiPro":"Bonjour"+(nom?" "+nom:"")+", voici votre carte MenuiPro")+" : ouvrez ce lien sur votre téléphone pour entrer dans votre compte. Ne l'envoyez à personne d'autre. "+lienCarte(cle);
+  const wa=waDigits(tel);
+  return el("div",{class:"carte"},
+    el("div",{class:"carte-tete"},el("span",{"aria-hidden":"true"},"🪪"),el("div",{},el("b",{},nom||"Carte MenuiPro"),el("span",{class:"note"},(ROLE_NOM[role]||"")+" · carte personnelle"))),
+    qr,
+    el("div",{class:"actions"},
+      el("button",{type:"button",class:"btn primary",onclick:()=>partagerCarte(nom,role,cle)},pourMoi?"⬇️ Garder ma carte (photo)":"⬇️ Image de la carte"),
+      el("a",{class:"btn",href:"https://wa.me/"+(wa||"")+"?text="+encodeURIComponent(msg),target:"_blank",rel:"noopener"},pourMoi?"📲 M'envoyer sur WhatsApp":"📲 Envoyer sur WhatsApp")),
+    el("p",{class:"note"},pourMoi?"Gardez cette carte : si vous changez de téléphone, scannez-la pour retrouver votre compte et vos projets.":"Cette carte ouvre son compte : ne la donnez qu'à cette personne. L'ancienne carte ne marche plus."));
+}
+// Fenêtre qui montre une carte (quincaillerie pour un menuisier, administrateur pour tout compte).
+function montrerCarte(info){
+  const fond=el("div",{class:"modal-carte",role:"dialog","aria-label":"Carte MenuiPro"});
+  fond.append(el("div",{class:"modal-boite"},blocCarte(info),el("div",{class:"actions"},el("button",{type:"button",class:"btn",onclick:()=>fond.remove()},"✖ Fermer"))));
+  fond.addEventListener("click",e=>{if(e.target===fond)fond.remove()});
+  document.body.append(fond);
+}
+async function refaireCarte(user,infos={}){
+  try{const r=await cloud.nouvelleCarte(user,infos.quinc);montrerCarte({nom:r.nom||infos.nom,role:r.role||infos.role,cle:r.cle,tel:r.telephone||infos.tel});return r}
+  catch(e){toast(cloud.messageQR(e),true)}
+}
+// Connexion par la carte : lien ?carte=… (appareil photo du téléphone) ou lecteur de l'appli.
+async function entrerAvecCarte(cle,status){
+  try{
+    if(status){status.className="status";status.textContent="⏳ Ouverture de votre compte…"}
+    await cloud.connecterCarte(cle);
+    ME=await cloud.chargerCompte();if(!ME)throw new Error("compte_inconnu");
+    garderCarte(cle,ME.user.id);
+    try{history.replaceState(null,"",location.pathname)}catch(e){}
+    $("porte").hidden=true;entrerDansAppli();appliquerCompte();majMicro();
+    toast("✅ Bienvenue "+(ME.profil&&ME.profil.nom||""));
+    return true;
+  }catch(e){if(status){status.className="status err";status.textContent=cloud.messageQR(e)}else toast(cloud.messageQR(e),true);return false}
+}
+// Texte lu dans un QR : carte personnelle, invitation d'une quincaillerie (lien ou code seul).
+function lireTexteQR(t){
+  try{const u=new URL(t);const c=u.searchParams.get("carte");if(c)return {carte:c};const i=(u.searchParams.get("invite")||"").trim().toUpperCase();if(/^[0-9A-Z]{6}$/.test(i))return {invite:i}}catch(e){}
+  const c=String(t||"").trim().toUpperCase();if(/^[0-9A-Z]{6}$/.test(c))return {invite:c};
+  return null;
+}
+
+/* ----- Porte d'entrée : créer son compte (nom + numéro) ou scanner sa carte ----- */
+// QR code d'une quincaillerie scanné avec l'appareil photo : on va droit à « Créer mon compte ».
+let modePorte=INVITE&&!carteGardee()?"inscription":"accueil";
 async function ouvrirPorte(horsLigne){
   document.body.classList.remove("attente");document.body.classList.add("verrou");
   const box=$("porte");box.hidden=false;
   const status=el("p",{class:"status",role:"status"});
   if(horsLigne){status.className="status err";status.textContent="Pas de connexion Internet. Vérifiez le réseau puis réessayez."}
+  const aller=m=>{modePorte=m;ouvrirPorte()};
+  const scanner=()=>ouvrirScanner({titre:"Scannez le QR code",aide:"Visez votre carte MenuiPro, ou le QR code de votre quincaillerie.",onTexte:t=>{
+    const r=lireTexteQR(t);
+    if(r&&r.carte){entrerAvecCarte(r.carte,status);return}
+    if(r&&r.invite){INVITE=r.invite;try{localStorage.setItem("menuipro-invitation",r.invite)}catch(e){}aller("inscription");return}
+    status.className="status err";status.textContent="Ce QR code n'est pas un QR MenuiPro.";
+  }});
   const champ=(id,lbl,attrs)=>{const i=el("input",{id,...attrs});return [i,el("div",{class:"field"},el("label",{for:id},lbl),i)]};
-  const [tel,fTel]=champ("pTel","📱 Numéro de téléphone",{type:"tel",inputmode:"tel",autocomplete:"tel",placeholder:"77 000 00 00"});
-  const [pin,fPin]=champ("pPin","🔑 Code PIN (6 chiffres)",{type:"password",inputmode:"numeric",maxlength:"6",autocomplete:modePorte==="connexion"?"current-password":"new-password",placeholder:"••••••"});
-  const [pin2,fPin2]=champ("pPin2","🔑 Répétez le code PIN",{type:"password",inputmode:"numeric",maxlength:"6",autocomplete:"new-password",placeholder:"••••••"});
-  const [nom,fNom]=champ("pNom","👤 Votre nom ou celui de l'atelier",{type:"text",autocomplete:"name",placeholder:"Ex. Menuiserie Fall"});
-  // Vérifications avant d'appeler le serveur : messages simples, sans jargon.
-  const verifier=()=>{
-    const d=String(tel.value).replace(/\D/g,"");
-    if(d.length<9)return "Entrez votre numéro de téléphone (9 chiffres).";
-    if(!/^\d{6}$/.test(pin.value))return "Le code PIN a exactement 6 chiffres.";
-    if(modePorte==="inscription"){if(String(nom.value).trim().length<2)return "Entrez votre nom.";if(pin.value!==pin2.value)return "Les deux codes PIN ne sont pas les mêmes.";}
-    return null;
-  };
-  const valider=el("button",{type:"submit",class:"btn primary porte-ok"},modePorte==="connexion"?"Me connecter":"➕ Créer mon compte");
-  const form=el("form",{class:"porte-form",novalidate:"novalidate"});
-  form.addEventListener("submit",async e=>{
-    e.preventDefault();
-    const err=verifier();if(err){status.className="status err";status.textContent=err;return}
-    status.className="status";status.textContent="⏳ Un instant…";valider.disabled=true;
-    try{
-      if(modePorte==="connexion")await cloud.connecter(tel.value,pin.value);else await cloud.inscrire(tel.value,pin.value,nom.value);
-      ME=await cloud.chargerCompte();
-      if(!ME)throw new Error("Compte introuvable. Réessayez.");
-      try{history.replaceState(null,"",location.pathname+location.search)}catch(e){}
-      entrerDansAppli();appliquerCompte();majMicro();
-      toast(modePorte==="connexion"?"✅ Bienvenue "+(ME.profil&&ME.profil.nom||""):"✅ Compte créé. Bienvenue !");
-    }catch(e2){status.className="status err";status.textContent=cloud.message(e2);valider.disabled=false}
-  });
-  form.append(...(modePorte==="inscription"?[fNom]:[]),fTel,fPin,...(modePorte==="inscription"?[fPin2]:[]),status,valider);
-  const onglets=el("div",{class:"seg porte-onglets",role:"tablist"},...[["connexion","Me connecter"],["inscription","Créer mon compte"]].map(([k,l])=>el("button",{type:"button",role:"tab","aria-selected":String(modePorte===k),"aria-pressed":String(modePorte===k),onclick:()=>{modePorte=k;ouvrirPorte()}},l)));
-  // Code PIN oublié : WhatsApp du support si le numéro est réglé, sinon la marche à suivre.
-  const aide=el("div",{class:"porte-aide",hidden:"hidden"},
-    el("p",{},"Seul l'administrateur de MenuiPro peut vous donner un nouveau code PIN. Votre quincaillerie peut aussi le contacter pour vous."),
-    SUPPORT_WA?el("a",{class:"btn",href:"https://wa.me/"+SUPPORT_WA+"?text="+encodeURIComponent("Bonjour, j'ai oublié mon code PIN MenuiPro. Mon numéro : "+(tel.value||"")),target:"_blank",rel:"noopener"},"📲 Demander un nouveau code sur WhatsApp"):null);
-  const oubli=el("button",{type:"button",class:"lien",onclick:()=>{aide.hidden=!aide.hidden;const a=aide.querySelector("a");if(a)a.href="https://wa.me/"+SUPPORT_WA+"?text="+encodeURIComponent("Bonjour, j'ai oublié mon code PIN MenuiPro. Mon numéro : "+(tel.value||""))}},"Code PIN oublié ?");
+  const logo=el("div",{class:"porte-logo"},el("div",{class:"porte-ic","aria-hidden":"true"},"🪚"),el("h1",{},"MenuiPro"),el("p",{},"L'atelier du menuisier sur votre téléphone"));
   const invit=await bandeauInvitation();
-  box.replaceChildren(el("div",{class:"porte-carte"},
-    el("div",{class:"porte-logo"},el("div",{class:"porte-ic","aria-hidden":"true"},"🪚"),el("h1",{},"MenuiPro"),el("p",{},"L'atelier du menuisier sur votre téléphone")),
-    ...(invit?[invit]:[]),
-    onglets,form,
-    modePorte==="connexion"?el("div",{class:"porte-bas"},oubli,aide):el("p",{class:"note"},"Choisissez un code PIN facile à retenir pour vous, mais pas votre date de naissance."),
+  let corps;
+  if(modePorte==="inscription"){
+    const [nom,fNom]=champ("pNom","👤 Votre nom ou celui de l'atelier",{type:"text",autocomplete:"name",placeholder:"Ex. Menuiserie Fall"});
+    const [tel,fTel]=champ("pTel","📱 Votre numéro de téléphone",{type:"tel",inputmode:"tel",autocomplete:"tel",placeholder:"77 000 00 00"});
+    const valider=el("button",{type:"submit",class:"btn primary porte-ok"},"✅ Créer mon compte");
+    const form=el("form",{class:"porte-form",novalidate:"novalidate"},fNom,fTel,status,valider);
+    form.addEventListener("submit",async e=>{
+      e.preventDefault();
+      if(String(nom.value).trim().length<2){status.className="status err";status.textContent="Entrez votre nom.";return}
+      if(String(tel.value).replace(/\D/g,"").length<9){status.className="status err";status.textContent="Entrez votre numéro de téléphone (9 chiffres).";return}
+      status.className="status";status.textContent="⏳ Création de votre compte…";valider.disabled=true;
+      try{
+        const r=await cloud.inscrireQR(nom.value,tel.value,INVITE);
+        oublierInvitation();
+        ME=await cloud.chargerCompte();if(!ME)throw new Error("compte_inconnu");
+        garderCarte(r.cle,ME.user.id);
+        // Écran « votre carte » avant d'entrer : le menuisier la garde tout de suite.
+        box.replaceChildren(el("div",{class:"porte-carte"},logo,
+          el("div",{class:"banner ok"},"✅ Compte créé"+(r.quincaillerie?" · rattaché à "+r.quincaillerie:"")+" !"),
+          blocCarte({nom:ME.profil.nom,role:"menuisier",cle:r.cle,tel:ME.profil.telephone,pourMoi:true}),
+          el("button",{type:"button",class:"btn primary porte-ok",onclick:()=>{box.hidden=true;entrerDansAppli();appliquerCompte();majMicro();
+            if(!ME.quinc){go("compte");toast("🏪 Choisissez votre quincaillerie : comparez leurs prix")}}},"Continuer →")));
+      }catch(e2){status.className="status err";status.textContent=cloud.messageQR(e2);valider.disabled=false}
+    });
+    corps=[el("h2",{class:"porte-titre"},"➕ Créer mon compte"),
+      ...(invit?[invit]:[el("div",{class:"porte-qr-quinc"},el("p",{class:"note"},"Votre quincaillerie a un QR code ? Scannez-le : vous verrez tout de suite ses prix."),el("button",{type:"button",class:"btn",onclick:scanner},"📷 Scanner le QR de ma quincaillerie"))]),
+      form,
+      !INVITE?el("p",{class:"note"},"Sans quincaillerie, vous choisirez ensuite parmi celles de l'appli, en comparant leurs prix."):null,
+      el("button",{type:"button",class:"lien",onclick:()=>aller("accueil")},"← Retour")];
+    box.replaceChildren(el("div",{class:"porte-carte"},logo,...corps.filter(Boolean)));
+    nom.focus({preventScroll:true});
+    return;
+  }
+  if(modePorte==="pin"){
+    // Secours : numéro + code PIN (administrateur, anciens comptes).
+    const [tel,fTel]=champ("pTel","📱 Numéro de téléphone",{type:"tel",inputmode:"tel",autocomplete:"tel",placeholder:"77 000 00 00"});
+    const [pin,fPin]=champ("pPin","🔑 Code PIN (6 chiffres)",{type:"password",inputmode:"numeric",maxlength:"6",autocomplete:"current-password",placeholder:"••••••"});
+    const valider=el("button",{type:"submit",class:"btn primary porte-ok"},"Me connecter");
+    const form=el("form",{class:"porte-form",novalidate:"novalidate"},fTel,fPin,status,valider);
+    form.addEventListener("submit",async e=>{
+      e.preventDefault();
+      if(String(tel.value).replace(/\D/g,"").length<9||!/^\d{6}$/.test(pin.value)){status.className="status err";status.textContent="Entrez le numéro (9 chiffres) et le code PIN (6 chiffres).";return}
+      status.className="status";status.textContent="⏳ Un instant…";valider.disabled=true;
+      try{await cloud.connecter(tel.value,pin.value);ME=await cloud.chargerCompte();if(!ME)throw new Error("Compte introuvable. Réessayez.");
+        try{history.replaceState(null,"",location.pathname+location.search)}catch(e){}
+        entrerDansAppli();appliquerCompte();majMicro();toast("✅ Bienvenue "+(ME.profil&&ME.profil.nom||""))}
+      catch(e2){status.className="status err";status.textContent=cloud.message(e2);valider.disabled=false}
+    });
+    box.replaceChildren(el("div",{class:"porte-carte"},logo,el("h2",{class:"porte-titre"},"🔑 Numéro et code PIN"),form,
+      el("p",{class:"note"},"Pas de code PIN ? Utilisez votre carte MenuiPro, ou demandez une nouvelle carte à votre quincaillerie."),
+      el("button",{type:"button",class:"lien",onclick:()=>aller("accueil")},"← Retour")));
+    tel.focus({preventScroll:true});
+    return;
+  }
+  // Accueil : deux gros boutons.
+  const garde=carteGardee();
+  box.replaceChildren(el("div",{class:"porte-carte"},logo,...(invit?[invit]:[]),
+    garde?el("button",{type:"button",class:"porte-choix principal",onclick:()=>entrerAvecCarte(garde,status)},el("span",{class:"e","aria-hidden":"true"},"🪪"),el("b",{},"Ouvrir mon compte"),el("span",{},"avec la carte gardée sur ce téléphone")):null,
+    el("button",{type:"button",class:"porte-choix"+(garde?"":" principal"),onclick:()=>aller("inscription")},el("span",{class:"e","aria-hidden":"true"},"➕"),el("b",{},"Créer mon compte"),el("span",{},INVITE?"Juste votre nom et votre numéro":"Nom + numéro, ou QR code de votre quincaillerie")),
+    el("button",{type:"button",class:"porte-choix",onclick:scanner},el("span",{class:"e","aria-hidden":"true"},"📷"),el("b",{},"J'ai déjà un compte"),el("span",{},"Scanner ma carte MenuiPro")),
+    status,
+    el("button",{type:"button",class:"lien",onclick:()=>aller("pin")},"🔑 Se connecter avec numéro et code PIN"),
     el("p",{class:"note porte-quinc"},"🏪 Vous êtes une quincaillerie ? Contactez MenuiPro pour ouvrir votre compte.")));
-  (modePorte==="inscription"?nom:tel).focus({preventScroll:true});
 }
 
 /* ----- Déconnexion : on sauvegarde en ligne, puis on efface les données du compte sur ce téléphone ----- */
-const CLES_COMPTE=["menuipro-projets","menuipro-atelier","menuipro-catalogue","menuipro-cmd-vu","menuipro-cmd-recues-vu","menuipro-invitation","menuipro-v2","menuipro-role"];
+const CLES_COMPTE=["menuipro-projets","menuipro-atelier","menuipro-catalogue","menuipro-cmd-vu","menuipro-cmd-recues-vu","menuipro-invitation","menuipro-v2","menuipro-role","menuipro-carte"];
 async function quitterCompte(){
   // Projets jamais envoyés : on essaie de les sauvegarder avant d'effacer (sans réseau, on les garde sur le téléphone).
   const restants=PROJ.filter(p=>!p.cloudId);
@@ -1361,6 +1462,24 @@ async function quitterCompte(){
   await cloud.deconnecter();
   CLES_COMPTE.forEach(k=>{try{localStorage.removeItem(k)}catch(e){}});
   location.replace(location.pathname); // l'appli repart propre, sur la page de connexion
+}
+/* ----- Ma carte MenuiPro (tous les rôles) ----- */
+function panneauMaCarte(p){
+  const role=estAdmin()?"admin":estQuinc()?"quincaillerie":"menuisier",zone=el("div",{});
+  const dessiner=()=>{
+    const cle=carteGardee();
+    let arme=false;const refaire=el("button",{type:"button",class:"btn"},cle?"🔄 Refaire ma carte":"🪪 Faire ma carte");
+    refaire.onclick=async()=>{
+      if(cle&&!arme){arme=true;refaire.textContent="Touchez encore : l'ancienne carte ne marchera plus";return}
+      refaire.disabled=true;refaire.textContent="⏳";
+      try{const r=await cloud.nouvelleCarte();garderCarte(r.cle,ME.user.id);dessiner();toast("🪪 Nouvelle carte prête : gardez-la en photo")}
+      catch(e){toast(cloud.messageQR(e),true);refaire.disabled=false;refaire.textContent=cle?"🔄 Refaire ma carte":"🪪 Faire ma carte"}
+    };
+    zone.replaceChildren(el("h3",{class:"sous-titre"},"🪪 Ma carte MenuiPro"),
+      cle?blocCarte({nom:p.nom,role,cle,tel:p.telephone,pourMoi:true}):el("p",{class:"note"},"Votre carte QR ouvre votre compte sur n'importe quel téléphone, sans code PIN. Faites-la et gardez-la en photo."),
+      el("div",{class:"actions"},refaire));
+  };
+  dessiner();return zone;
 }
 /* ----- Mon compte : nom, code PIN, déconnexion (tous les rôles) ----- */
 function panneauMonCompte(p){
@@ -1384,7 +1503,8 @@ function panneauMonCompte(p){
       st.className="status";st.textContent="⏳";try{await cloud.changerPin(p.telephone,a.value,b.value);st.className="status ok";st.textContent="✅ Code PIN changé. Retenez-le bien.";zone.replaceChildren()}catch(e){st.className="status err";st.textContent=cloud.message(e)}}},"💾 Changer le code PIN"),el("button",{type:"button",class:"btn",onclick:()=>{zone.replaceChildren();st.textContent=""}},"Annuler")));a.focus()};
   const titre=el("h2",{},(estAdmin()?"🛡️ ":"👤 ")+(p.nom||"Mon compte"));
   return el("section",{class:"panel"},titre,el("p",{class:"note"},"📱 "+(p.telephone||"")+" · "+role),
-    el("div",{class:"actions"},el("button",{type:"button",class:"btn",onclick:formNom},"✏️ Changer mon nom"),el("button",{type:"button",class:"btn",onclick:formPin},"🔑 Changer mon code PIN"),out),zone,st);
+    el("div",{class:"actions"},el("button",{type:"button",class:"btn",onclick:formNom},"✏️ Changer mon nom"),estAdmin()?el("button",{type:"button",class:"btn",onclick:formPin},"🔑 Changer mon code PIN"):null,out),zone,st,
+    panneauMaCarte(p));
 }
 
 /* ----- Abonnement de la quincaillerie : alerte avant et après la date de fin (7 jours de grâce) ----- */
@@ -1425,7 +1545,7 @@ function panneauMesMenuisiers(q){
       ret.onclick=async()=>{if(!armed){armed=true;ret.textContent="Touchez encore pour retirer";return}try{await cloud.retirerMenuisier(m.id);toast("✅ "+(m.nom||"Menuisier")+" n'est plus rattaché à votre quincaillerie");renderCompte()}catch(e){toast(cloud.message(e),true)}};
       return el("div",{class:"line menuisier"},el("span",{class:"e","aria-hidden":"true"},"🪚"),
         el("div",{},el("b",{},m.nom||"Menuisier"),el("span",{},"📱 "+telLisible(m.telephone)+" · depuis le "+new Date(m.created_at).toLocaleDateString("fr-FR"))),
-        el("div",{class:"acts"},wa?el("a",{class:"btn mini",href:"https://wa.me/"+wa,target:"_blank",rel:"noopener"},"📲"):null,ret));
+        el("div",{class:"acts"},el("button",{type:"button",class:"btn mini",title:"Nouvelle carte MenuiPro",onclick:()=>refaireCarte(m.id,{nom:m.nom,role:"menuisier",tel:m.telephone})},"🪪 Carte"),wa?el("a",{class:"btn mini",href:"https://wa.me/"+wa,target:"_blank",rel:"noopener"},"📲"):null,ret));
     }));
   }).catch(e=>liste.replaceChildren(el("p",{class:"status err"},cloud.message(e))));
   return sec;
@@ -1582,7 +1702,8 @@ async function renderCompteBase(){
   if(q){
     let armedQ=false;const leave=el("button",{type:"button",class:"btn"},"Quitter cette quincaillerie");
     leave.onclick=async()=>{if(!armedQ){armedQ=true;leave.textContent="Touchez encore pour quitter";return}try{await cloud.quitter();ME=await cloud.chargerCompte();toast("Vous avez quitté la quincaillerie");renderCompte()}catch(e){toast(cloud.message(e),true)}};
-    parts.push(el("section",{class:"panel"},el("h2",{},"🏪 Ma quincaillerie"),el("p",{},el("b",{},q.nom),q.commune?" · "+q.commune:""),el("p",{class:"note"},"Vos listes d'achat utilisent ses prix. Vos commandes lui arrivent directement."),el("div",{class:"actions"},leave)));
+    parts.push(el("section",{class:"panel"},el("h2",{},"🏪 Ma quincaillerie"),el("p",{},el("b",{},q.nom),q.commune?" · "+q.commune:""),el("p",{class:"note"},"Vos listes d'achat utilisent ses prix. Vos commandes lui arrivent directement."),el("div",{class:"actions"},
+      el("button",{type:"button",class:"btn",onclick:e=>{const b=e.currentTarget;b.replaceWith(panneauChoisirQuinc(q))}},"🔄 Comparer les prix des autres quincailleries"),leave)));
     const list=el("div",{class:"cmds"},el("p",{class:"note"},"⏳ Chargement…"));
     parts.push(el("section",{class:"panel"},el("h2",{},"📦 Mes commandes"),list),moi);
     box.replaceChildren(...parts);
@@ -1591,14 +1712,56 @@ async function renderCompteBase(){
     catch(e){list.replaceChildren(el("p",{class:"status err"},cloud.message(e)))}
     return;
   }
-  const code=el("input",{id:"cCode",type:"text",maxlength:"6",autocomplete:"off",placeholder:"Ex. F93A3E",style:"text-transform:uppercase;letter-spacing:.15em;font-weight:700"});
-  const st1=el("p",{class:"status",role:"status"});
-  const qn=el("input",{id:"qNom",type:"text",placeholder:"Nom de la quincaillerie"}),qw=el("input",{id:"qWa",type:"tel",inputmode:"tel",placeholder:"WhatsApp"}),qc=el("input",{id:"qCom",type:"text",placeholder:"Commune"});
-  const st2=el("p",{class:"status",role:"status"});
-  parts.push(el("section",{class:"panel form"},el("h2",{},"🏪 Rejoindre ma quincaillerie"),el("p",{class:"note"},"Demandez le code à 6 caractères à votre quincaillerie."),el("div",{class:"field"},el("label",{for:"cCode"},"Code"),code),
-    el("div",{class:"actions"},el("button",{type:"button",class:"btn primary",onclick:async()=>{st1.textContent="⏳";try{const r=await cloud.rejoindre(code.value);ME=await cloud.chargerCompte();appliquerCompte();toast("✅ Vous avez rejoint "+r.nom);renderCompte()}catch(e){st1.className="status err";st1.textContent=cloud.message(e)}}},"Rejoindre")),st1));
-  parts.push(el("p",{class:"note"},"🏪 Vous êtes une quincaillerie ? Contactez MenuiPro pour ouvrir votre compte."),moi);
+  // Menuisier sans quincaillerie : il compare les prix des quincailleries ouvertes et choisit la sienne.
+  parts.push(panneauChoisirQuinc(null),moi);
   box.replaceChildren(...parts);
+}
+/* ----- Choisir sa quincaillerie en comparant les prix ----- */
+// Prix de la liste d'achat du meuble actuel avec le catalogue d'une autre quincaillerie.
+function prixChez(cat){
+  const sauve={panneaux:CAT.panneaux,prix:CAT.prix,sections:CAT.sections},panSauve=st.panneau;
+  try{
+    if(cat&&Array.isArray(cat.panneaux)&&cat.panneaux.length){CAT.panneaux=cat.panneaux;CAT.prix=cat.prix||{};if(Array.isArray(cat.sections)&&cat.sections.length)CAT.sections=cat.sections}
+    else{CAT.panneaux=sauve.panneaux.map(x=>({...x,prix:0}));CAT.prix={}}
+    if(!CAT.panneaux.some(x=>x.id===st.panneau&&!x.dos)){const m=CAT.panneaux.find(x=>!x.dos&&x.ep===st.ep);if(m)st.panneau=m.id}
+    const pn=CAT.panneaux.find(x=>x.id===st.panneau&&!x.dos),b=lastCtx&&lastRes&&lastRes.caisson?buyLines(lastCtx):null;
+    return {total:b?b.total:0,manque:b?b.missing:0,feuille:pn&&pn.prix?pn.prix:0,nomPan:pn?pn.nom+" "+pn.ep+" mm":"panneau"};
+  }catch(e){return {total:0,manque:99,feuille:0,nomPan:""}}
+  finally{CAT.panneaux=sauve.panneaux;CAT.prix=sauve.prix;CAT.sections=sauve.sections;st.panneau=panSauve}
+}
+function scannerQuinc(){
+  ouvrirScanner({titre:"QR code de la quincaillerie",aide:"Visez le QR code affiché par votre quincaillerie.",onTexte:async t=>{
+    const r=lireTexteQR(t);if(!r||!r.invite){toast("Ce n'est pas le QR code d'une quincaillerie.",true);return}
+    try{const q=await cloud.rejoindre(r.invite);ME=await cloud.chargerCompte();appliquerCompte();toast("✅ Vous êtes rattaché à "+q.nom+" : ses prix sont dans vos listes d'achat");renderCompte()}
+    catch(e){toast(cloud.message(e),true)}
+  }});
+}
+function panneauChoisirQuinc(actuelle){
+  const liste=el("div",{class:"quincs"},el("p",{class:"note"},"⏳ Chargement des quincailleries…"));
+  const meuble=lastCtx?R(st.id).nom:null;
+  const sec=el("section",{class:"panel"},el("h2",{},actuelle?"🔄 Comparer les quincailleries":"🏪 Choisir ma quincaillerie"),
+    el("p",{class:"note"},meuble?"Prix de la liste d'achat de votre meuble actuel (« "+meuble+" ») dans chaque quincaillerie.":"Prix d'une feuille de panneau dans chaque quincaillerie. Concevez un meuble pour comparer le prix de toute la liste d'achat."),
+    liste,
+    el("div",{class:"actions"},el("button",{type:"button",class:"btn",onclick:scannerQuinc},"📷 Scanner le QR de ma quincaillerie")));
+  cloud.quincailleriesOuvertes().then(rows=>{
+    if(!rows.length){liste.replaceChildren(el("p",{class:"note"},"Aucune quincaillerie n'est ouverte dans l'appli pour l'instant. Demandez à la vôtre son QR code."));return}
+    const lignes=rows.map(q=>({q,p:prixChez(q.catalogue)}))
+      .sort((a,b)=>(a.p.manque>0)-(b.p.manque>0)||(meuble?(a.p.total||1e12)-(b.p.total||1e12):(a.p.feuille||1e12)-(b.p.feuille||1e12)));
+    const moinsCher=lignes.find(x=>!x.p.manque&&(meuble?x.p.total:x.p.feuille));
+    liste.replaceChildren(...lignes.map(({q,p})=>{
+      const st1=el("span",{class:"note"}),moi=actuelle&&actuelle.id===q.id,wa=waDigits(q.whatsapp);
+      const choisir=el("button",{type:"button",class:"btn "+(moi?"":"primary")},moi?"✅ Ma quincaillerie":"Choisir");choisir.disabled=!!moi;
+      choisir.onclick=async()=>{choisir.disabled=true;st1.textContent="⏳";try{await cloud.choisirQuincaillerie(q.id);ME=await cloud.chargerCompte();appliquerCompte();toast("✅ Vous êtes rattaché à "+q.nom+" : ses prix sont dans vos listes d'achat");renderCompte()}catch(e){st1.textContent=cloud.messageQR(e);choisir.disabled=false}};
+      const prix=meuble?(p.total?fmt(p.total)+" F"+(p.manque?" (+ "+p.manque+" article"+(p.manque>1?"s":"")+" sans prix)":""):"prix pas encore remplis")
+        :(p.feuille?fmt(p.feuille)+" F la feuille ("+p.nomPan+")":"prix pas encore remplis");
+      return el("div",{class:"quinc-ligne"+(moinsCher&&moinsCher.q===q?" moins-cher":"")},
+        el("div",{class:"quinc-info"},el("b",{},"🏪 "+q.nom),el("span",{class:"note"},q.commune||""),
+          moinsCher&&moinsCher.q===q?el("span",{class:"chip livre"},"💰 Le moins cher"):null),
+        el("div",{class:"quinc-prix"},prix),
+        el("div",{class:"acts"},choisir,wa?el("a",{class:"btn mini",href:"https://wa.me/"+wa,target:"_blank",rel:"noopener",title:"Écrire sur WhatsApp"},"📲"):null),st1);
+    }));
+  }).catch(e=>liste.replaceChildren(el("p",{class:"status err"},cloud.message(e))));
+  return sec;
 }
 /* ----- Administration ----- */
 async function vueAdmin(){
@@ -1624,7 +1787,7 @@ async function vueAdmin(){
       }},"✏️ Modifier"));
     const voirMenus=el("button",{type:"button",class:"btn mini",title:"Voir ses menuisiers",onclick:()=>{search.value=q.nom;search.dispatchEvent(new Event("input"));mBody.closest("section").scrollIntoView({behavior:"smooth"})}},String(q.menuisiers));
     return el("tr",{},infos,
-      el("td",{},q.proprietaire||"—",el("div",{class:"note"},q.tel_proprietaire||"")),el("td",{class:"n"},q.code),
+      el("td",{},q.proprietaire||"—",el("div",{class:"note"},q.tel_proprietaire||""),el("button",{type:"button",class:"btn mini",title:"Nouvelle carte MenuiPro du propriétaire",onclick:()=>refaireCarte(null,{quinc:q.id,nom:q.proprietaire||q.nom,role:"quincaillerie",tel:q.tel_proprietaire})},"🪪 Carte")),el("td",{class:"n"},q.code),
       el("td",{class:"n"},voirMenus),el("td",{class:"n"},String(q.commandes)),el("td",{class:"n"},fmt(q.montant)+" F"),
       el("td",{},date,expire(q.abonnement_jusqu)?el("div",{class:"note",style:"color:var(--warn);font-weight:700"},q.recoit_commandes===false?"expiré · commandes bloquées":"expiré · 7 jours de grâce"):null),el("td",{},note),
       el("td",{},statut,el("button",{type:"button",class:"btn",style:"margin-left:6px",onclick:()=>saveQ(q.actif)},"💾"),st2));
@@ -1633,13 +1796,14 @@ async function vueAdmin(){
     const stm=el("span",{class:"note"});
     const sel=el("select",{"aria-label":"Quincaillerie de "+(m.nom||"ce menuisier")},el("option",{value:""},"— aucune —"),...v.quincailleries.map(q=>el("option",{value:q.id},q.nom)));sel.value=m.quincaillerie_id||"";
     sel.onchange=async()=>{stm.textContent="⏳";try{await cloud.adminRattacher(m.id,sel.value||null);m.quincaillerie_id=sel.value||null;m.quincaillerie=(v.quincailleries.find(q=>q.id===sel.value)||{}).nom||null;stm.textContent="✅"}catch(e){stm.textContent=cloud.message(e);sel.value=m.quincaillerie_id||""}};
+    const carteB=el("button",{type:"button",class:"btn mini",title:"Nouvelle carte MenuiPro",onclick:()=>refaireCarte(m.id,{nom:m.nom,role:"menuisier",tel:m.telephone})},"🪪");
     const pinB=el("button",{type:"button",class:"btn mini",title:"Nouveau code PIN",onclick:()=>{$("arTel").value=(m.telephone||"").replace(/^221/,"");$("arTel").closest("section").scrollIntoView({behavior:"smooth",block:"center"})}},"🔑");
     const blq=el("button",{type:"button",class:"btn mini",onclick:async()=>{stm.textContent="⏳";try{await cloud.adminBloquer(m.id,!m.bloque);m.bloque=!m.bloque;drawM(search.value.trim().toLowerCase())}catch(e){stm.textContent=e.message}}},m.bloque?"✅ Débloquer":"⛔ Bloquer");
     let armed=false;const del=el("button",{type:"button",class:"btn mini"},"🗑️");
     del.onclick=async()=>{if(!armed){armed=true;del.textContent="🗑️ Supprimer pour de bon ?";return}stm.textContent="⏳";try{await cloud.adminSupprimer(m.id);v.menuisiers=v.menuisiers.filter(x=>x!==m);drawM(search.value.trim().toLowerCase());toast("Compte supprimé")}catch(e){stm.textContent=e.message}};
     return el("tr",{class:m.bloque?"ligne-bloquee":""},el("td",{},el("b",{},m.nom||"—"),m.bloque?el("div",{class:"note",style:"color:var(--warn);font-weight:700"},"⛔ bloqué : ne peut plus se connecter"):null),
       el("td",{class:"n"},m.telephone||"—"),el("td",{},sel),el("td",{class:"n"},String(m.projets)),el("td",{class:"n"},String(m.commandes)),el("td",{class:"n"},dt(m.cree)),el("td",{class:"n"},dt(m.derniere_activite)),
-      el("td",{},el("div",{class:"acts-admin"},pinB,blq,del),stm));
+      el("td",{},el("div",{class:"acts-admin"},carteB,pinB,blq,del),stm));
   }));
   search.addEventListener("input",()=>{const f=search.value.trim().toLowerCase();drawQ(f);drawM(f)});
   drawQ("");drawM("");
@@ -1648,7 +1812,7 @@ async function vueAdmin(){
   const genPin=()=>String(100000+crypto.getRandomValues(new Uint32Array(1))[0]%900000);
   let type="quincaillerie";
   const cTel=el("input",{id:"acTel",type:"tel",inputmode:"tel",placeholder:"77 000 00 00"}),cNom=el("input",{id:"acNom",type:"text",placeholder:"Nom de la personne"});
-  const cPin=el("input",{id:"acPin",type:"text",inputmode:"numeric",maxlength:"6",style:"letter-spacing:.2em;font-weight:700"});cPin.value=genPin();
+  const cPin=el("input",{id:"acPin",type:"text",inputmode:"numeric",maxlength:"6",placeholder:"facultatif",style:"letter-spacing:.2em;font-weight:700"});
   const qNom=el("input",{id:"acQNom",type:"text",placeholder:"Nom de la quincaillerie"}),qWa=el("input",{id:"acQWa",type:"tel",inputmode:"tel",placeholder:"WhatsApp"}),qCom=el("input",{id:"acQCom",type:"text",placeholder:"Commune"});
   const qSel=el("select",{id:"acQSel"},el("option",{value:""},"— Aucune pour l'instant —"),...v.quincailleries.map(q=>el("option",{value:q.code},q.nom+(q.commune?" ("+q.commune+")":""))));
   const blocQ=el("div",{class:"grid2"},el("div",{class:"field"},el("label",{for:"acQNom"},"Quincaillerie"),qNom),el("div",{class:"field"},el("label",{for:"acQWa"},"WhatsApp"),qWa),el("div",{class:"field"},el("label",{for:"acQCom"},"Commune"),qCom));
@@ -1661,22 +1825,26 @@ async function vueAdmin(){
   creer.onclick=async()=>{
     cSt.className="status";cSt.textContent="⏳ Création…";res.replaceChildren();creer.disabled=true;
     try{
+      if(cPin.value.trim()&&!/^\d{6}$/.test(cPin.value.trim()))throw new Error("Le code PIN a 6 chiffres (ou laissez vide : la carte QR suffit).");
       const r=await cloud.adminCreerCompte({type,telephone:cTel.value,pin:cPin.value.trim(),nom:cNom.value,quincaillerie:qNom.value,whatsapp:qWa.value,commune:qCom.value,code:qSel.value});
       cSt.className="status ok";cSt.textContent="✅ Compte créé";
-      const msg=["Bonjour"+(cNom.value?" "+cNom.value.trim():"")+", votre compte MenuiPro est prêt.","Application : https://menuipro.onrender.com","Numéro : "+r.telephone.replace(/^221/,""),"Code PIN : "+cPin.value.trim(),r.code?"Code à donner à vos menuisiers : "+r.code:"",r.quincaillerie&&type==="menuisier"?"Quincaillerie : "+r.quincaillerie:"","Ouvrez l'onglet 👤 Compte puis « Me connecter »."].filter(Boolean).join("\n");
+      // La carte QR ouvre le compte : on l'envoie à la personne (le code PIN, s'il y en a un, reste un secours).
+      const nomC=cNom.value.trim()||qNom.value.trim();
+      const msg=["Bonjour"+(nomC?" "+nomC:"")+", votre compte MenuiPro est prêt.","Pour entrer dans votre compte, ouvrez ce lien sur votre téléphone (c'est votre carte MenuiPro, ne la donnez à personne) :",lienCarte(r.cle),
+        r.code?"QR code à montrer à vos menuisiers : dans l'appli, onglet Commandes, « Inviter mes menuisiers ».":"",r.quincaillerie&&type==="menuisier"?"Quincaillerie : "+r.quincaillerie:"",cPin.value.trim()?"Code PIN de secours : "+cPin.value.trim():""].filter(Boolean).join("\n");
       const ta=el("textarea",{class:"copy",readonly:"readonly"});ta.value=msg;
       const wa=el("a",{class:"btn primary",target:"_blank",rel:"noopener",href:"https://wa.me/"+r.telephone+"?text="+encodeURIComponent(msg)},"📲 Envoyer sur WhatsApp");
       const cp=el("button",{type:"button",class:"btn"},"📋 Copier");cp.onclick=()=>copyText(msg,cSt,ta);
-      res.replaceChildren(el("div",{class:"banner"},"À transmettre à la personne :"),ta,el("div",{class:"actions"},wa,cp));
-      cTel.value="";cNom.value="";qNom.value="";qWa.value="";qCom.value="";cPin.value=genPin();
+      res.replaceChildren(blocCarte({nom:nomC,role:type,cle:r.cle,tel:r.telephone}),el("div",{class:"banner"},"Message à envoyer à la personne :"),ta,el("div",{class:"actions"},wa,cp));
+      cTel.value="";cNom.value="";qNom.value="";qWa.value="";qCom.value="";cPin.value="";
     }catch(e){cSt.className="status err";cSt.textContent=e.message}
     finally{creer.disabled=false}
   };
   const creation=el("section",{class:"panel form"},el("h2",{},"➕ Créer un compte"),typeSeg,
     el("div",{class:"grid2"},el("div",{class:"field"},el("label",{for:"acTel"},"📱 Numéro"),cTel),el("div",{class:"field"},el("label",{for:"acNom"},"Nom"),cNom),
-      el("div",{class:"field"},el("label",{for:"acPin"},"🔑 Code PIN (6 chiffres)"),cPin)),
-    blocQ,blocM,el("div",{class:"actions"},creer,el("button",{type:"button",class:"btn",onclick:()=>{cPin.value=genPin()}},"🎲 Autre code PIN")),cSt,res,
-    el("p",{class:"note"},"Le compte est utilisable tout de suite. Transmettez le numéro et le code PIN à la personne, de préférence de vive voix ou par WhatsApp."));
+      el("div",{class:"field"},el("label",{for:"acPin"},"🔑 Code PIN de secours (facultatif)"),cPin)),
+    blocQ,blocM,el("div",{class:"actions"},creer,el("button",{type:"button",class:"btn",onclick:()=>{cPin.value=genPin()}},"🎲 Code PIN de secours")),cSt,res,
+    el("p",{class:"note"},"Le compte est utilisable tout de suite avec sa carte QR : envoyez-la à la personne sur WhatsApp, ou faites-la scanner sur place."));
   /* ----- Réinitialiser un code PIN ----- */
   const rTel=el("input",{id:"arTel",type:"tel",inputmode:"tel",placeholder:"77 000 00 00"}),rPin=el("input",{id:"arPin",type:"text",inputmode:"numeric",maxlength:"6",style:"letter-spacing:.2em;font-weight:700"});rPin.value=genPin();
   const rSt=el("p",{class:"status",role:"status"});
@@ -1776,7 +1944,13 @@ async function sectionVoix(){
     el("div",{class:"actions"},el("button",{type:"button",class:"btn primary",onclick:()=>lot.click()},"📦 Importer les audios (plusieurs fichiers)"),lot),st3,liste);
 }
 // Démarrage : avec la connexion en ligne, l'appli ne s'ouvre qu'une fois connecté (sinon page de connexion).
-if(cloud.actif){
+// Lien de carte (?carte=…) ouvert avec l'appareil photo du téléphone : connexion directe.
+let CARTE_LIEN=null;
+try{const u=new URL(location.href);CARTE_LIEN=u.searchParams.get("carte");if(CARTE_LIEN){u.searchParams.delete("carte");history.replaceState(null,"",u.pathname+u.search)}}catch(e){}
+if(cloud.actif&&CARTE_LIEN){
+  document.body.classList.remove("attente");
+  entrerAvecCarte(CARTE_LIEN,null).then(ok=>{if(!ok)ouvrirPorte()});
+}else if(cloud.actif){
   cloud.chargerCompte().then(c=>{ME=c;if(c){entrerDansAppli();appliquerCompte();majMicro()}else ouvrirPorte()})
     .catch(async()=>{
       // Pas de réseau : un compte déjà connecté sur ce téléphone garde l'accès (l'appli marche hors ligne).

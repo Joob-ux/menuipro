@@ -3,7 +3,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { readFileSync } from "node:fs";
 
 const db = new PGlite();
-const migration = ["20261112000000_init.sql", "20261112000100_durcissement.sql", "20261112000200_performance.sql", "20261112000300_administration.sql", "20261112000400_comptes_par_admin.sql", "20261114000000_quincaillerie_fluide.sql", "20261115000000_comptes.sql", "20261115000100_roles.sql"].map(f => readFileSync(new URL("../migrations/" + f, import.meta.url), "utf8")).join("\n");
+const migration = ["20261112000000_init.sql", "20261112000100_durcissement.sql", "20261112000200_performance.sql", "20261112000300_administration.sql", "20261112000400_comptes_par_admin.sql", "20261114000000_quincaillerie_fluide.sql", "20261115000000_comptes.sql", "20261115000100_roles.sql", "20261120000000_cartes.sql"].map(f => readFileSync(new URL("../migrations/" + f, import.meta.url), "utf8")).join("\n");
 let ok = 0, ko = 0;
 const check = (cond, label) => { if (cond) { ok++; console.log("  ✅ " + label); } else { ko++; console.log("  ❌ " + label); } };
 const expectError = async (fn, label, msg) => { try { await fn(); check(false, label + " (aurait dû être refusé)"); } catch (e) { check(!msg || String(e.message).includes(msg), label + " → refusé : " + e.message.split("\n")[0]); } };
@@ -199,6 +199,29 @@ check(fausse.statut === "envoyee" && fausse.reponse === null && fausse.repondu_l
 await expectError(() => as(U.ali, `update public.profils set atelier = $1 where id = auth.uid()`, [{ x: "y".repeat(30000) }]), "réglages trop gros refusés", "profils_atelier_taille");
 check((await as(U.bob, `select * from public.mes_menuisiers()`)).rows.length === 0 && (await as(U.bob, `select public.commandes_recues() as r`)).rows[0].r.length === 0, "un menuisier n'obtient rien des fonctions de la quincaillerie");
 await expectError(() => as(null, `select public.commandes_recues()`), "un visiteur ne peut pas lire les commandes reçues", "permission denied");
+
+console.log("\nCartes QR et choix de la quincaillerie");
+await expectError(() => as(U.ali, `select * from prive.cartes`), "un compte ne lit pas les cartes", "permission denied");
+await expectError(() => as(U.ali, `select public.svc_poser_carte(auth.uid(), repeat('a', 64))`), "un compte ne pose pas sa propre carte", "permission denied");
+await expectError(() => as(null, `select public.svc_lire_carte(repeat('a', 64))`), "un visiteur ne lit pas une carte", "permission denied");
+await db.exec("set role service_role");
+await db.query(`select public.svc_poser_carte($1, $2)`, [U.ali, "b".repeat(64)]);
+const lue = (await db.query(`select public.svc_lire_carte($1) as u`, ["b".repeat(64)])).rows[0].u;
+await db.query(`select public.svc_poser_carte($1, $2)`, [U.ali, "c".repeat(64)]);
+const ancienne = (await db.query(`select public.svc_lire_carte($1) as u`, ["b".repeat(64)])).rows[0].u;
+await db.exec("reset role");
+check(lue === U.ali, "la fonction serveur retrouve le compte d'une carte");
+check(ancienne === null, "une nouvelle carte rend l'ancienne inutilisable");
+await expectError(() => as(null, `select public.quincailleries_ouvertes()`), "un visiteur ne voit pas les quincailleries", "permission denied");
+const ouvertes = (await as(U.bob, `select public.quincailleries_ouvertes() as r`)).rows[0].r;
+check(ouvertes.some(x => x.id === q.id && x.catalogue) && !JSON.stringify(ouvertes).includes(q.code) && !JSON.stringify(ouvertes).includes("owner") && !JSON.stringify(ouvertes).includes("note_admin"), "un menuisier voit les quincailleries ouvertes et leurs prix, sans code, propriétaire ni note");
+await as(ADMIN, `select public.admin_abonnement($1, false, '2099-12-31', null)`, [q2.id]);
+check(!(await as(U.bob, `select public.quincailleries_ouvertes() as r`)).rows[0].r.some(x => x.id === q2.id), "une quincaillerie suspendue n'apparaît pas");
+await expectError(() => as(U.bob, `select public.choisir_quincaillerie($1)`, [q2.id]), "on ne choisit pas une quincaillerie suspendue", "quincaillerie_fermee");
+check((await as(U.bob, `select public.choisir_quincaillerie($1) as r`, [q.id])).rows[0].r.nom === q.nom, "un menuisier choisit une quincaillerie ouverte, sans code");
+check((await as(U.bob, `select quincaillerie_id from public.profils where id = auth.uid()`)).rows[0].quincaillerie_id === q.id, "il y est bien rattaché");
+await expectError(() => as(U.quinc, `select public.choisir_quincaillerie($1)`, [q.id]), "une quincaillerie ne change pas de quincaillerie ainsi", "reserve_menuisier");
+await as(ADMIN, `select public.admin_abonnement($1, true, '2099-12-31', null)`, [q2.id]);
 
 console.log(`\nRésultat : ${ok} réussis, ${ko} échoués`);
 process.exit(ko ? 1 : 0);

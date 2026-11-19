@@ -175,3 +175,38 @@ export async function lireImage(blob, note = "") {
   }
   return data.lecture;
 }
+
+/* ---------- Comptes par QR code (fonction serveur « compte-qr ») ---------- */
+const ERREURS_QR = {
+  nom_manquant: "Entrez votre nom.", telephone_invalide: "Entrez votre numéro de téléphone (9 chiffres).",
+  deja_inscrit: "Ce numéro a déjà un compte. Scannez votre carte MenuiPro, ou demandez une nouvelle carte à votre quincaillerie.",
+  code_inconnu: "Ce QR code de quincaillerie n'est plus valable. Demandez-en un nouveau.",
+  carte_inconnue: "Cette carte ne marche plus : une nouvelle carte a été faite. Demandez-la à votre quincaillerie ou à MenuiPro.",
+  compte_bloque: "Ce compte est bloqué. Contactez MenuiPro.", trop_inscriptions: "Trop d'inscriptions en ce moment. Réessayez dans une heure.",
+  interdit: "Vous ne pouvez pas refaire la carte de ce compte.", compte_inconnu: "Compte introuvable.", non_connecte: "Connectez-vous d'abord.",
+  reserve_menuisier: "Réservé aux menuisiers.", quincaillerie_fermee: "Cette quincaillerie ne prend pas de nouveaux menuisiers en ce moment."
+};
+export const messageQR = e => ERREURS_QR[e && e.code] || ERREURS_QR[e && e.message] || message(e);
+async function appelQR(body) {
+  const { data, error } = await sb.functions.invoke("compte-qr", { body });
+  if (error) {
+    let code = error.message;
+    try { code = (await error.context.json()).erreur || code; } catch (e) { /* réponse sans JSON */ }
+    const err = new Error(ERREURS_QR[code] || MESSAGES[code] || ("Erreur : " + code)); err.code = code; throw err;
+  }
+  return data;
+}
+// La fonction serveur renvoie un jeton de lien magique : on l'échange ici contre une session.
+async function ouvrirSession(jeton) { ok(await sb.auth.verifyOtp({ token_hash: jeton, type: "magiclink" })); }
+export async function inscrireQR(nom, telephone, code) {
+  const r = await appelQR({ action: "inscrire", nom, telephone, code: code || "" });
+  await ouvrirSession(r.jeton);
+  return { cle: r.cle, quincaillerie: r.quincaillerie };
+}
+export async function connecterCarte(cle) {
+  await sb.auth.signOut({ scope: "local" }).catch(() => {});
+  await ouvrirSession((await appelQR({ action: "carte", cle })).jeton);
+}
+export const nouvelleCarte = (user, quinc) => appelQR({ action: "nouvelle_carte", ...(user ? { user } : {}), ...(quinc ? { quinc } : {}) });
+export async function quincailleriesOuvertes() { return ok(await sb.rpc("quincailleries_ouvertes")) || []; }
+export async function choisirQuincaillerie(id) { return ok(await sb.rpc("choisir_quincaillerie", { p_quinc: id })); }
