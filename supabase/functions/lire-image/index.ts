@@ -13,10 +13,12 @@ const CORS = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 
-const MODELE_VERTEX = Deno.env.get("GEMINI_MODEL_IMAGE") || "gemini-2.5-flash";
-const MODELE_STUDIO = Deno.env.get("GEMINI_MODEL_IMAGE") || "gemini-2.5-flash";
-// Réflexion limitée : sans limite, la lecture prenait 2 minutes ; 1024 jetons suffisent pour compter colonnes et niches.
-const REFLEXION = Number(Deno.env.get("GEMINI_REFLEXION") || 1024);
+// Le dernier modèle Flash de Google (celui qui a lu la bibliothèque 850 × 1750 × 448 sans erreur).
+const MODELE_VERTEX = Deno.env.get("GEMINI_MODEL_IMAGE") || "gemini-flash-latest";
+const MODELE_STUDIO = Deno.env.get("GEMINI_MODEL_IMAGE") || "gemini-flash-latest";
+// Niveau de réflexion : sans réglage, la lecture prenait 2 minutes. « medium » garde la précision, en moins de temps.
+// Réglable avec le secret GEMINI_REFLEXION : minimal, low, medium ou high.
+const REFLEXION = Deno.env.get("GEMINI_REFLEXION") || "medium";
 const LIMITE = Number(Deno.env.get("IMAGE_LIMITE_JOUR") || 30);
 const IMAGE_MAX = 2_500_000; // octets
 const MIMES = ["image/jpeg", "image/png", "image/webp"];
@@ -78,8 +80,8 @@ async function jetonGoogle(sa: { client_email: string; private_key: string }) {
 }
 
 async function demanderGemini(image: string, mime: string, note: string, avecReflexion = true): Promise<any> {
-  const generationConfig: Record<string, unknown> = { responseMimeType: "application/json", responseSchema: SCHEMA, temperature: 0.1, maxOutputTokens: 2000 + (avecReflexion ? REFLEXION : 0) };
-  if (avecReflexion) generationConfig.thinkingConfig = { thinkingBudget: REFLEXION };
+  const generationConfig: Record<string, unknown> = { responseMimeType: "application/json", responseSchema: SCHEMA, temperature: 0.1, maxOutputTokens: 8000 };
+  if (avecReflexion) generationConfig.thinkingConfig = { thinkingLevel: REFLEXION };
   const corps = JSON.stringify({
     systemInstruction: { parts: [{ text: CONSIGNE }] },
     contents: [{ role: "user", parts: [{ inline_data: { mime_type: mime, data: image } }, { text: note ? "Précision du menuisier : " + note : "Décris ce meuble." }] }],
@@ -98,7 +100,7 @@ async function demanderGemini(image: string, mime: string, note: string, avecRef
   }
   const d = await r.json();
   // Modèle qui refuse le réglage de réflexion : on redemande sans.
-  if (r.status === 400 && avecReflexion && /think/i.test(String(d.error?.message || ""))) return demanderGemini(image, mime, note, false);
+  if (r.status === 400 && avecReflexion && /think|level|budget/i.test(String(d.error?.message || ""))) return demanderGemini(image, mime, note, false);
   if (!r.ok) throw new Error("gemini: " + (d.error?.status || "") + " " + (d.error?.message || r.status));
   const brut = d.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("") || "{}";
   return JSON.parse(brut);
