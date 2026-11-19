@@ -1,6 +1,6 @@
 // MenuiPro — éditeur « Mon dessin » : le menuisier trace la façade au doigt.
 // Trait vertical = nouvelle colonne, trait horizontal = nouvelle case. Puis il remplit chaque case avec un outil.
-import { normaliserCroquis, lireTrait, appliquerTrait, appliquerOutil, deplacerLigne, bordsColonnes, bordsZones } from "./engine/index.js";
+import { normaliserCroquis, lireTrait, appliquerTrait, appliquerOutil, deplacerLigne, enleverLigne, bordsColonnes, bordsZones } from "./engine/index.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const S = (t, a = {}, ...c) => { const n = document.createElementNS(NS, t); for (const k in a) n.setAttribute(k, a[k]); c.forEach(x => x != null && n.append(x)); return n; };
@@ -17,7 +17,7 @@ const AIDE = {
   porte: "🚪 Touchez une case : 1 porte, puis 2 portes, puis aucune.",
   penderie: "👔 Touchez une case pour y mettre une tringle.",
   vide: "⬜ Touchez une case pour la vider (niche ouverte).",
-  gomme: "🧽 Touchez une case pour l'enlever : elle rejoint sa voisine."
+  gomme: "🧽 Touchez une étagère, un tiroir, une porte : ils s'effacent un par un. Touchez une ligne pour l'enlever. Une case vide rejoint sa voisine."
 };
 
 /* opts : { croquis, dims: () => ({ L, H, ep }) en cm / mm, onChange(croquis) } */
@@ -119,7 +119,8 @@ export function editeurCroquis(opts) {
       const l = ligneSous(p);
       if (l) { geste = { type: "ligne", l, avant: JSON.stringify(k) }; return; }
       geste = { type: "trait", pts: [p] };
-    } else geste = { type: "outil", p0: p };
+    } else if (outil === "gomme" && ligneSous(p)) geste = { type: "gommeLigne", l: ligneSous(p) };
+    else geste = { type: "outil", p0: p };
   });
   svg.addEventListener("pointermove", e => {
     if (!geste) return;
@@ -136,6 +137,7 @@ export function editeurCroquis(opts) {
     if (!geste) return;
     const g = geste; geste = null;
     if (g.type === "ligne") { histo.push(g.avant); opts.onChange(k); return; }
+    if (g.type === "gommeLigne") { if (!changer(enleverLigne(k, g.l.type, g.l.i, g.l.j))) dire("Rien à effacer ici.", true); return; }
     if (g.type === "outil") {
       const c = caseSous(g.p0);
       if (!c) return;

@@ -250,13 +250,13 @@ describe("Mon dessin (croquis → meuble)", () => {
     const k = { cols: [{ f: 1, zones: [{ f: 1, t: "vide" }] }] };
     expect(appliquerTrait(k, { sens: "vertical", pos: 0.02 }, 1200, 2000)).toBe(null);
   });
-  it("les outils remplissent la case et la gomme fusionne", () => {
+  it("les outils remplissent la case, la gomme efface puis fusionne", () => {
     let k = { cols: [{ f: 1, zones: [{ f: 1, t: "vide" }, { f: 1, t: "vide" }] }] };
     k = appliquerOutil(k, 0, 0, "tiroir"); k = appliquerOutil(k, 0, 0, "tiroir");
     expect(k.cols[0].zones[0]).toMatchObject({ t: "tiroirs", n: 2 });
     k = appliquerOutil(k, 0, 1, "porte"); k = appliquerOutil(k, 0, 1, "porte");
     expect(k.cols[0].zones[1].portes).toBe(2);
-    k = appliquerOutil(k, 0, 0, "gomme");
+    for (let n = 0; n < 3; n++) k = appliquerOutil(k, 0, 0, "gomme"); // 2 tiroirs → 1 → vide → fusion
     expect(k.cols[0].zones.length).toBe(1);
     const ctx = buildRecipe("croquis", P, { croquis: k });
     expect(ctx.hw.charn).toBeTruthy();
@@ -318,5 +318,68 @@ describe("Cuisine en caissons", () => {
     expect(m.reduce((s, x) => s + x.W, 0)).toBeCloseTo(1400, 6);
     expect(m.filter(x => x.type === "evier").length).toBe(1);
     expect(m.length).toBe(2);
+  });
+});
+
+import { enleverLigne, normaliserModele, etirerPanneau } from "../src/engine/index.js";
+describe("Gomme du dessin", () => {
+  it("efface un par un : porte, puis étagères, puis la case", () => {
+    let k = { cols: [{ f: 1, zones: [{ f: 1, t: "etageres", n: 2, portes: 1 }, { f: 1, t: "tiroirs", n: 2 }] }] };
+    k = appliquerOutil(k, 0, 0, "gomme"); expect(k.cols[0].zones[0]).toMatchObject({ portes: 0, n: 2 });
+    k = appliquerOutil(k, 0, 0, "gomme"); expect(k.cols[0].zones[0].n).toBe(1);
+    k = appliquerOutil(k, 0, 0, "gomme"); expect(k.cols[0].zones[0].n).toBe(0);
+    k = appliquerOutil(k, 0, 1, "gomme"); expect(k.cols[0].zones[1]).toMatchObject({ t: "tiroirs", n: 1 });
+    k = appliquerOutil(k, 0, 1, "gomme"); expect(k.cols[0].zones[1].t).toBe("vide");
+    k = appliquerOutil(k, 0, 1, "gomme"); expect(k.cols[0].zones.length).toBe(1);
+  });
+  it("la penderie s'efface", () => {
+    const k = appliquerOutil({ cols: [{ f: 1, zones: [{ f: 1, t: "penderie" }] }] }, 0, 0, "gomme");
+    expect(k.cols[0].zones[0].t).toBe("vide");
+  });
+  it("enlever une ligne fusionne, la plus grande case garde son contenu", () => {
+    const k = { cols: [{ f: 2, zones: [{ f: 1, t: "tiroirs", n: 3 }] }, { f: 1, zones: [{ f: 1, t: "vide" }] }] };
+    const k2 = enleverLigne(k, "col", 0, 0);
+    expect(k2.cols.length).toBe(1); expect(k2.cols[0].zones[0]).toMatchObject({ t: "tiroirs", n: 3 });
+    const k3 = enleverLigne({ cols: [{ f: 1, zones: [{ f: 1, t: "vide" }, { f: 3, t: "etageres", n: 2 }] }] }, "zone", 0, 0);
+    expect(k3.cols[0].zones).toEqual([expect.objectContaining({ t: "etageres", n: 2, f: 4 })]);
+  });
+});
+
+describe("Ma 3D : découpe aux dimensions réelles", () => {
+  // caisse lue dans une 3D : 600 × 800 × 400, panneaux de 18
+  const base = [600, 800, 400];
+  const list = [
+    { n: "Côté G", b: [0, 0, 0, 18, 800, 400], t: 0, m: "caisson", ep: 18 },
+    { n: "Côté D", b: [582, 0, 0, 18, 800, 400], t: 0, m: "caisson", ep: 18 },
+    { n: "Étagère", b: [18, 391, 0, 564, 18, 400], t: 1, m: "caisson", ep: 18 },
+    { n: "Dos", b: [0, 0, 0, 600, 800, 5], t: 2, m: "dos", ep: 5 }
+  ];
+  const m = { base, list };
+  it("aux mêmes dimensions, les pièces restent celles de la 3D", () => {
+    const ctx = buildRecipe("modele3d", { L: 600, H: 800, P: 400, ep: 18 }, { panneaux: m });
+    expect(ctx.parts.map(p => p.cut)).toEqual([[800, 400], [800, 400], [564, 400], [800, 600]]);
+  });
+  it("le menuisier tape 1200 × 1600 : l'épaisseur ne change pas, le côté droit reste au bord", () => {
+    const d = etirerPanneau(list[1], base, [1200, 1600, 400], 18);
+    expect(d[0] + d[3]).toBeCloseTo(1200, 6); expect(d[3]).toBe(18); expect(d[4]).toBe(1600);
+    const e = etirerPanneau(list[2], base, [1200, 1600, 400], 18);
+    expect(e[4]).toBe(18); expect(e[3]).toBeCloseTo(1128, 6); expect(e[1] + 9).toBeCloseTo(800, 6);
+  });
+  it("le panneau prend l'épaisseur choisie dans l'appli (16 mm)", () => {
+    const ctx = buildRecipe("modele3d", { L: 600, H: 800, P: 400, ep: 16 }, { panneaux: m });
+    expect(ctx.parts[1].box[3]).toBe(16); expect(ctx.parts[1].box[0] + 16).toBeCloseTo(600, 6);
+  });
+  it("une 3D abîmée ou absente donne une caisse simple, jamais d'erreur", () => {
+    for (const x of [null, {}, { base: [0, 1, 1], list }, { base, list: [{ b: [1, 2] }] }]) {
+      expect(normaliserModele(x)).toBe(null);
+      expect(buildRecipe("modele3d", { L: 600, H: 800, P: 400, ep: 18 }, { panneaux: x }).parts.length).toBeGreaterThan(3);
+    }
+  });
+});
+describe("Ma 3D : bois massif", () => {
+  it("un pied 40 × 40 garde sa section, seule sa hauteur suit le meuble", () => {
+    const pied = { n: "Pied", b: [20, 0, 20, 40, 100, 40], t: 0, m: "massif", ep: 40 };
+    const d = etirerPanneau(pied, [1200, 600, 400], [1500, 700, 500], 18);
+    expect(d[3]).toBe(40); expect(d[5]).toBe(40); expect(d[4]).toBeCloseTo(100 * 700 / 600, 6);
   });
 });

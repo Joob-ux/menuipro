@@ -353,3 +353,9 @@ body.attente::after{content:"⏳";position:fixed;inset:0;display:grid;place-item
 .imp-ligne label{font-weight:700}
 .imp-ligne input{width:90px;font:inherit;font-size:17px;padding:8px;border:2px solid var(--line);border-radius:10px}
 @media (max-width:420px){.cq-outil{font-size:10px}.cq-outil .ic{font-size:21px}}
+.imp-titre{margin:4px 0 0;font-weight:800}
+.imp-dims{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.imp-dim{display:grid;gap:4px;font-weight:700;font-size:14px}
+.imp-dim input{width:100%;box-sizing:border-box;font:inherit;font-size:20px;font-weight:800;padding:10px 8px;border:2px solid var(--line);border-radius:12px;text-align:center}
+.imp-ok{margin:0;font-weight:800;color:var(--accent);font-size:17px}
+.modele-resume{display:grid;gap:6px}

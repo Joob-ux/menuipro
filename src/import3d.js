@@ -75,8 +75,131 @@ export function placer(obj, reglage) {
   const b = new THREE.Box3().setFromObject(g), c = b.getCenter(new THREE.Vector3());
   pivot.position.set(-c.x, -b.min.y, -c.z);
   g.updateMatrixWorld(true);
+  // « Ma 3D » : la 3D prend exactement les dimensions tapées par le menuisier (L × H × P en cm).
+  if (reglage.dims) {
+    const t0 = new THREE.Box3().setFromObject(g).getSize(new THREE.Vector3());
+    const [L, H, P] = reglage.dims.map(v => v / 100);
+    if (t0.y > 0 && t0.z > 0) { g.scale.set(L / t0.x, H / t0.y, P / t0.z); g.updateMatrixWorld(true); }
+  }
   const s = new THREE.Box3().setFromObject(g).getSize(new THREE.Vector3());
   return { groupe: g, taille: [s.x, s.y, s.z] }; // taille en mètres
+}
+
+/* ---------- Lire les panneaux d'une 3D (pour la découpe) ----------
+   1. Chaque morceau séparé de la 3D (objet, ou pièce non reliée) devient une boîte.
+   2. Un morceau qui n'est pas une boîte mince (plusieurs panneaux collés dans le même objet, cas courant
+      avec SketchUp) est découpé en panneaux : un panneau = deux grandes faces parallèles, face à face,
+      à moins de 6 cm l'une de l'autre.
+   Boîte mince (≤ 4 cm) = panneau ; étroite et épaisse = bois massif (pied, tasseau) ; le reste est ignoré.
+   Le groupe doit sortir de placer() (mètres, posé au sol, centré). Tout est rendu en mm. */
+const MAX_TRIANGLES = 400000;
+export function classerBoite(t) {
+  const tri = t.slice().sort((a, c) => a - c);
+  if (tri[0] < 2.5 || tri[2] < 40) return null;                  // face seule, vis, poignée…
+  if (tri[0] <= 8 && tri[1] >= 40) return "dos";
+  if (tri[0] <= 40 && tri[1] >= 100) return "caisson";
+  if (tri[0] <= 150 && tri[1] <= 150) return "massif";            // pied, tasseau, traverse
+  return null;                                                    // bloc épais : coussin, électroménager…
+}
+// Panneaux cachés dans un morceau : on apparie les faces planes opposées (normale −axe / +axe).
+export function panneauxParFaces(tris) {
+  const plans = new Map(), cleP = p => p.map(v => Math.round(v * 10)).join(",");
+  for (const [a, b, c] of tris) {
+    const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    const n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+    const l = Math.hypot(...n); if (!(l > 0)) continue;
+    const ax = [0, 1, 2].reduce((m, k) => Math.abs(n[k]) > Math.abs(n[m]) ? k : m, 0);
+    if (Math.abs(n[ax]) / l < 0.99) continue;                       // face penchée : pas un panneau droit
+    const sg = n[ax] > 0 ? 1 : -1, off = Math.round(a[ax] * 2) / 2, k = ax + (sg > 0 ? "+" : "-") + off;
+    if (!plans.has(k)) plans.set(k, { ax, sg, off, tris: [] });
+    plans.get(k).tris.push([a, b, c]);
+  }
+  // Dans chaque plan, les triangles qui se touchent forment une face rectangulaire.
+  const faces = [[], [], []];
+  plans.forEach(pl => {
+    const parent = pl.tris.map((_, i) => i), trouve = x => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
+    const parPoint = new Map();
+    pl.tris.forEach((t, i) => t.forEach(p => { const k = cleP(p); if (parPoint.has(k)) { const r1 = trouve(i), r2 = trouve(parPoint.get(k)); if (r1 !== r2) parent[r1] = r2; } else parPoint.set(k, i); }));
+    const [u, w] = [0, 1, 2].filter(x => x !== pl.ax), rects = new Map();
+    pl.tris.forEach((t, i) => {
+      const r = trouve(i); let b = rects.get(r);
+      if (!b) { b = [Infinity, Infinity, -Infinity, -Infinity]; rects.set(r, b); }
+      t.forEach(p => { b[0] = Math.min(b[0], p[u]); b[1] = Math.min(b[1], p[w]); b[2] = Math.max(b[2], p[u]); b[3] = Math.max(b[3], p[w]); });
+    });
+    rects.forEach(b => faces[pl.ax].push({ sg: pl.sg, off: pl.off, u, w, b }));
+  });
+  const boites = [];
+  faces.forEach((fs, ax) => {
+    const moins = fs.filter(f => f.sg < 0), plus = fs.filter(f => f.sg > 0);
+    for (const A of moins) for (const B of plus) {
+      const e = B.off - A.off; if (e < 2.5 || e > 60) continue;
+      const i0 = Math.max(A.b[0], B.b[0]), j0 = Math.max(A.b[1], B.b[1]), i1 = Math.min(A.b[2], B.b[2]), j1 = Math.min(A.b[3], B.b[3]);
+      if (i1 - i0 < 30 || j1 - j0 < 30) continue;
+      const aire = r => (r[2] - r[0]) * (r[3] - r[1]);
+      if ((i1 - i0) * (j1 - j0) < 0.6 * Math.min(aire(A.b), aire(B.b))) continue;
+      const box = [0, 0, 0, 0, 0, 0];
+      box[ax] = A.off; box[3 + ax] = e; box[A.u] = i0; box[3 + A.u] = i1 - i0; box[A.w] = j0; box[3 + A.w] = j1 - j0;
+      boites.push(box);
+    }
+  });
+  return boites;
+}
+export function lirePanneaux(groupe) {
+  groupe.updateMatrixWorld(true);
+  const tout = new THREE.Box3().setFromObject(groupe), o = tout.min;
+  const brutes = []; let triangles = 0, ignores = 0;
+  const v = new THREE.Vector3(), mm = x => Math.round(x * 10000) / 10;
+  groupe.traverse(m => {
+    if (!m.isMesh || !m.geometry || !m.geometry.attributes.position) return;
+    const pos = m.geometry.attributes.position, idx = m.geometry.index ? m.geometry.index.array : null;
+    const nt = Math.floor((idx ? idx.length : pos.count) / 3);
+    const nom = (m.name || (m.parent && m.parent.name) || "").replace(/[_\-]+/g, " ").replace(/\s*\d+$/, "").trim();
+    triangles += nt;
+    if (triangles > MAX_TRIANGLES) { const b = new THREE.Box3().setFromObject(m); brutes.push({ nom, box: [b.min.x, b.min.y, b.min.z].map((x, k) => mm(x - [o.x, o.y, o.z][k])).concat([b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z].map(mm)) }); return; }
+    // Sommets en mm depuis le coin de la 3D, fusionnés par position, puis morceaux reliés.
+    const P = new Array(pos.count), cle = new Map(), id = new Int32Array(pos.count), parent = [];
+    const trouve = a => { while (parent[a] !== a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld);
+      const p = [mm(v.x - o.x), mm(v.y - o.y), mm(v.z - o.z)]; P[i] = p;
+      const k = p.map(x => Math.round(x * 10)).join(",");
+      let n = cle.get(k); if (n === undefined) { n = parent.length; parent.push(n); cle.set(k, n); }
+      id[i] = n;
+    }
+    const tri = t => idx ? [idx[3 * t], idx[3 * t + 1], idx[3 * t + 2]] : [3 * t, 3 * t + 1, 3 * t + 2];
+    for (let t = 0; t < nt; t++) { const [a, b, c] = tri(t); for (const x of [b, c]) { const r1 = trouve(id[a]), r2 = trouve(id[x]); if (r1 !== r2) parent[r2] = r1; } }
+    const morceaux = new Map();
+    for (let t = 0; t < nt; t++) {
+      const [a, b, c] = tri(t), r = trouve(id[a]);
+      if (!morceaux.has(r)) morceaux.set(r, []);
+      morceaux.get(r).push([P[a], P[b], P[c]]);
+    }
+    morceaux.forEach(ts => {
+      const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+      ts.forEach(t => t.forEach(p => { for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], p[k]); mx[k] = Math.max(mx[k], p[k]); } }));
+      const box = mn.concat(mx.map((x, k) => Math.round((x - mn[k]) * 10) / 10));
+      if (classerBoite(box.slice(3)) || ts.length < 12) brutes.push({ nom, box });
+      else { const pn = panneauxParFaces(ts); if (pn.length) pn.forEach(b => brutes.push({ nom, box: b })); else ignores++; }
+    });
+  });
+  const vus = new Set(), list = [];
+  for (const { nom, box } of brutes) {
+    const t = box.slice(3), m = classerBoite(t);
+    if (!m) { ignores++; continue; }
+    const cleB = box.map(x => Math.round(x / 2)).join(",");
+    if (vus.has(cleB)) continue; vus.add(cleB);                    // même panneau en double
+    const ep = Math.min(...t);
+    list.push({ n: nom, b: box, t: t.indexOf(ep), m, ep: Math.round(ep) });
+  }
+  // Noms simples quand la 3D n'en donne pas : Côté, Étagère / plateau, Façade / fond, Pied.
+  const auto = { 0: "Côté / séparation", 1: "Étagère / plateau", 2: "Façade / fond" }, compte = {};
+  list.forEach(p => {
+    const base = p.n && !/^(mesh|object|obj|group|geometry|component|composant|groupe|objet|defaultmaterial|material|node|scene)\b/i.test(p.n) ? p.n.slice(0, 40)
+      : p.m === "massif" ? "Pied / tasseau" : p.m === "dos" ? "Fond / dos" : auto[p.t];
+    compte[base] = (compte[base] || 0) + 1; p.n = base + " " + compte[base];
+  });
+  const s = tout.getSize(new THREE.Vector3());
+  return { base: [mm(s.x), mm(s.y), mm(s.z)], list, ignores };
 }
 
 /* ---------- Gardé sur le téléphone (IndexedDB) : la 3D s'ouvre même sans Internet ---------- */

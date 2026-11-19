@@ -100,6 +100,26 @@ function majBarPrix(){
     el("span",{class:"bp-val bp-prix"},el("b",{},prix),d.prix&&!lastBuy.missing?" client":lastBuy.total?" matériel":"")));
 }
 
+/* ----- « Ma 3D » : ce qui a été lu dans la 3D ----- */
+function panneauModele(c){
+  const m=c.o.panneaux,f=c.fichier3d,n=(m&&m.list&&m.list.length)||0;
+  if(n<1)return el("div",{class:"modele-resume"},
+    el("p",{class:"warn"},f?"Je ne trouve pas de panneaux dans cette 3D (objet d'un seul bloc, ou tissu). Pour la découpe, dessinez le meuble ✏️.":"Importez votre 3D : je lis ses panneaux pour faire les coupes."),
+    el("div",{class:"actions"},el("button",{type:"button",class:"btn primary",onclick:()=>demanderImport("modele3d",true)},"📤 Importer ma 3D"),f?el("button",{type:"button",class:"btn",onclick:versDessin},"✏️ Dessiner à la place"):null));
+  const par={};m.list.forEach(p=>{const k=p.m==="caisson"?"panneaux "+st.ep+" mm":p.m==="dos"?"fonds 5 mm":"bois massif";par[k]=(par[k]||0)+1});
+  const eps=[...new Set(m.list.filter(p=>p.m==="caisson").map(p=>p.ep))].sort((a,b)=>a-b);
+  return el("div",{class:"modele-resume"},
+    el("p",{class:"imp-ok"},"✂️ "+n+" pièces lues dans votre 3D"),
+    el("p",{class:"note"},Object.entries(par).map(([k,v])=>v+" "+k).join(" · ")),
+    eps.some(e=>Math.abs(e-st.ep)>1.5)?el("p",{class:"note"},"Épaisseur dans la 3D : "+eps.join(", ")+" mm. Les coupes utilisent "+st.ep+" mm (le panneau choisi)."):null,
+    m.ignores?el("p",{class:"note"},m.ignores+" objet(s) laissé(s) de côté : poignées, tissus, déco…"):null,
+    el("p",{class:"note"},"Tapez les vraies dimensions plus haut : les coupes s'ajustent, l'épaisseur des panneaux ne change pas."),
+    el("div",{class:"actions"},
+      f&&cache3D.has(f.id)?el("button",{type:"button",class:"btn",onclick:()=>{lireDecoupe3D(true);save();renderControls();compute()}},"🔍 Relire la 3D"):null,
+      el("button",{type:"button",class:"btn",onclick:()=>demanderImport("modele3d",true)},"📤 Autre fichier"),
+      el("button",{type:"button",class:"btn",onclick:versDessin},"✏️ Dessiner à la place")));
+}
+
 /* ----- Configurateur ----- */
 let editeurActif=null; // éditeur « Mon dessin » affiché dans Régler
 function renderControls(){
@@ -107,11 +127,14 @@ function renderControls(){
   const mod=modeleActif();
   $("current").replaceChildren(el("span",{class:"e","aria-hidden":"true"},r.e),el("div",{},el("b",{},mod?mod.nom:r.nom),el("div",{class:"note"},mod?r.nom:r.cat)));
   const labels=r.dimLabels||["Largeur","Hauteur","Profondeur"];
-  $("dims").replaceChildren(...["L","H","P"].map((k,i)=>{const inp=el("input",{id:"d"+k,type:"number",inputmode:"numeric",min:String((r.dimMin||[10,10,10])[i]),max:"2000"});inp.value=c[k];inp.addEventListener("input",e=>{c[k]=parseFloat(e.target.value)||0;compute();if(editeurActif&&c[k]>=10)editeurActif.redessiner()});return el("div",{class:"num"},el("label",{for:"d"+k},labels[i]),inp,el("small",{},["↔","↕","⤢"][i]))}));
+  $("dims").replaceChildren(...["L","H","P"].map((k,i)=>{const inp=el("input",{id:"d"+k,type:"number",inputmode:"numeric",min:String((r.dimMin||[10,10,10])[i]),max:"2000"});inp.value=c[k];inp.addEventListener("input",e=>{c[k]=parseFloat(e.target.value)||0;compute();if(editeurActif&&c[k]>=10)editeurActif.redessiner()});
+    if(r.importe&&k==="L"){let avant=c.L;inp.addEventListener("focus",()=>{avant=c.L});
+      inp.addEventListener("change",()=>{const q=c.L/(avant||c.L);avant=c.L;if((q>2||q<0.5)&&lireDecoupe3D(true)){save();renderControls();compute()}})}return el("div",{class:"num"},el("label",{for:"d"+k},labels[i]),inp,el("small",{},["↔","↕","⤢"][i]))}));
   $("optsLabel").hidden=!r.opts.length;
-  $("optsLabel").textContent=r.dessin?"✏️ Dessinez la façade":"Les options";
+  $("optsLabel").textContent=r.dessin?"✏️ Dessinez la façade":r.importe?"📤 Lu dans votre 3D":"Les options";
   editeurActif=null;
   $("opts").replaceChildren(...r.opts.map(x=>{
+    if(x.modele)return panneauModele(c);
     if(x.croquis){
       editeurActif=editeurCroquis({croquis:c.o[x.k],dims:()=>({L:c.L,H:c.H,ep:st.ep}),onChange:k=>{c.o[x.k]=k;compute()}});
       return editeurActif;
@@ -887,7 +910,7 @@ const vueImportee=()=>{const f=cfg().fichier3d;return !!f&&st.vue3d!=="menuipro"
 function demanderImport(idMeuble,prendreCotes){importCible=idMeuble;importCotes=!!prendreCotes;fichierImport.value="";fichierImport.click()}
 fichierImport.onchange=()=>{const f=fichierImport.files[0];if(f)importer3D(f,importCible||st.id,importCotes)};
 $("btnDessiner").onclick=()=>choisirMeuble("croquis");
-$("btnImporter").onclick=()=>demanderImport("croquis",true); // nouveau dessin aux cotes de la 3D
+$("btnImporter").onclick=()=>demanderImport("modele3d",true); // « Ma 3D » : la découpe est lue dans la 3D
 async function importer3D(f,idMeuble,prendreCotes){
   const err=imp3d.verifierFichier(f);if(err){toast(err,true);return}
   toast("⏳ Lecture de la 3D…");
@@ -900,10 +923,31 @@ async function importer3D(f,idMeuble,prendreCotes){
   if(st.id!==idMeuble){st.id=idMeuble;st.modele=null;openState=false;sel=0}
   const c=cfg();c.fichier3d=fi;st.vue3d="import";importIndispo=null;
   // « Mon dessin » prend les cotes de la 3D : le menuisier n'a plus qu'à tracer les cases.
-  if(prendreCotes&&R(st.id).dessin){const t=imp3d.placer(obj,fi).taille.map(v=>Math.max(30,Math.round(v*100)));c.L=t[0];c.H=t[1];c.P=Math.max(20,t[2])}
+  const r=R(st.id);
+  if(prendreCotes&&(r.dessin||r.importe)){const t=imp3d.placer(obj,fi).taille.map(v=>Math.max(r.importe?5:30,Math.round(v*100)));c.L=t[0];c.H=t[1];c.P=Math.max(r.importe?5:20,t[2])}
+  if(r.importe)lireDecoupe3D(true);
   save();renderCatalog();renderControls();compute(true);setEtape("voir");
-  toast("✅ 3D importée. Réglez la largeur réelle sous la 3D si la taille n'est pas bonne.");
+  if(r.importe){const n=(c.o.panneaux&&c.o.panneaux.list.length)||0;
+    toast(n>=2?"✂️ "+n+" pièces lues dans votre 3D. Tapez les vraies dimensions sous la 3D : les coupes s'ajustent.":"3D importée, mais je ne trouve pas de panneaux dedans. Pour la découpe, dessinez le meuble ✏️.",n<2)}
+  else toast("✅ 3D importée. Réglez la largeur réelle sous la 3D si la taille n'est pas bonne.");
   if(ME)cloud.envoyerModele3D(id+"."+ext,f).then(ch=>{fi.chemin=ch;save();majBarreImport()}).catch(e=>toast("3D gardée sur ce téléphone seulement : "+cloud.message(e),true));
+}
+// « Ma 3D » : relit les panneaux de la 3D à la largeur du meuble. gardeHP : garder la hauteur et la profondeur tapées.
+function lireDecoupe3D(gardeHP){
+  const c=cfg(),f=c.fichier3d,obj=f&&cache3D.get(f.id);
+  if(!obj||!R(st.id).importe)return false;
+  const {groupe,taille}=imp3d.placer(obj,{largeur:c.L,quart:f.quart,couche:f.couche});
+  if(!gardeHP){c.H=Math.max(5,Math.round(taille[1]*100));c.P=Math.max(5,Math.round(taille[2]*100))}
+  try{c.o.panneaux=imp3d.lirePanneaux(groupe)}catch(e){c.o.panneaux=null}
+  return true;
+}
+// Passer de « Ma 3D » à « Mon dessin » avec les mêmes cotes et la même 3D à montrer.
+function versDessin(){
+  const c=cfg(),f=c.fichier3d;
+  st.id="croquis";st.modele=null;openState=false;sel=0;
+  const d=cfg();d.L=Math.max(30,c.L);d.H=Math.max(30,c.H);d.P=Math.max(20,c.P);if(f)d.fichier3d=f;
+  save();renderCatalog();renderControls();compute(true);setEtape("regler");
+  toast("✏️ Tracez les colonnes et les cases du meuble : la découpe se fait à partir du dessin.");
 }
 async function afficherImport(refit){
   const f=cfg().fichier3d,j=++jetonImport;
@@ -920,7 +964,7 @@ async function afficherImport(refit){
   if(j!==jetonImport||!vueImportee())return;
   if(f.ext==="obj"||f.ext==="stl")obj.traverse(m=>{if(m.isMesh&&m.material&&m.material.color)m.material.color.setHex(couleurImport())});
   if(group)scene.remove(group);
-  const {groupe,taille}=imp3d.placer(obj,f);
+  const c=cfg(),{groupe,taille}=imp3d.placer(obj,R(st.id).importe?{...f,largeur:c.L,dims:[c.L,c.H,c.P]}:f);
   group=groupe;movers=[];markers=[];scene.add(group);
   bbox.size=taille;tailleImport=taille;
   $("openBtn").hidden=true;$("hint3d").hidden=true;$("holesBtn").hidden=true;
@@ -940,7 +984,32 @@ function majBarreImport(){
     el("button",{type:"button","aria-pressed":String(!imp),onclick:()=>voir("menuipro")},"🪚 3D MenuiPro"));
   const parts=[seg];
   if(importIndispo===f.id)parts.push(el("p",{class:"warn"},f.chemin||!cloud.actif?"Votre 3D « "+f.nom+" » n'a pas pu être ouverte. Vérifiez Internet ou importez-la à nouveau.":"Votre 3D « "+f.nom+" » est restée sur l'autre téléphone. Importez-la à nouveau ici."));
-  if(imp){
+  const importe=R(st.id).importe;
+  if(imp&&importe){
+    // Le menuisier tape les vraies dimensions : la 3D et les coupes s'ajustent.
+    const champ=(k,lab)=>{const i=el("input",{type:"number",inputmode:"numeric",min:"5",max:"2000",id:"impD"+k,"aria-label":lab});i.value=c[k];
+      i.addEventListener("change",()=>{const v=Math.round(parseFloat(i.value));if(!(v>=5&&v<=2000)){i.value=c[k];return}
+        if(k==="L"){const q=v/c.L;c.H=Math.max(5,Math.round(c.H*q));c.P=Math.max(5,Math.round(c.P*q));c.L=v;
+          // Largeur ×10 ou ÷10 : le fichier n'était pas dans l'unité devinée → on relit les panneaux à la bonne taille.
+          // Sinon le moteur étire les coupes et garde l'épaisseur des panneaux.
+          if(q>2||q<0.5)lireDecoupe3D(true)}
+        else c[k]=v;
+        save();renderControls();compute(true)});
+      return el("label",{class:"imp-dim"},el("span",{},lab),i)};
+    const m=c.o.panneaux,n=(m&&m.list.length)||0;
+    parts.push(
+      el("p",{class:"imp-titre"},"📏 Dimensions réelles du meuble (cm)"),
+      el("div",{class:"imp-dims"},champ("L","↔️ Largeur"),champ("H","↕️ Hauteur"),champ("P","↗️ Profondeur")),
+      el("p",{class:"note"},"Changer la largeur garde les proportions. Changez ensuite la hauteur ou la profondeur si besoin."),
+      el("p",{class:n>=2?"imp-ok":"warn"},n>=2?"✂️ "+n+" pièces à couper lues dans votre 3D.":"Pas de panneaux trouvés dans cette 3D : pour la découpe, dessinez le meuble ✏️."),
+      el("div",{class:"actions"},
+        n>=2?el("button",{type:"button",class:"btn primary",onclick:()=>setEtape("acheter")},"✂️ Voir les coupes"):el("button",{type:"button",class:"btn primary",onclick:versDessin},"✏️ Dessiner le meuble"),
+        el("button",{type:"button",class:"btn",onclick:()=>{f.quart=((f.quart||0)+1)%4;lireDecoupe3D(false);save();renderControls();compute(true)}},"🔄 Tourner"),
+        el("button",{type:"button",class:"btn",onclick:()=>{f.couche=f.couche?0:1;lireDecoupe3D(false);save();renderControls();compute(true)}},"⤴️ Redresser"),
+        el("button",{type:"button",class:"btn",onclick:()=>demanderImport(st.id,true)},"📤 Changer de fichier")),
+      el("p",{class:"note"},f.chemin?"☁️ 3D sauvegardée en ligne":ME?"⏳ Envoi de la 3D en ligne…":"📱 3D gardée sur ce téléphone"));
+  }
+  if(imp&&!importe){
     const larg=el("input",{type:"number",inputmode:"numeric",min:"5",max:"2000",id:"impLarg"});larg.value=f.largeur;
     larg.addEventListener("change",()=>{const v=parseFloat(larg.value);if(v>=5&&v<=2000){f.largeur=Math.round(v);save();afficherImport(true)}});
     const t=tailleImport?tailleImport.map(v=>Math.round(v*100)):null;
@@ -1531,7 +1600,7 @@ async function vueAdmin(){
 }
 /* ----- Assistant vocal : note vocale en wolof → meuble rempli ----- */
 // « Mon dessin » se fait au doigt, pas à la voix : il reste hors de l'assistant.
-const RECETTES_IA=RECIPES.filter(r=>!r.dessin),CAT_IA=catalogueIA(RECETTES_IA);
+const RECETTES_IA=RECIPES.filter(r=>!r.dessin&&!r.importe),CAT_IA=catalogueIA(RECETTES_IA);
 let micRec=null;
 function bulle(gros,petit){const b=$("micBulle");b.hidden=!gros;b.replaceChildren(el("b",{},gros||""),petit?el("div",{class:"note"},petit):"")}
 function appliquerAction(a){

@@ -134,7 +134,15 @@ export function appliquerOutil(k0, i, j, outil) {
   else if (outil === "porte") { if (z.t === "tiroirs") { z.t = "vide"; z.n = 0; } z.portes = (z.portes + 1) % 3; }
   else if (outil === "penderie") { z.t = "penderie"; z.n = 1; }
   else if (outil === "vide") { z.t = "vide"; z.n = 0; z.portes = 0; }
-  else if (outil === "gomme") return effacer(k, i, j);
+  else if (outil === "gomme") {
+    // La gomme efface ce qui est devant en premier : porte, puis étagère, tiroir ou tringle, un à la fois.
+    // Une case déjà vide disparaît : elle rejoint sa voisine.
+    if (z.portes) z.portes--;
+    else if (z.t === "etageres" && z.n > 0) z.n--;
+    else if (z.t === "tiroirs" && z.n > 1) z.n--;
+    else if (z.t === "tiroirs" || z.t === "penderie") { z.t = "vide"; z.n = 0; }
+    else return effacer(k, i, j);
+  }
   else return null;
   return normaliserCroquis(k);
 }
@@ -175,4 +183,20 @@ export function deplacerLigne(k0, type, i, j, pos, L = 1200, H = 2000, min = 120
   const tot = col.zones[j].f + col.zones[j + 1].f;
   col.zones[j].f = tot * (bas - p) / (bas - haut); col.zones[j + 1].f = tot - col.zones[j].f;
   return k;
+}
+
+/* Gomme sur une ligne : enlève la séparation entre deux colonnes (type "col", i et i+1)
+   ou entre deux cases d'une colonne (type "zone", colonne i, cases j et j+1). La plus grande garde son contenu. */
+export function enleverLigne(k0, type, i, j) {
+  const k = copie(normaliserCroquis(k0));
+  if (type === "col") {
+    const a = k.cols[i], b = k.cols[i + 1]; if (!a || !b) return null;
+    const garde = a.f >= b.f ? a : b;
+    k.cols.splice(i, 2, { f: a.f + b.f, zones: copie(garde.zones) });
+    return normaliserCroquis(k);
+  }
+  const col = k.cols[i], a = col && col.zones[j], b = col && col.zones[j + 1]; if (!a || !b) return null;
+  const garde = a.f >= b.f ? a : b;
+  col.zones.splice(j, 2, { ...copie(garde), f: a.f + b.f });
+  return normaliserCroquis(k);
 }
