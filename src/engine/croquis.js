@@ -1,9 +1,10 @@
 // MenuiPro — « Mon dessin » : le menuisier dessine la façade, le moteur en fait un vrai meuble
 // (pièces, découpe, quincaillerie, 3D). Aucun accès au DOM ici.
-import { add, caisse, zonesFill } from "./blocs.js";
+import { add, caisse, zonesFill, piedsAchetes } from "./blocs.js";
 
 /* Format du croquis (tout en proportions, les cotes réelles viennent de L × H × P) :
-   { socle: 1|0,
+   { socle: 1|0 (plinthe de 8 cm) ou hauteur de plinthe en mm (40 → 200), pieds: hauteur des pieds en mm (0 = pas de pieds),
+     dos: 1|0 (panneau de fond),
      cols: [ { f: poids de largeur,
                zones: [ { f: poids de hauteur, t: "etageres"|"tiroirs"|"penderie"|"vide", n, portes: 0|1|2 } ] } ] }
    Les zones vont du BAS vers le HAUT. */
@@ -36,7 +37,9 @@ export function normaliserCroquis(k) {
     });
     return { f: num(c && c.f, 1, 0.05, 100), zones: zs };
   });
-  return { socle: k.socle ? 1 : 0, cols };
+  const socle = Number(k.socle) > 1 ? Math.round(num(k.socle, 80, 40, 200)) : k.socle ? 1 : 0;
+  const pieds = Number(k.pieds) >= 30 ? Math.round(num(k.pieds, 100, 30, 400)) : 0;
+  return { socle: pieds ? 0 : socle, pieds, dos: k.dos === 0 || k.dos === false ? 0 : 1, cols };
 }
 
 // Zone du croquis → zone du moteur à blocs. La hauteur « h » est un poids : zonesFill la remet à l'échelle.
@@ -49,9 +52,10 @@ const zoneMoteur = z => ({
 
 export function construireCroquis(c, p, o) {
   const k = normaliserCroquis(o && o.croquis), E = c.E;
-  const socle = k.socle ? 80 : 0;
+  const socle = hauteurSocle(k), y0 = k.pieds || 0;
   // La caisse donne côtés, dessus, dessous, dos et plinthe ; les colonnes sont posées ici, à largeurs libres.
-  const inner = caisse(c, 0, 0, 0, p.L, p.H, p.P, { socle, colonnes: [[]] });
+  const inner = caisse(c, 0, y0, 0, p.L, p.H - y0, p.P, { socle, dos: !!k.dos, colonnes: [[]] });
+  if (y0) piedsAchetes(c, [[60, 60], [p.L - 60, 60], [60, p.P - 60], [p.L - 60, p.P - 60]], y0);
   const n = k.cols.length, wTot = inner.w - (n - 1) * E, sf = k.cols.reduce((s, x) => s + x.f, 0);
   let x = inner.x;
   k.cols.forEach((col, i) => {
@@ -61,6 +65,8 @@ export function construireCroquis(c, p, o) {
     x += w + E;
   });
 }
+
+export const hauteurSocle = k => k.pieds ? 0 : Number(k.socle) > 1 ? Number(k.socle) : k.socle ? 80 : 0;
 
 /* ---------- Lecture d'un trait dessiné au doigt ----------
    pts : points [x, y] en proportions de la façade (0 → 1, y = 0 en haut).

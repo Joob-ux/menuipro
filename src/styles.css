@@ -373,3 +373,10 @@ body.attente::after{content:"⏳";position:fixed;inset:0;display:grid;place-item
 .cad-img{width:100%;height:auto;display:block;pointer-events:none}
 .cad-rect{position:absolute;border:3px solid var(--accent);box-shadow:0 0 0 9999px rgba(0,0,0,.45);pointer-events:none}
 .cad-coin{position:absolute;width:34px;height:34px;margin:-17px 0 0 -17px;border-radius:50%;background:var(--accent);border:4px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);cursor:grab}
+.cq-vide-bas{fill:var(--wood-soft)}
+.attente-lecture{position:fixed;inset:0;z-index:60;display:grid;place-items:center;background:rgba(30,22,15,.55)}
+.attente-boite{display:grid;justify-items:center;gap:6px;background:var(--surface);border-radius:18px;padding:22px 26px;max-width:300px;text-align:center}
+.attente-boite .e{font-size:44px;animation:lu-tourne 1.6s ease-in-out infinite}
+@keyframes lu-tourne{50%{transform:rotate(-14deg) scale(1.1)}}
+.lu-tete{display:flex;gap:12px;align-items:center}
+.lu-image{width:96px;height:96px;object-fit:cover;border-radius:12px;border:2px solid var(--line);flex:none}

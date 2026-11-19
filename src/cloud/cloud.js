@@ -158,3 +158,20 @@ export async function envoyerModele3D(nomFichier, blob) {
   return chemin;
 }
 export async function telechargerModele3D(chemin) { return ok(await sb.storage.from("modeles3d").download(chemin)); }
+
+/* ---------- Lire une image de meuble (fonction serveur « lire-image », Gemini) ---------- */
+const ERREURS_IMAGE = {
+  non_configure: "La lecture automatique des images n'est pas encore activée.", non_connecte: "Connectez-vous pour que l'appli lise l'image.",
+  limite: "Limite du jour atteinte pour la lecture d'images. Réessayez demain.", image_invalide: "Image vide ou trop lourde.",
+  service_google: "Le service de lecture ne répond pas. Réessayez."
+};
+export async function lireImage(blob, note = "") {
+  const image = await versBase64(blob);
+  const { data, error } = await sb.functions.invoke("lire-image", { body: { image, mime: String(blob.type || "image/jpeg").split(";")[0], note } });
+  if (error) {
+    let code = error.message;
+    try { code = (await error.context.json()).erreur || code; } catch (e) { /* réponse sans JSON */ }
+    const err = new Error(ERREURS_IMAGE[code] || MESSAGES[code] || ("Erreur : " + code)); err.code = code; throw err;
+  }
+  return data.lecture;
+}

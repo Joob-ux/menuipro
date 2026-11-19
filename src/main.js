@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { MODELES_KILIFEU as MODELES } from "./kilifeu.js";
-import { RECIPES, BIENTOT, buildRecipe, pack, outils, SHEET, holeLocal, HOLE_KINDS, SECTIONS_DEF, debitMassif, vueFace } from "./engine/index.js";
+import { RECIPES, BIENTOT, buildRecipe, pack, outils, SHEET, holeLocal, HOLE_KINDS, SECTIONS_DEF, debitMassif, vueFace, depuisLecture } from "./engine/index.js";
 import { HCOL, sheetHoles, cncSVG, cncDXF, makeZip, ascii } from "./export/cnc.js";
 import * as cloud from "./cloud/cloud.js";
 import { PHRASES, parler, boutonVoix, chargerVoix, aUnAudio } from "./voix.js";
@@ -965,15 +965,64 @@ async function importerPhoto(f,nouveau){
   const id="p"+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
   try{await imp3d.garderLocal(id,r.blob)}catch(e){}
   photosURL.set(id,URL.createObjectURL(r.blob));
+  const photo={id,nom:f.name.slice(0,80),l:r.l,h:r.h,cadre:[0,0,1,1],visible:1,chemin:null};
+  const envoyer=c=>{if(ME)cloud.envoyerModele3D(id+".jpg",r.blob).then(ch=>{c.photo&&c.photo.id===id&&(c.photo.chemin=ch);save()}).catch(()=>{})};
+  // 1. L'appli regarde l'image (Gemini) et refait le meuble toute seule.
+  if(cloud.actif&&ME){
+    attenteLecture(true);
+    try{
+      const lu=depuisLecture(await cloud.lireImage(r.blob));
+      attenteLecture(false);
+      if(lu.ok){appliquerLecture(lu,photo);envoyer(cfg());return}
+      toast("🪄 "+lu.remarque+" Tracez le meuble vous-même sur la photo.",true);
+    }catch(e){attenteLecture(false);if(e.code!=="non_configure")toast("🪄 "+e.message+" Tracez le meuble vous-même sur la photo.",true)}
+  }
+  // 2. Sinon : le menuisier cadre la photo et décalque le meuble.
   if(st.id!=="croquis"){st.id="croquis";st.modele=null;openState=false;sel=0;nouveau=true}
   const c=cfg();
-  c.photo={id,nom:f.name.slice(0,80),l:r.l,h:r.h,cadre:[0,0,1,1],visible:1,chemin:null,hAuto:nouveau?1:0};
+  c.photo={...photo,hAuto:nouveau?1:0};delete c.lu;
   // Nouveau meuble depuis une photo : feuille blanche, hauteur d'après la photo.
   if(nouveau){c.o.croquis={socle:0,cols:[{f:1,zones:[{f:1,t:"vide"}]}]};c.H=Math.max(30,Math.min(300,Math.round(c.L*r.h/r.l)))}
   save();renderCatalog();renderControls();compute(true);setEtape("regler");
   if(editeurActif)editeurActif.cadrer();
   toast("✂️ Cadrez le meuble sur la photo, tapez sa vraie largeur, puis tracez ses colonnes et ses cases.");
-  if(ME)cloud.envoyerModele3D(id+".jpg",r.blob).then(ch=>{c.photo&&c.photo.id===id&&(c.photo.chemin=ch);save()}).catch(()=>{});
+  envoyer(c);
+}
+// Le meuble reconnu devient « Mon dessin » : 3D, coupes et devis tout de suite ; cotes modifiables.
+function appliquerLecture(lu,photo){
+  st.id="croquis";st.modele=null;openState=false;sel=0;
+  const c=cfg();
+  c.o.croquis=lu.croquis;
+  ["L","H","P"].forEach(k=>{if(lu.dims[k])c[k]=lu.dims[k]});
+  c.photo={...photo,visible:0,hAuto:0};
+  c.lu={nom:lu.nom,remarque:lu.remarque,confiance:lu.confiance,cotes:["L","H","P"].filter(k=>lu.dims[k])};
+  delete c.fichier3d;st.vue3d=null;
+  save();renderCatalog();renderControls();compute(true);setEtape("voir");
+  const nc=lu.croquis.cols.length,nz=lu.croquis.cols.reduce((s,x)=>s+x.zones.length,0);
+  toast("🪄 "+lu.nom+" reconnu : "+nc+" colonne"+(nc>1?"s":"")+", "+nz+" cases. "+(c.lu.cotes.length===3?"Cotes lues sur l'image.":"Tapez les cotes sous la 3D."));
+}
+function attenteLecture(oui){
+  let n=$("lectureImage");
+  if(!oui){if(n)n.remove();return}
+  if(!n)document.body.append(el("div",{id:"lectureImage",class:"attente-lecture",role:"status"},el("div",{class:"attente-boite"},el("span",{class:"e","aria-hidden":"true"},"🪄"),el("b",{},"Je regarde votre image…"),el("span",{},"Je refais le meuble en 3D (quelques secondes)."))));
+}
+// Sous la 3D : ce qui a été reconnu, l'image d'origine, et les cotes à taper.
+function panneauLecture(c){
+  const url=c.photo&&urlPhoto(c.photo),k=c.o.croquis||{cols:[]};
+  const nz=(k.cols||[]).reduce((s,x)=>s+x.zones.length,0);
+  const champ=(d,lab)=>{const i=el("input",{type:"number",inputmode:"decimal",step:"0.1",min:"10",max:"600",id:"luD"+d,"aria-label":lab});i.value=c[d];
+    i.addEventListener("change",()=>{const v=Math.round(parseFloat(String(i.value).replace(",","."))*10)/10;if(!(v>=10&&v<=600)){i.value=c[d];return}c[d]=v;save();renderControls();compute(true)});
+    return el("label",{class:"imp-dim"},el("span",{},lab),i)};
+  return [
+    el("div",{class:"lu-tete"},url?el("img",{src:url,alt:"Votre image",class:"lu-image"}):null,
+      el("div",{},el("p",{class:"imp-ok"},"🪄 "+c.lu.nom+" reconnu"),el("p",{class:"note"},(k.cols||[]).length+" colonne(s) · "+nz+" case(s)"+(c.lu.cotes.length?" · cotes lues sur l'image":"")))),
+    el("p",{class:"imp-titre"},"📏 Dimensions réelles du meuble (cm)"),
+    el("div",{class:"imp-dims"},champ("L","↔️ Largeur"),champ("H","↕️ Hauteur"),champ("P","↗️ Profondeur")),
+    c.lu.cotes.length<3?el("p",{class:"warn"},"Certaines cotes ne sont pas écrites sur l'image : vérifiez-les."):null,
+    c.lu.remarque?el("p",{class:"note"},"ℹ️ "+c.lu.remarque):null,
+    el("div",{class:"actions"},
+      el("button",{type:"button",class:"btn primary",onclick:()=>setEtape("acheter")},"✂️ Voir les coupes"),
+      el("button",{type:"button",class:"btn",onclick:()=>setEtape("regler")},"✏️ Corriger le dessin"))];
 }
 
 // « Ma 3D » : relit les panneaux de la 3D à la largeur du meuble. gardeHP : garder la hauteur et la profondeur tapées.
@@ -1020,6 +1069,7 @@ function majBarreImport(){
   const box=$("imp3d");if(!box)return;
   const c=cfg(),f=c.fichier3d;
   $("holesBtn").hidden=!!f&&vueImportee();
+  if(!f&&c.lu&&R(st.id).dessin){box.replaceChildren(...panneauLecture(c).filter(Boolean));return}
   if(!f){box.replaceChildren(el("button",{type:"button",class:"btn",onclick:()=>demanderImport(st.id)},"📤 Mettre ma propre 3D (GLB, OBJ, STL, FBX)"));return}
   const voir=v=>{st.vue3d=v;save();openState=false;update3D(lastCtx,true)};
   const imp=vueImportee();

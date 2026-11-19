@@ -383,3 +383,38 @@ describe("Ma 3D : bois massif", () => {
     expect(d[3]).toBe(40); expect(d[5]).toBe(40); expect(d[4]).toBeCloseTo(100 * 700 / 600, 6);
   });
 });
+
+import { depuisLecture, hauteurSocle } from "../src/engine/index.js";
+describe("Image lue → meuble", () => {
+  // Ce que Gemini doit rendre pour la bibliothèque SketchUp 850 × 1750 × 448 (2 colonnes, 4 niches, plinthe, fond).
+  const biblio = { type: "bibliothèque", dimensions_mm: { largeur: 850, hauteur: 1750, profondeur: 448 }, socle_mm: 60, pieds_mm: 0, dos: true,
+    colonnes: [1, 2].map(() => ({ largeur_relative: 1, cases: [1, 2, 3, 4].map(() => ({ hauteur_relative: 1, type: "vide", nombre: 0, portes: 0 })) })),
+    confiance: 0.9, remarque: "" };
+  it("bibliothèque 2 × 4 niches : cotes lues, 2 colonnes égales, 4 cases chacune, plinthe 6 cm", () => {
+    const l = depuisLecture(biblio);
+    expect(l.ok).toBe(true); expect(l.dims).toEqual({ L: 85, H: 175, P: 44.8 });
+    expect(l.croquis.cols.length).toBe(2); expect(l.croquis.cols.every(c => c.zones.length === 4)).toBe(true);
+    expect(hauteurSocle(l.croquis)).toBe(60);
+    const ctx = buildRecipe("croquis", { L: 850, H: 1750, P: 448, ep: 18 }, { croquis: l.croquis });
+    // 2 côtés, dessus, dessous, plinthe, séparation, 2 × 3 traverses = 12 pièces de 18 mm + le fond
+    expect(ctx.parts.filter(p => p.mat === "caisson").length).toBe(12);
+    expect(ctx.parts.filter(p => p.mat === "dos").length).toBeGreaterThan(0);
+    const sep = ctx.parts.find(p => p.name === "Séparation 1");
+    expect(sep.box[0] + 9).toBeCloseTo(425, 0);
+  });
+  it("sans cote écrite : les cotes restent à taper, rien n'est inventé", () => {
+    expect(depuisLecture({ ...biblio, dimensions_mm: null }).dims).toEqual({ L: null, H: null, P: null });
+  });
+  it("meuble sur pieds sans fond", () => {
+    const l = depuisLecture({ ...biblio, socle_mm: 0, pieds_mm: 150, dos: false });
+    const ctx = buildRecipe("croquis", { L: 850, H: 1750, P: 448, ep: 18 }, { croquis: l.croquis });
+    expect(ctx.hw.pieds).toBeTruthy(); expect(ctx.parts.some(p => p.mat === "dos")).toBe(false);
+    expect(Math.min(...ctx.parts.filter(p => p.box && p.mat).map(p => p.box[1]))).toBe(150);
+  });
+  it("pas de meuble, ou réponse abîmée : pas d'erreur", () => {
+    expect(depuisLecture({ colonnes: [], remarque: "Pas un meuble" })).toMatchObject({ ok: false });
+    expect(depuisLecture(null).ok).toBe(false);
+    const l = depuisLecture({ colonnes: [{ cases: [{ type: "fusée", nombre: 99, portes: 7 }] }] });
+    expect(l.ok).toBe(true); expect(() => buildRecipe("croquis", { L: 850, H: 1750, P: 448, ep: 18 }, { croquis: l.croquis })).not.toThrow();
+  });
+});

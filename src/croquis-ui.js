@@ -1,6 +1,6 @@
 // MenuiPro — éditeur « Mon dessin » : le menuisier trace la façade au doigt.
 // Trait vertical = nouvelle colonne, trait horizontal = nouvelle case. Puis il remplit chaque case avec un outil.
-import { normaliserCroquis, lireTrait, appliquerTrait, appliquerOutil, deplacerLigne, enleverLigne, bordsColonnes, bordsZones } from "./engine/index.js";
+import { hauteurSocle, normaliserCroquis, lireTrait, appliquerTrait, appliquerOutil, deplacerLigne, enleverLigne, bordsColonnes, bordsZones } from "./engine/index.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const S = (t, a = {}, ...c) => { const n = document.createElementNS(NS, t); for (const k in a) n.setAttribute(k, a[k]); c.forEach(x => x != null && n.append(x)); return n; };
@@ -43,12 +43,12 @@ export function editeurCroquis(opts) {
   function dessiner() {
     const d = opts.dims(), L = d.L * 10, Hm = d.H * 10, E = d.ep || 18;
     const ratio = Math.max(0.25, Math.min(3, Hm / Math.max(1, L)));
-    const Ht = W * ratio, socleF = k.socle ? Math.min(0.3, 80 / Hm) : 0, Hi = Ht * (1 - socleF);
+    const Ht = W * ratio, bas = hauteurSocle(k) + (k.pieds || 0), socleF = bas ? Math.min(0.4, bas / Hm) : 0, Hi = Ht * (1 - socleF);
     svg.setAttribute("viewBox", `${-BORD} ${-BORD} ${W + 2 * BORD} ${Ht + 2 * BORD + 60}`);
     const cb = bordsColonnes(k), n = k.cols.length;
     // Vide intérieur réel (cm) pour afficher les cotes.
     const wNet = (L - 2 * E - (n - 1) * E) / 10, sfC = k.cols.reduce((s, c) => s + c.f, 0);
-    const hNet = (Hm - (k.socle ? 80 : 0) - 2 * E) / 10;
+    const hNet = (Hm - bas - 2 * E) / 10;
     const kids = [S("rect", { x: -BORD, y: -BORD, width: W + 2 * BORD, height: Ht + 2 * BORD, rx: 6, class: "cq-caisse" })];
     // Photo du meuble, cadrée sur la façade : le menuisier trace ses colonnes et ses cases par-dessus.
     const ph = opts.photo && opts.photo();
@@ -60,7 +60,9 @@ export function editeurCroquis(opts) {
       cadre.append(S("image", { href: ph.url, width: ph.l, height: ph.h, preserveAspectRatio: "none", class: "cq-photo" }));
       kids.push(cadre);
     }
-    if (socleF) kids.push(S("rect", { x: 0, y: Hi, width: W, height: Ht - Hi, class: "cq-socle" }));
+    if (socleF && !k.pieds) kids.push(S("rect", { x: 0, y: Hi, width: W, height: Ht - Hi, class: "cq-socle" }));
+    if (socleF && k.pieds) { kids.push(S("rect", { x: -BORD, y: Hi, width: W + 2 * BORD, height: Ht - Hi + BORD, class: "cq-vide-bas" }));
+      for (const x of [20, W - 60]) kids.push(S("rect", { x, y: Hi, width: 40, height: Ht - Hi + BORD, rx: 4, class: "cq-socle" })); }
     geo = { W, Hi, cb, zb: [], L, Hm };
     k.cols.forEach((col, i) => {
       const [a, b] = cb[i], x0 = a * W, x1 = b * W, zb = bordsZones(col);
@@ -168,8 +170,9 @@ export function editeurCroquis(opts) {
   const majOutils = () => barre.replaceChildren(...OUTILS.map(([id, ic, nom]) => H("button", { type: "button", class: "cq-outil", "aria-pressed": String(outil === id), onclick: () => { outil = id; aide.textContent = AIDE[id]; majOutils(); } }, H("span", { class: "ic", "aria-hidden": "true" }, ic), H("span", {}, nom))));
   majOutils();
   const socleBtn = H("button", { type: "button", class: "btn" });
-  const majSocle = () => { socleBtn.textContent = k.socle ? "🦶 Socle : oui" : "🦶 Socle : non"; socleBtn.setAttribute("aria-pressed", String(!!k.socle)); };
-  socleBtn.onclick = () => { changer({ ...k, socle: k.socle ? 0 : 1 }); majSocle(); };
+  // Bas du meuble : socle → pieds → rien → socle…
+  const majSocle = () => { socleBtn.textContent = k.pieds ? "🦵 Sur pieds" : k.socle ? "🦶 Socle : oui" : "🦶 Socle : non"; socleBtn.setAttribute("aria-pressed", String(!!(k.socle || k.pieds))); };
+  socleBtn.onclick = () => { changer(k.pieds ? { ...k, pieds: 0, socle: 0 } : k.socle ? { ...k, socle: 0, pieds: 150 } : { ...k, socle: 1, pieds: 0 }); majSocle(); };
   majSocle();
   const actions = H("div", { class: "actions cq-actions" },
     H("button", { type: "button", class: "btn", onclick: () => { const v = histo.pop(); if (v) { changer(JSON.parse(v), true); majSocle(); } else dire("Rien à annuler."); } }, "↩️ Annuler"),
