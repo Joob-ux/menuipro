@@ -359,3 +359,17 @@ body.attente::after{content:"⏳";position:fixed;inset:0;display:grid;place-item
 .imp-dim input{width:100%;box-sizing:border-box;font:inherit;font-size:20px;font-weight:800;padding:10px 8px;border:2px solid var(--line);border-radius:12px;text-align:center}
 .imp-ok{margin:0;font-weight:800;color:var(--accent);font-size:17px}
 .modele-resume{display:grid;gap:6px}
+
+/* ----- Photo sous le dessin et cadrage ----- */
+.avec-photo .cq-caisse{fill:#fff}
+.avec-photo .cq-fond{fill:rgba(255,250,242,.12)}
+.avec-photo .cq-socle{opacity:.35}
+.avec-photo .cq-tiroir{fill:rgba(243,228,209,.55)}
+.cq-photo{opacity:.8}
+.cad{display:grid;gap:10px;width:100%;user-select:none;-webkit-user-select:none}
+.cad-scene{padding:20px;touch-action:none;user-select:none;-webkit-user-select:none;line-height:0}
+.cad-cadre{position:relative}
+.cad-clip{position:relative;overflow:hidden;border-radius:8px}
+.cad-img{width:100%;height:auto;display:block;pointer-events:none}
+.cad-rect{position:absolute;border:3px solid var(--accent);box-shadow:0 0 0 9999px rgba(0,0,0,.45);pointer-events:none}
+.cad-coin{position:absolute;width:34px;height:34px;margin:-17px 0 0 -17px;border-radius:50%;background:var(--accent);border:4px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);cursor:grab}

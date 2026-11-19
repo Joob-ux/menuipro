@@ -3,7 +3,9 @@
 import * as THREE from "three";
 
 export const FORMATS = ["glb", "gltf", "obj", "stl", "fbx"];
-export const ACCEPT = FORMATS.map(f => "." + f).join(",");
+export const IMAGES = ["jpg", "jpeg", "png", "webp", "gif", "bmp", "heic", "heif"];
+export const ACCEPT = FORMATS.map(f => "." + f).join(",") + ",image/*";
+export const estImage = f => !!f && ((f.type || "").startsWith("image/") || IMAGES.includes(extension(f.name)));
 export const TAILLE_MAX = 20 * 1024 * 1024; // 20 Mo (même limite que le stockage en ligne)
 
 export const extension = nom => (String(nom || "").toLowerCase().match(/\.([a-z0-9]+)$/) || [])[1] || "";
@@ -12,7 +14,7 @@ export const extension = nom => (String(nom || "").toLowerCase().match(/\.([a-z0
 export function verifierFichier(f) {
   if (!f) return "Aucun fichier choisi.";
   const ext = extension(f.name);
-  if (!FORMATS.includes(ext)) return "Ce fichier n'est pas une 3D lisible. Formats acceptés : GLB, GLTF, OBJ, STL, FBX.";
+  if (!FORMATS.includes(ext) && !estImage(f)) return "Ce fichier n'est ni une photo ni une 3D. Formats acceptés : photo (JPG, PNG…), GLB, GLTF, OBJ, STL, FBX.";
   if (f.size > TAILLE_MAX) return "Fichier trop lourd (" + Math.round(f.size / 1048576) + " Mo). Maximum 20 Mo : exportez en GLB ou allégez le modèle.";
   if (!f.size) return "Le fichier est vide.";
   return null;
@@ -200,6 +202,19 @@ export function lirePanneaux(groupe) {
   });
   const s = tout.getSize(new THREE.Vector3());
   return { base: [mm(s.x), mm(s.y), mm(s.z)], list, ignores };
+}
+
+/* ---------- Photo ou image du meuble : réduite avant d'être gardée (1600 px, JPEG) ---------- */
+export async function reduireImage(f, max = 1600) {
+  let img;
+  try { img = await createImageBitmap(f); }
+  catch (e) { throw new Error("image_illisible"); }               // ex. HEIC sur un téléphone qui ne sait pas le lire
+  const k = Math.min(1, max / Math.max(img.width, img.height)), w = Math.round(img.width * k), h = Math.round(img.height * k);
+  const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+  const g = cv.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, w, h); g.drawImage(img, 0, 0, w, h);
+  const blob = await new Promise(ok => cv.toBlob(ok, "image/jpeg", 0.85));
+  if (!blob) throw new Error("image_illisible");
+  return { blob, l: w, h };
 }
 
 /* ---------- Gardé sur le téléphone (IndexedDB) : la 3D s'ouvre même sans Internet ---------- */

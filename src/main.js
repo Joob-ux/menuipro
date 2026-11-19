@@ -127,7 +127,11 @@ function renderControls(){
   const mod=modeleActif();
   $("current").replaceChildren(el("span",{class:"e","aria-hidden":"true"},r.e),el("div",{},el("b",{},mod?mod.nom:r.nom),el("div",{class:"note"},mod?r.nom:r.cat)));
   const labels=r.dimLabels||["Largeur","Hauteur","Profondeur"];
-  $("dims").replaceChildren(...["L","H","P"].map((k,i)=>{const inp=el("input",{id:"d"+k,type:"number",inputmode:"numeric",min:String((r.dimMin||[10,10,10])[i]),max:"2000"});inp.value=c[k];inp.addEventListener("input",e=>{c[k]=parseFloat(e.target.value)||0;compute();if(editeurActif&&c[k]>=10)editeurActif.redessiner()});
+  $("dims").replaceChildren(...["L","H","P"].map((k,i)=>{const inp=el("input",{id:"d"+k,type:"number",inputmode:"numeric",min:String((r.dimMin||[10,10,10])[i]),max:"2000"});inp.value=c[k];inp.addEventListener("input",e=>{c[k]=parseFloat(e.target.value)||0;
+      // Photo cadrée : tant que le menuisier n'a pas tapé la hauteur, elle suit la largeur (proportions de la photo).
+      const ph=c.photo;
+      if(ph&&r.dessin){if(k==="H")ph.hAuto=0;else if(k==="L"&&ph.hAuto&&c.L>=10){const q=ph.cadre||[0,0,1,1];c.H=Math.max(30,Math.min(300,Math.round(c.L*((q[3]-q[1])*ph.h)/((q[2]-q[0])*ph.l))));const dh=$("dH");if(dh)dh.value=c.H}}
+      compute();if(editeurActif&&c[k]>=10)editeurActif.redessiner()});
     if(r.importe&&k==="L"){let avant=c.L;inp.addEventListener("focus",()=>{avant=c.L});
       inp.addEventListener("change",()=>{const q=c.L/(avant||c.L);avant=c.L;if((q>2||q<0.5)&&lireDecoupe3D(true)){save();renderControls();compute()}})}return el("div",{class:"num"},el("label",{for:"d"+k},labels[i]),inp,el("small",{},["↔","↕","⤢"][i]))}));
   $("optsLabel").hidden=!r.opts.length;
@@ -136,7 +140,14 @@ function renderControls(){
   $("opts").replaceChildren(...r.opts.map(x=>{
     if(x.modele)return panneauModele(c);
     if(x.croquis){
-      editeurActif=editeurCroquis({croquis:c.o[x.k],dims:()=>({L:c.L,H:c.H,ep:st.ep}),onChange:k=>{c.o[x.k]=k;compute()}});
+      editeurActif=editeurCroquis({croquis:c.o[x.k],dims:()=>({L:c.L,H:c.H,ep:st.ep}),onChange:k=>{c.o[x.k]=k;compute()},
+        photo:()=>c.photo?{...c.photo,url:urlPhoto(c.photo)}:null,
+        ajouterPhoto:()=>demanderImport("croquis",false),
+        enleverPhoto:()=>{delete c.photo;save();renderControls()},
+        onPhoto:chg=>{Object.assign(c.photo,chg);
+          if(chg.cadre){const k=chg.cadre,ph=c.photo,r=((k[3]-k[1])*ph.h)/((k[2]-k[0])*ph.l);
+            c.H=Math.max(30,Math.min(300,Math.round(c.L*r)));c.photo.hAuto=1;toast("📐 Hauteur proposée d'après la photo : "+c.H+" cm. Tapez les vraies cotes si besoin.")}
+          save();renderControls();compute()}});
       return editeurActif;
     }
     if(x.choice)return el("div",{style:"display:grid;gap:6px"},el("span",{class:"name",style:"font-weight:700"},x.label),el("div",{class:"seg"},x.options.map(([v,l])=>el("button",{type:"button","aria-pressed":String(c.o[x.k]===v),onclick:()=>{c.o[x.k]=v;renderControls();compute()}},l))));
@@ -908,7 +919,8 @@ const cache3D=new Map(); // id du fichier → objet 3D déjà lu
 const couleurImport=()=>new THREE.Color(COLORS[st.color][1]).getHex();
 const vueImportee=()=>{const f=cfg().fichier3d;return !!f&&st.vue3d!=="menuipro"&&importIndispo!==f.id};
 function demanderImport(idMeuble,prendreCotes){importCible=idMeuble;importCotes=!!prendreCotes;fichierImport.value="";fichierImport.click()}
-fichierImport.onchange=()=>{const f=fichierImport.files[0];if(f)importer3D(f,importCible||st.id,importCotes)};
+fichierImport.onchange=()=>{const f=fichierImport.files[0];if(!f)return;
+  if(imp3d.estImage(f))importerPhoto(f,importCotes);else importer3D(f,importCible||st.id,importCotes)};
 $("btnDessiner").onclick=()=>choisirMeuble("croquis");
 $("btnImporter").onclick=()=>demanderImport("modele3d",true); // « Ma 3D » : la découpe est lue dans la 3D
 async function importer3D(f,idMeuble,prendreCotes){
@@ -932,6 +944,38 @@ async function importer3D(f,idMeuble,prendreCotes){
   else toast("✅ 3D importée. Réglez la largeur réelle sous la 3D si la taille n'est pas bonne.");
   if(ME)cloud.envoyerModele3D(id+"."+ext,f).then(ch=>{fi.chemin=ch;save();majBarreImport()}).catch(e=>toast("3D gardée sur ce téléphone seulement : "+cloud.message(e),true));
 }
+/* ----- Photo (ou image) du meuble : on la cadre, on tape les cotes, on décalque dans « Mon dessin » ----- */
+const photosURL=new Map(); // id → URL de l'image déjà chargée
+function urlPhoto(ph){
+  if(photosURL.has(ph.id))return photosURL.get(ph.id);
+  photosURL.set(ph.id,null);
+  (async()=>{
+    let blob=await imp3d.lireLocal(ph.id);
+    if(!blob&&ph.chemin&&ME){try{blob=await cloud.telechargerModele3D(ph.chemin);imp3d.garderLocal(ph.id,blob).catch(()=>{})}catch(e){}}
+    if(!blob){photosURL.delete(ph.id);return}
+    photosURL.set(ph.id,URL.createObjectURL(blob));
+    if(editeurActif)editeurActif.redessiner();
+  })();
+  return null;
+}
+async function importerPhoto(f,nouveau){
+  if(f.size>imp3d.TAILLE_MAX){toast("Photo trop lourde (maximum 20 Mo).",true);return}
+  toast("⏳ Préparation de la photo…");
+  let r;try{r=await imp3d.reduireImage(f)}catch(e){toast("Cette image ne s'ouvre pas sur ce téléphone. Essayez une photo JPG ou PNG.",true);return}
+  const id="p"+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+  try{await imp3d.garderLocal(id,r.blob)}catch(e){}
+  photosURL.set(id,URL.createObjectURL(r.blob));
+  if(st.id!=="croquis"){st.id="croquis";st.modele=null;openState=false;sel=0;nouveau=true}
+  const c=cfg();
+  c.photo={id,nom:f.name.slice(0,80),l:r.l,h:r.h,cadre:[0,0,1,1],visible:1,chemin:null,hAuto:nouveau?1:0};
+  // Nouveau meuble depuis une photo : feuille blanche, hauteur d'après la photo.
+  if(nouveau){c.o.croquis={socle:0,cols:[{f:1,zones:[{f:1,t:"vide"}]}]};c.H=Math.max(30,Math.min(300,Math.round(c.L*r.h/r.l)))}
+  save();renderCatalog();renderControls();compute(true);setEtape("regler");
+  if(editeurActif)editeurActif.cadrer();
+  toast("✂️ Cadrez le meuble sur la photo, tapez sa vraie largeur, puis tracez ses colonnes et ses cases.");
+  if(ME)cloud.envoyerModele3D(id+".jpg",r.blob).then(ch=>{c.photo&&c.photo.id===id&&(c.photo.chemin=ch);save()}).catch(()=>{});
+}
+
 // « Ma 3D » : relit les panneaux de la 3D à la largeur du meuble. gardeHP : garder la hauteur et la profondeur tapées.
 function lireDecoupe3D(gardeHP){
   const c=cfg(),f=c.fichier3d,obj=f&&cache3D.get(f.id);

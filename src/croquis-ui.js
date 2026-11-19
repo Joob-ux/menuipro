@@ -20,7 +20,9 @@ const AIDE = {
   gomme: "🧽 Touchez une étagère, un tiroir, une porte : ils s'effacent un par un. Touchez une ligne pour l'enlever. Une case vide rejoint sa voisine."
 };
 
-/* opts : { croquis, dims: () => ({ L, H, ep }) en cm / mm, onChange(croquis) } */
+/* opts : { croquis, dims: () => ({ L, H, ep }) en cm / mm, onChange(croquis),
+           photo: () => ({ url, l, h, cadre: [x0, y0, x1, y1], visible }) | null   (photo du meuble à décalquer)
+           onPhoto(changements), ajouterPhoto(), enleverPhoto() } */
 export function editeurCroquis(opts) {
   let k = normaliserCroquis(opts.croquis), outil = "trait";
   const histo = [];
@@ -48,6 +50,16 @@ export function editeurCroquis(opts) {
     const wNet = (L - 2 * E - (n - 1) * E) / 10, sfC = k.cols.reduce((s, c) => s + c.f, 0);
     const hNet = (Hm - (k.socle ? 80 : 0) - 2 * E) / 10;
     const kids = [S("rect", { x: -BORD, y: -BORD, width: W + 2 * BORD, height: Ht + 2 * BORD, rx: 6, class: "cq-caisse" })];
+    // Photo du meuble, cadrée sur la façade : le menuisier trace ses colonnes et ses cases par-dessus.
+    const ph = opts.photo && opts.photo();
+    svg.classList.toggle("avec-photo", !!(ph && ph.visible && ph.url));
+    if (ph && ph.visible && ph.url) {
+      const c = ph.cadre || [0, 0, 1, 1];
+      const cadre = S("svg", { x: -BORD, y: -BORD, width: W + 2 * BORD, height: Ht + 2 * BORD, preserveAspectRatio: "none",
+        viewBox: `${c[0] * ph.l} ${c[1] * ph.h} ${(c[2] - c[0]) * ph.l} ${(c[3] - c[1]) * ph.h}` });
+      cadre.append(S("image", { href: ph.url, width: ph.l, height: ph.h, preserveAspectRatio: "none", class: "cq-photo" }));
+      kids.push(cadre);
+    }
     if (socleF) kids.push(S("rect", { x: 0, y: Hi, width: W, height: Ht - Hi, class: "cq-socle" }));
     geo = { W, Hi, cb, zb: [], L, Hm };
     k.cols.forEach((col, i) => {
@@ -164,8 +176,65 @@ export function editeurCroquis(opts) {
     socleBtn,
     H("button", { type: "button", class: "btn", onclick: () => { changer({ socle: k.socle, cols: [{ f: 1, zones: [{ f: 1, t: "vide" }] }] }); dire("Feuille blanche : tracez vos colonnes et vos cases."); } }, "🗑️ Recommencer"));
 
-  const boite = H("div", { class: "croquis" }, barre, aide, H("div", { class: "cq-zone" }, svg), msg, actions);
-  boite.redessiner = dessiner;
+  const zone = H("div", { class: "cq-zone" }, svg);
+  const barrePhoto = H("div", { class: "actions cq-actions" });
+  const majPhoto = () => {
+    const ph = opts.photo && opts.photo();
+    if (!opts.photo) return barrePhoto.replaceChildren();
+    if (!ph) return barrePhoto.replaceChildren(H("button", { type: "button", class: "btn", onclick: () => opts.ajouterPhoto() }, "🖼️ Mettre une photo dessous"));
+    barrePhoto.replaceChildren(
+      H("button", { type: "button", class: "btn", "aria-pressed": String(!!ph.visible), onclick: () => { opts.onPhoto({ visible: ph.visible ? 0 : 1 }); dessiner(); majPhoto(); } }, ph.visible ? "🖼️ Photo : visible" : "🖼️ Photo : cachée"),
+      H("button", { type: "button", class: "btn", onclick: () => boite.cadrer() }, "✂️ Cadrer la photo"),
+      H("button", { type: "button", class: "btn", onclick: () => opts.enleverPhoto() }, "🗑️ Enlever la photo"));
+  };
+  const boite = H("div", { class: "croquis" }, barre, aide, zone, msg, actions, barrePhoto);
+  boite.redessiner = () => { dessiner(); majPhoto(); };
+  // Cadrage : le menuisier montre où est le meuble sur la photo (4 coins à glisser).
+  boite.cadrer = () => {
+    const ph = opts.photo && opts.photo();
+    if (!ph || !ph.url) { dire("La photo est encore en chargement…"); return; }
+    zone.replaceChildren(cadrage(ph, cadre => {
+      zone.replaceChildren(svg);
+      if (cadre) opts.onPhoto({ cadre, visible: 1 }); else { dessiner(); majPhoto(); }
+    }));
+    aide.textContent = "✂️ Glissez les 4 coins verts sur les bords du meuble, puis touchez « Valider ».";
+  };
+  majPhoto();
   dessiner();
   return boite;
+}
+
+/* Cadrer la photo : rectangle à 4 coins sur l'image. ok(cadre) avec cadre = [x0, y0, x1, y1] en proportions, ou ok(null). */
+function cadrage(ph, ok) {
+  let c = (ph.cadre || [0, 0, 1, 1]).slice();
+  const img = H("img", { src: ph.url, alt: "Photo du meuble", class: "cad-img", draggable: "false" });
+  const rect = H("div", { class: "cad-rect" });
+  const coins = [0, 1, 2, 3].map(i => H("div", { class: "cad-coin", "data-i": i }));
+  // Les coins dépassent de la photo : ils restent faciles à attraper au doigt, même tout au bord.
+  const scene = H("div", { class: "cad-scene" }, H("div", { class: "cad-cadre" }, H("div", { class: "cad-clip" }, img, rect), ...coins));
+  const placer = () => {
+    rect.style.cssText = `left:${c[0] * 100}%;top:${c[1] * 100}%;width:${(c[2] - c[0]) * 100}%;height:${(c[3] - c[1]) * 100}%`;
+    [[0, 1], [2, 1], [0, 3], [2, 3]].forEach(([x, y], i) => { coins[i].style.left = c[x] * 100 + "%"; coins[i].style.top = c[y] * 100 + "%"; });
+  };
+  let tire = null;
+  scene.addEventListener("pointerdown", e => {
+    const t = e.target.closest(".cad-coin"); if (!t) return;
+    tire = +t.dataset.i; scene.setPointerCapture(e.pointerId); e.preventDefault();
+  });
+  scene.addEventListener("pointermove", e => {
+    if (tire === null) return;
+    const r = img.getBoundingClientRect(), x = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)), y = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height));
+    const ix = tire % 2 ? 2 : 0, iy = tire > 1 ? 3 : 1, m = 0.05;
+    c[ix] = ix === 0 ? Math.min(x, c[2] - m) : Math.max(x, c[0] + m);
+    c[iy] = iy === 1 ? Math.min(y, c[3] - m) : Math.max(y, c[1] + m);
+    placer();
+  });
+  const lacher = () => { tire = null; };
+  scene.addEventListener("pointerup", lacher); scene.addEventListener("pointercancel", lacher);
+  placer();
+  return H("div", { class: "cad" }, scene,
+    H("div", { class: "actions" },
+      H("button", { type: "button", class: "btn primary", onclick: () => ok(c.map(v => Math.round(v * 1000) / 1000)) }, "✅ Valider le cadre"),
+      H("button", { type: "button", class: "btn", onclick: () => { c = [0, 0, 1, 1]; placer(); } }, "🔲 Toute la photo"),
+      H("button", { type: "button", class: "btn", onclick: () => ok(null) }, "↩️ Retour")));
 }
