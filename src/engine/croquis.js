@@ -149,11 +149,20 @@ export function appliquerTrait(k0, trait, L = 1200, H = 2000, min = 120) {
     const i = cb.findIndex(([a, b]) => trait.pos > a && trait.pos < b);
     if (i < 0) return null;
     const [a, b] = cb[i], r = (trait.pos - a) / (b - a);
-    // Trait qui reste dans UNE case d'une colonne à plusieurs cases : il partage cette case seulement.
+    // Trait qui reste dans UNE case : il ne partage que ce qu'il touche. S'il ne va pas d'un bord à l'autre de
+    // la case, la case est d'abord coupée là où le trait s'arrête (comme le menuisier l'a dessiné), puis seule la
+    // partie traversée est partagée en deux casiers.
     const col0 = k.cols[i], zb0 = bordsZones(col0), tol = 0.03;
-    if (col0.zones.length > 1 && trait.de != null) {
+    if (trait.de != null) {
       const j = zb0.findIndex(([h, bas]) => trait.de >= h - tol && trait.a <= bas + tol);
-      if (j >= 0) return partagerCase(k, i, j, r, (b - a) * L, min);
+      if (j >= 0) {
+        // Un trait tracé à la main ne part jamais pile du bord : à 15 % du bord près, ou sur 70 % de la case, il va d'un bord à l'autre.
+        const [h, bas] = zb0[j], hz = bas - h, bord = Math.max(0.05, 0.15 * hz);
+        const touteHauteur = (trait.de <= h + bord && trait.a >= bas - bord) || trait.a - trait.de >= 0.7 * hz;
+        if (touteHauteur && col0.zones.length === 1) { /* colonne d'une seule case, trait de haut en bas : nouvelle colonne (plus bas) */ }
+        else if (touteHauteur || col0.zones[j].sous) return partagerCase(k, i, j, r, (b - a) * L, min);
+        else return partagerMorceau(k, i, j, h, bas, trait, r, (b - a) * L, H, min, bord);
+      }
     }
     if (k.cols.length >= MAX_COLS) return null;
     if ((trait.pos - a) * L < min || (b - trait.pos) * L < min) return null;
@@ -196,6 +205,30 @@ export function appliquerTrait(k0, trait, L = 1200, H = 2000, min = 120) {
     change = true;
   });
   return change ? k : null;
+}
+
+// Trait vertical qui ne couvre qu'un morceau de la case j : on coupe la case en haut et/ou en bas du trait
+// (positions y depuis le haut, en proportions), puis on partage le morceau traversé.
+function partagerMorceau(k, i, j, h, bas, trait, r, largeurMm, H, min, bord) {
+  const col = k.cols[i], z = col.zones[j], hz = bas - h;
+  const coupes = [];                                          // positions des nouvelles lignes, du haut vers le bas
+  if (trait.de > h + bord) coupes.push(trait.de);
+  if (trait.a < bas - bord) coupes.push(trait.a);
+  // Morceaux trop petits (moins de 12 cm) : on colle la coupe au bord.
+  const ok = coupes.filter((y, n) => { const avant = n ? coupes[n - 1] : h; return (y - avant) * H >= min && (bas - y) * H >= min; });
+  if (!ok.length) return partagerCase(k, i, j, r, largeurMm, min);
+  // Morceaux de la case, du haut vers le bas : [h, c1], [c1, c2]…, [cn, bas]
+  const bornes = [h, ...ok, bas], morceaux = [];
+  for (let n = 0; n < bornes.length - 1; n++) morceaux.push([bornes[n], bornes[n + 1]]);
+  const milieu = (trait.de + trait.a) / 2, cible = morceaux.findIndex(([u, v]) => milieu >= u && milieu <= v);
+  // Nouvelles cases, du BAS vers le HAUT (ordre du croquis). Le contenu (étagères, tiroirs, portes) reste dans le plus
+  // grand morceau ; les autres sont vides : un trait ne doit pas multiplier les étagères.
+  const grand = morceaux.reduce((m, x, n) => (x[1] - x[0] > morceaux[m][1] - morceaux[m][0] ? n : m), 0);
+  const nouv = morceaux.map(([u, v], n) => n === grand ? { ...copie(z), f: z.f * (v - u) / hz } : { f: z.f * (v - u) / hz, t: "vide", n: 0, portes: 0 }).reverse();
+  if (col.zones.length - 1 + nouv.length > MAX_ZONES) return null;
+  col.zones.splice(j, 1, ...nouv);
+  const jCible = j + (morceaux.length - 1 - cible);
+  return partagerCase(k, i, jCible, r, largeurMm, min);
 }
 
 // Partage la case j de la colonne i en deux sous-colonnes à la proportion r (0 → 1 de la largeur de la colonne).

@@ -63,7 +63,7 @@ export function editeurCroquis(opts) {
     if (socleF && !k.pieds) kids.push(S("rect", { x: 0, y: Hi, width: W, height: Ht - Hi, class: "cq-socle" }));
     if (socleF && k.pieds) { kids.push(S("rect", { x: -BORD, y: Hi, width: W + 2 * BORD, height: Ht - Hi + BORD, class: "cq-vide-bas" }));
       for (const x of [20, W - 60]) kids.push(S("rect", { x, y: Hi, width: 40, height: Ht - Hi + BORD, rx: 4, class: "cq-socle" })); }
-    geo = { W, Hi, cb, zb: [], L, Hm };
+    geo = { W, Hi, cb, zb: [], L, Hm, bas };
     k.cols.forEach((col, i) => {
       const [a, b] = cb[i], x0 = a * W, x1 = b * W, zb = bordsZones(col);
       geo.zb.push(zb);
@@ -117,7 +117,12 @@ export function editeurCroquis(opts) {
       g.append(S("line", { x1: x0 + w / 2 - Math.min(40, w / 6), y1: y + fh / 2, x2: x0 + w / 2 + Math.min(40, w / 6), y2: y + fh / 2, class: "cq-poignee" }));
     }
     if (z.t === "penderie") {
-      const y = y0 + Math.min(70, h * 0.15);
+      // Comme dans la 3D : une étagère chapelière au-dessus de la tringle quand la case dépasse 90 cm.
+      if (geo && (y1 - y0) / geo.Hi * (geo.Hm - geo.bas) > 900) {
+        const yc = y0 + h * 300 / ((y1 - y0) / geo.Hi * (geo.Hm - geo.bas));
+        g.append(S("line", { x1: x0 + 6, y1: yc, x2: x1 - 6, y2: yc, class: "cq-etagere" }));
+      }
+      const y = y0 + Math.min(70, h * 0.15) + (geo && (y1 - y0) / geo.Hi * (geo.Hm - geo.bas) > 900 ? h * 300 / ((y1 - y0) / geo.Hi * (geo.Hm - geo.bas)) : 0);
       g.append(S("line", { x1: x0 + 10, y1: y, x2: x1 - 10, y2: y, class: "cq-tringle" }));
       g.append(S("text", { x: x0 + w / 2, y: y0 + h / 2 + 30, "text-anchor": "middle", class: "cq-emoji" }, "🧥"));
     }

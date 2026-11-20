@@ -501,3 +501,39 @@ describe("Image lue → meuble : casiers, portes, proportions", () => {
     expect(l.ok).toBe(true); expect(l.rapport).toBe(null);
   });
 });
+
+describe("Mon dessin : le trait fait ce qui est dessiné", () => {
+  const P = { L: 1200, H: 2000, P: 550, ep: 18 };
+  const une = () => ({ socle: 0, cols: [{ f: 1, zones: [{ f: 1, t: "vide" }] }] });
+  it("trait court en bas d'une colonne : coupe la case à la fin du trait, partage seulement le bas", () => {
+    const k = appliquerTrait(une(), { sens: "vertical", pos: 0.5, de: 0.6, a: 0.97 }, P.L, P.H);
+    expect(k.cols.length).toBe(1); expect(k.cols[0].zones.length).toBe(2);
+    expect(k.cols[0].zones[0].sous.length).toBe(2);          // en bas : 2 casiers
+    expect(k.cols[0].zones[1].sous).toBeUndefined();        // en haut : la case reste entière
+    expect(k.cols[0].zones[0].f / (k.cols[0].zones[0].f + k.cols[0].zones[1].f)).toBeCloseTo(0.4, 2);
+  });
+  it("trait au milieu sans toucher les bords : 3 cases, celle du milieu partagée", () => {
+    const k = appliquerTrait(une(), { sens: "vertical", pos: 0.4, de: 0.3, a: 0.6 }, P.L, P.H);
+    expect(k.cols[0].zones.length).toBe(3); expect(k.cols[0].zones[1].sous.length).toBe(2);
+    expect(bordsSous(k.cols[0].zones[1])[0][1]).toBeCloseTo(0.4, 3);
+  });
+  it("trait presque de haut en bas (tracé à la main) : toujours une nouvelle colonne", () => {
+    expect(appliquerTrait(une(), { sens: "vertical", pos: 0.5, de: 0.1, a: 0.9 }, P.L, P.H).cols.length).toBe(2);
+    expect(appliquerTrait(une(), { sens: "vertical", pos: 0.5, de: 0.2, a: 0.95 }, P.L, P.H).cols.length).toBe(2);
+  });
+  it("le meuble construit suit le dessin : la séparation intérieure ne monte que sur le morceau tracé", () => {
+    const k = appliquerTrait(une(), { sens: "vertical", pos: 0.5, de: 0.6, a: 0.97 }, P.L, P.H);
+    const ctx = buildRecipe("croquis", P, { croquis: k });
+    const sep = ctx.parts.find(p => p.name.includes("Séparation intérieure"));
+    expect(sep.box[1]).toBeLessThan(40); expect(sep.box[4]).toBeGreaterThan(700); expect(sep.box[4]).toBeLessThan(850);
+  });
+});
+describe("Mon dessin : un trait ne multiplie pas les étagères", () => {
+  it("case à 3 étagères coupée par un trait court : 3 étagères en tout, pas 9", () => {
+    const k0 = { socle: 0, cols: [{ f: 1, zones: [{ f: 1, t: "etageres", n: 3 }] }] };
+    const k = appliquerTrait(k0, { sens: "vertical", pos: 0.5, de: 0.8, a: 0.97 }, 1200, 2000);
+    const ctx = buildRecipe("croquis", { L: 1200, H: 2000, P: 550, ep: 18 }, { croquis: k });
+    expect(ctx.parts.filter(p => /Étagère \d/.test(p.name)).length).toBe(3);
+    expect(k.cols[0].zones[0].sous.length).toBe(2);
+  });
+});
