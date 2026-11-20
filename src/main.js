@@ -969,14 +969,19 @@ async function importerPhoto(f,nouveau){
   const photo={id,nom:f.name.slice(0,80),l:r.l,h:r.h,cadre:[0,0,1,1],visible:1,chemin:null};
   const envoyer=c=>{if(ME)cloud.envoyerModele3D(id+".jpg",r.blob).then(ch=>{c.photo&&c.photo.id===id&&(c.photo.chemin=ch);save()}).catch(()=>{})};
   // 1. L'appli regarde l'image (Gemini) et refait le meuble toute seule.
+  // Si Google est occupé, le menuisier choisit : réessayer, ou tracer lui-même.
   if(cloud.actif&&ME){
-    attenteLecture(true);
-    try{
-      const lu=depuisLecture(await cloud.lireImage(r.blob));
-      attenteLecture(false);
-      if(lu.ok){appliquerLecture(lu,photo);envoyer(cfg());return}
-      toast("🪄 "+lu.remarque+" Tracez le meuble vous-même sur la photo.",true);
-    }catch(e){attenteLecture(false);if(e.code!=="non_configure")toast("🪄 "+e.message+" Tracez le meuble vous-même sur la photo.",true)}
+    for(;;){
+      attenteLecture(true);
+      let msg;
+      try{
+        const lu=depuisLecture(await cloud.lireImage(r.blob));
+        attenteLecture(false);
+        if(lu.ok){appliquerLecture(lu,photo);envoyer(cfg());return}
+        msg=lu.remarque;
+      }catch(e){attenteLecture(false);if(e.code==="non_configure"||e.code==="non_connecte")break;msg=e.message}
+      if(!(await choixApresEchec(msg)))break;
+    }
   }
   // 2. Sinon : le menuisier cadre la photo et décalque le meuble.
   if(st.id!=="croquis"){st.id="croquis";st.modele=null;openState=false;sel=0;nouveau=true}
@@ -1005,7 +1010,25 @@ function appliquerLecture(lu,photo){
 function attenteLecture(oui){
   let n=$("lectureImage");
   if(!oui){if(n)n.remove();return}
-  if(!n)document.body.append(el("div",{id:"lectureImage",class:"attente-lecture",role:"status"},el("div",{class:"attente-boite"},el("span",{class:"e","aria-hidden":"true"},"🪄"),el("b",{},"Je regarde votre image…"),el("span",{},"Je refais le meuble en 3D (quelques secondes)."))));
+  if(n)n.remove();
+  const temps=el("span",{class:"note"},"");
+  n=el("div",{id:"lectureImage",class:"attente-lecture",role:"status"},el("div",{class:"attente-boite"},el("span",{class:"e","aria-hidden":"true"},"🪄"),el("b",{},"Je regarde votre image…"),el("span",{},"Je refais le meuble en 3D (jusqu'à 1 minute)."),temps));
+  document.body.append(n);
+  const t0=Date.now(),tic=setInterval(()=>{if(!n.isConnected)return clearInterval(tic);temps.textContent="⏱️ "+Math.round((Date.now()-t0)/1000)+" s"},1000);
+}
+// Lecture ratée : gros boutons « Réessayer » / « Tracer moi-même ». Renvoie true pour réessayer.
+function choixApresEchec(msg){
+  return new Promise(ok=>{
+    const fin=v=>{boite.remove();ok(v)};
+    const boite=el("div",{class:"attente-lecture",role:"alertdialog"},el("div",{class:"attente-boite"},
+      el("span",{class:"e-fixe","aria-hidden":"true"},"😕"),
+      el("b",{},"Je n'ai pas pu lire l'image"),
+      el("span",{},msg||"Le service de lecture ne répond pas."),
+      el("div",{class:"choix-echec"},
+        el("button",{type:"button",class:"btn primary",onclick:()=>fin(true)},"🔁 Réessayer"),
+        el("button",{type:"button",class:"btn",onclick:()=>fin(false)},"✏️ Tracer moi-même"))));
+    document.body.append(boite);
+  });
 }
 // Sous la 3D : ce qui a été reconnu, l'image d'origine, et les cotes à taper.
 function panneauLecture(c){

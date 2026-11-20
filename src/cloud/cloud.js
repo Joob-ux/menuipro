@@ -163,7 +163,8 @@ export async function telechargerModele3D(chemin) { return ok(await sb.storage.f
 const ERREURS_IMAGE = {
   non_configure: "La lecture automatique des images n'est pas encore activée.", non_connecte: "Connectez-vous pour que l'appli lise l'image.",
   limite: "Limite du jour atteinte pour la lecture d'images. Réessayez demain.", image_invalide: "Image vide ou trop lourde.",
-  service_google: "Le service de lecture ne répond pas. Réessayez."
+  service_google: "Le service de lecture ne répond pas. Réessayez.",
+  occupe: "Le service de lecture est très chargé en ce moment. Réessayez dans une minute."
 };
 export async function lireImage(blob, note = "") {
   const image = await versBase64(blob);

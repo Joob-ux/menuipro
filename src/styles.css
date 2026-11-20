@@ -377,6 +377,9 @@ body.attente::after{content:"⏳";position:fixed;inset:0;display:grid;place-item
 .attente-lecture{position:fixed;inset:0;z-index:60;display:grid;place-items:center;background:rgba(30,22,15,.55)}
 .attente-boite{display:grid;justify-items:center;gap:6px;background:var(--surface);border-radius:18px;padding:22px 26px;max-width:300px;text-align:center}
 .attente-boite .e{font-size:44px;animation:lu-tourne 1.6s ease-in-out infinite}
+.attente-boite .e-fixe{font-size:44px}
+.choix-echec{display:grid;gap:10px;width:100%;margin-top:8px}
+.choix-echec .btn{padding:14px;font-size:18px}
 @keyframes lu-tourne{50%{transform:rotate(-14deg) scale(1.1)}}
 .lu-tete{display:flex;gap:12px;align-items:center}
 .lu-image{width:96px;height:96px;object-fit:cover;border-radius:12px;border:2px solid var(--line);flex:none}

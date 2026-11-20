@@ -13,12 +13,16 @@ const CORS = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 
-// Le dernier modèle Flash de Google (celui qui a lu la bibliothèque 850 × 1750 × 448 sans erreur).
-const MODELE_VERTEX = Deno.env.get("GEMINI_MODEL_IMAGE") || "gemini-flash-latest";
-const MODELE_STUDIO = Deno.env.get("GEMINI_MODEL_IMAGE") || "gemini-flash-latest";
-// Niveau de réflexion : sans réglage, la lecture prenait 2 minutes. « medium » garde la précision, en moins de temps.
-// Réglable avec le secret GEMINI_REFLEXION : minimal, low, medium ou high.
-const REFLEXION = Deno.env.get("GEMINI_REFLEXION") || "medium";
+// Modèles essayés dans l'ordre : quand Google répond « occupé » (UNAVAILABLE, 503, 429) ou « modèle retiré »
+// (NOT_FOUND), on passe au suivant. La liste AI Studio est complétée par les modèles Flash que la clé peut vraiment utiliser.
+const MODELE_CHOISI = Deno.env.get("GEMINI_MODEL_IMAGE") || "";
+const MODELES_STUDIO = [MODELE_CHOISI, "gemini-flash-latest", "gemini-flash-lite-latest"].filter(Boolean);
+const MODELES_VERTEX = [MODELE_CHOISI, "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-flash-latest"].filter(Boolean);
+// Niveau de réflexion du premier essai : « medium » prenait 1 à 2 minutes et frôlait la coupure de Supabase (150 s).
+// « low » répond en quelques dizaines de secondes. Réglable avec le secret GEMINI_REFLEXION : minimal, low, medium ou high.
+const REFLEXION = Deno.env.get("GEMINI_REFLEXION") || "low";
+// Temps total accordé à la lecture (Supabase coupe la fonction vers 150 s), et temps maximum d'un essai.
+const DELAI_TOTAL = 120_000, DELAI_ESSAI = 75_000;
 const LIMITE = Number(Deno.env.get("IMAGE_LIMITE_JOUR") || 30);
 const IMAGE_MAX = 2_500_000; // octets
 const MIMES = ["image/jpeg", "image/png", "image/webp"];
@@ -79,9 +83,34 @@ async function jetonGoogle(sa: { client_email: string; private_key: string }) {
   return d.access_token as string;
 }
 
-async function demanderGemini(image: string, mime: string, note: string, avecReflexion = true): Promise<any> {
+class ErreurGemini extends Error {
+  passer: boolean; // vrai : essayer un autre modèle / réessayer
+  constructor(msg: string, passer: boolean) { super(msg); this.passer = passer; }
+}
+const attendre = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+// Modèles Flash disponibles pour la clé AI Studio (gardé en mémoire tant que la fonction reste chaude).
+let modelesClé: string[] | null = null;
+async function modelesDisponibles(cle: string): Promise<string[]> {
+  if (modelesClé) return modelesClé;
+  try {
+    const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200", { headers: { "x-goog-api-key": cle }, signal: AbortSignal.timeout(6000) });
+    const d = await r.json();
+    const noms = (d.models || [])
+      .filter((m: any) => (m.supportedGenerationMethods || []).includes("generateContent"))
+      .map((m: any) => String(m.name || "").replace(/^models\//, ""))
+      .filter((n: string) => /^gemini-.*flash/.test(n) && !/image|tts|audio|live|embed|thinking-exp/.test(n));
+    // Les plus récents d'abord ; « lite » (plus rapide, moins précis) après les Flash normaux.
+    const version = (n: string) => Number((n.match(/gemini-(\d+(?:\.\d+)?)/) || [])[1] || 0);
+    noms.sort((a: string, b: string) => (Number(a.includes("lite")) - Number(b.includes("lite"))) || (version(b) - version(a)) || (Number(a.includes("preview")) - Number(b.includes("preview"))));
+    modelesClé = noms.slice(0, 6);
+  } catch { modelesClé = []; }
+  return modelesClé;
+}
+
+async function unEssai(modele: string, image: string, mime: string, note: string, reflexion: string | null, delai: number): Promise<any> {
   const generationConfig: Record<string, unknown> = { responseMimeType: "application/json", responseSchema: SCHEMA, temperature: 0.1, maxOutputTokens: 8000 };
-  if (avecReflexion) generationConfig.thinkingConfig = { thinkingLevel: REFLEXION };
+  if (reflexion) generationConfig.thinkingConfig = { thinkingLevel: reflexion };
   const corps = JSON.stringify({
     systemInstruction: { parts: [{ text: CONSIGNE }] },
     contents: [{ role: "user", parts: [{ inline_data: { mime_type: mime, data: image } }, { text: note ? "Précision du menuisier : " + note : "Décris ce meuble." }] }],
@@ -89,21 +118,63 @@ async function demanderGemini(image: string, mime: string, note: string, avecRef
   });
   const cle = Deno.env.get("GEMINI_API_KEY") || "";
   let r: Response;
-  if (cle) {
-    r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODELE_STUDIO}:generateContent`, { method: "POST", headers: { "x-goog-api-key": cle, "Content-Type": "application/json" }, body: corps });
-  } else {
-    const sa = JSON.parse(Deno.env.get("GOOGLE_SA_JSON") || "null");
-    if (!sa) throw new Error("non_configure");
-    const jeton = await jetonGoogle(sa);
-    r = await fetch(`https://aiplatform.googleapis.com/v1/projects/${sa.project_id}/locations/global/publishers/google/models/${MODELE_VERTEX}:generateContent`,
-      { method: "POST", headers: { Authorization: "Bearer " + jeton, "Content-Type": "application/json" }, body: corps });
+  try {
+    if (cle) {
+      r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modele}:generateContent`, { method: "POST", headers: { "x-goog-api-key": cle, "Content-Type": "application/json" }, body: corps, signal: AbortSignal.timeout(delai) });
+    } else {
+      const sa = JSON.parse(Deno.env.get("GOOGLE_SA_JSON") || "null");
+      if (!sa) throw new Error("non_configure");
+      const jeton = await jetonGoogle(sa);
+      r = await fetch(`https://aiplatform.googleapis.com/v1/projects/${sa.project_id}/locations/global/publishers/google/models/${modele}:generateContent`,
+        { method: "POST", headers: { Authorization: "Bearer " + jeton, "Content-Type": "application/json" }, body: corps, signal: AbortSignal.timeout(delai) });
+    }
+  } catch (e) {
+    const m = String((e as Error).message || e);
+    if (m === "non_configure") throw e;
+    throw new ErreurGemini(modele + ": " + (/abort|timeout/i.test(m) ? "trop lent" : "réseau " + m), true);
   }
-  const d = await r.json();
+  const d = await r.json().catch(() => ({}));
+  const texteErreur = String(d.error?.message || "");
   // Modèle qui refuse le réglage de réflexion : on redemande sans.
-  if (r.status === 400 && avecReflexion && /think|level|budget/i.test(String(d.error?.message || ""))) return demanderGemini(image, mime, note, false);
-  if (!r.ok) throw new Error("gemini: " + (d.error?.status || "") + " " + (d.error?.message || r.status));
-  const brut = d.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("") || "{}";
-  return JSON.parse(brut);
+  if (r.status === 400 && reflexion && /think|level|budget/i.test(texteErreur)) return unEssai(modele, image, mime, note, null, delai);
+  if (!r.ok) {
+    const statut = String(d.error?.status || r.status);
+    // Occupé, quota, panne passagère ou modèle retiré : un autre essai a ses chances.
+    const passer = [429, 500, 502, 503, 504, 404].includes(r.status) || /UNAVAILABLE|RESOURCE_EXHAUSTED|INTERNAL|DEADLINE|NOT_FOUND/.test(statut);
+    throw new ErreurGemini(modele + ": " + statut + " " + texteErreur.slice(0, 160), passer);
+  }
+  const brut = d.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("") || "";
+  try { return JSON.parse(brut); }
+  catch { throw new ErreurGemini(modele + ": réponse incomplète (" + (d.candidates?.[0]?.finishReason || "?") + ")", true); }
+}
+
+// Essaie les modèles l'un après l'autre (2 tours maximum), sans dépasser DELAI_TOTAL.
+async function demanderGemini(image: string, mime: string, note: string): Promise<{ lecture: any; modele: string; essais: string[] }> {
+  const debut = Date.now(), essais: string[] = [];
+  const cle = Deno.env.get("GEMINI_API_KEY") || "";
+  // AI Studio : Flash normaux d'abord (précision), puis les « lite » (plus légers, souvent libres quand Google est surchargé).
+  const trouves = cle ? await modelesDisponibles(cle) : [];
+  const liste = cle ? [...new Set([...MODELES_STUDIO.filter(m => !m.includes("lite")), ...trouves.filter(m => !m.includes("lite")), ...MODELES_STUDIO.filter(m => m.includes("lite")), ...trouves.filter(m => m.includes("lite"))])]
+    : [...new Set(MODELES_VERTEX)];
+  const retires = new Set<string>();
+  for (let tour = 0; tour < 2; tour++) {
+    for (const modele of liste) {
+      if (retires.has(modele)) continue;
+      const reste = DELAI_TOTAL - (Date.now() - debut);
+      if (reste < 8000) break;
+      try {
+        const lecture = await unEssai(modele, image, mime, note, tour === 0 && modele === liste[0] ? REFLEXION : "low", Math.min(DELAI_ESSAI, reste - 2000));
+        return { lecture, modele, essais };
+      } catch (e) {
+        if (!(e instanceof ErreurGemini)) throw e;
+        essais.push(e.message);
+        if (/NOT_FOUND|404/.test(e.message)) retires.add(modele);
+        if (!e.passer) throw new Error("gemini: " + essais.join(" | "));
+      }
+    }
+    if (tour === 0) await attendre(2500); // Google demande d'attendre un peu quand il est surchargé
+  }
+  throw new Error("gemini: " + essais.join(" | "));
 }
 
 Deno.serve(async (req) => {
@@ -130,13 +201,13 @@ Deno.serve(async (req) => {
 
   const debut = Date.now();
   try {
-    const lecture = await demanderGemini(image, mime, String(corps.note || "").slice(0, 300));
-    await service.from("assistant_journal").insert({ user_id: uid, duree_s: 0, texte: "[image]", action: { image: lecture }, ms: Date.now() - debut });
+    const { lecture, modele, essais } = await demanderGemini(image, mime, String(corps.note || "").slice(0, 300));
+    await service.from("assistant_journal").insert({ user_id: uid, duree_s: 0, texte: "[image]", action: { image: lecture, modele, essais: essais.length ? essais : undefined }, ms: Date.now() - debut });
     return json({ lecture });
   } catch (e) {
     const msg = String((e as Error).message || e);
-    await service.from("assistant_journal").insert({ user_id: uid, duree_s: 0, texte: "[image]", action: { erreur: msg.slice(0, 300) }, ms: Date.now() - debut });
+    await service.from("assistant_journal").insert({ user_id: uid, duree_s: 0, texte: "[image]", action: { erreur: msg.slice(0, 600) }, ms: Date.now() - debut });
     console.error(msg);
-    return json({ erreur: msg === "non_configure" ? "non_configure" : "service_google" }, msg === "non_configure" ? 503 : 502);
+    return json({ erreur: msg === "non_configure" ? "non_configure" : /UNAVAILABLE|RESOURCE_EXHAUSTED|429|503|trop lent/.test(msg) ? "occupe" : "service_google" }, msg === "non_configure" ? 503 : 502);
   }
 });
