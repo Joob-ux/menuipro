@@ -29,7 +29,9 @@ const REFLEXION = Deno.env.get("GEMINI_REFLEXION") || "high";
 // Appel direct (secours) : il doit finir avant la coupure de Supabase, donc réflexion « medium » et 120 s au total.
 const REFLEXION_DIRECTE = "medium", DELAI_TOTAL = 120_000, DELAI_ESSAI = 75_000;
 const REVISION_API = Deno.env.get("GEMINI_API_REVISION") || "2026-05-20";
-const LECTURE_MAX_MS = 15 * 60_000; // au-delà, on abandonne une lecture en arrière-plan
+// Temps de lecture accordé à l'IA : 5 minutes au maximum (réglable avec le secret IMAGE_DELAI_MIN).
+// Au-delà, la lecture est arrêtée chez Google et le menuisier choisit : réessayer ou tracer lui-même.
+const LECTURE_MAX_MS = Number(Deno.env.get("IMAGE_DELAI_MIN") || 5) * 60_000;
 const LIMITE = Number(Deno.env.get("IMAGE_LIMITE_JOUR") || 30);
 const IMAGE_MAX = 2_500_000; // octets
 const MIMES = ["image/jpeg", "image/png", "image/webp"];
@@ -285,7 +287,7 @@ async function demanderDirect(liste: string[], image: string, mime: string, note
   throw new Error("gemini: " + essais.join(" | "));
 }
 
-const codeErreur = (msg: string) => msg === "non_configure" ? "non_configure" : /UNAVAILABLE|RESOURCE_EXHAUSTED|429|503|trop lent/.test(msg) ? "occupe" : "service_google";
+const codeErreur = (msg: string) => msg === "non_configure" ? "non_configure" : msg === "temps_depasse" ? "temps_depasse" : /UNAVAILABLE|RESOURCE_EXHAUSTED|429|503|trop lent/.test(msg) ? "occupe" : "service_google";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -308,12 +310,15 @@ Deno.serve(async (req) => {
     const a = ligne?.action as any;
     if (!ligne || !a?.interaction) return json({ erreur: "tache_inconnue" }, 404);
     if (a.image) return json({ lecture: a.image, modele: a.modele });
-    if (a.erreur) return json({ erreur: codeErreur(a.erreur), modele: a.modele, relancer: true }, 502);
+    if (a.erreur) return json({ erreur: codeErreur(a.erreur), modele: a.modele, relancer: a.erreur !== "temps_depasse" }, 502);
     const age = Date.now() - new Date(ligne.created_at).getTime();
     let suivi: Awaited<ReturnType<typeof suivreInteraction>>;
     try { suivi = await suivreInteraction(cle, a.interaction); } catch { suivi = { etat: "en_cours" }; }
-    if (suivi.etat === "en_cours" && age > LECTURE_MAX_MS) suivi = { etat: "rate", erreur: "trop lent (plus de 15 min)" };
-    if (suivi.etat === "en_cours") return json({ en_cours: true, secondes: Math.round(age / 1000), modele: a.modele });
+    if (suivi.etat === "en_cours" && age > LECTURE_MAX_MS) {
+      suivi = { etat: "rate", erreur: "temps_depasse" };
+      fetch(URL_INTER + "/" + encodeURIComponent(a.interaction), { method: "DELETE", headers: entetesInter(cle) }).catch(() => {});
+    }
+    if (suivi.etat === "en_cours") return json({ en_cours: true, secondes: Math.round(age / 1000), max: LECTURE_MAX_MS / 1000, modele: a.modele });
     const action = suivi.etat === "fini" ? { ...a, image: suivi.lecture } : { ...a, erreur: suivi.erreur };
     await service.from("assistant_journal").update({ action, ms: age }).eq("id", ligne.id);
     if (suivi.etat === "fini") {
@@ -321,7 +326,7 @@ Deno.serve(async (req) => {
       return json({ lecture: suivi.lecture, modele: a.modele });
     }
     console.error(suivi.erreur);
-    return json({ erreur: codeErreur(String(suivi.erreur)), modele: a.modele, relancer: true }, 502);
+    return json({ erreur: codeErreur(String(suivi.erreur)), modele: a.modele, relancer: suivi.erreur !== "temps_depasse" }, 502);
   }
 
   /* ----- 1. Nouvelle lecture ----- */

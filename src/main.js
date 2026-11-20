@@ -1111,12 +1111,12 @@ function attenteLecture(oui,arreter){
   const ETAPES=["🔍 Je compte les colonnes, les cases, les portes et les tiroirs…","📐 Je mesure les proportions de chaque case…","🧐 Je vérifie que rien ne manque…","✍️ Je prépare le dessin du meuble…"];
   n=el("div",{id:"lectureImage",class:"attente-lecture",role:"status"},el("div",{class:"attente-boite"},
     el("span",{class:"e","aria-hidden":"true"},"🪄"),el("b",{},"Je regarde votre image…"),
-    el("span",{},"Je prends le temps de tout bien regarder : 1 à 5 minutes. Vous pouvez poser le téléphone."),
+    el("span",{},"Je prends le temps de tout bien regarder : 5 minutes au maximum. Vous pouvez poser le téléphone."),
     el("div",{class:"attente-ligne"},el("span",{"aria-hidden":"true"},"⏱️"),temps),etape,
     arreter?el("button",{type:"button",class:"btn",onclick:()=>{arreter();n.remove();toast("✏️ Lecture arrêtée : tracez le meuble vous-même sur la photo.")}},"✋ Arrêter et tracer moi-même"):null));
   document.body.append(n);
   const t0=Date.now(),fmt=s=>s<60?s+" s":Math.floor(s/60)+" min "+String(s%60).padStart(2,"0")+" s";
-  const tic=setInterval(()=>{if(!n.isConnected)return clearInterval(tic);const s=Math.round((Date.now()-t0)/1000);temps.textContent=fmt(s);etape.textContent=ETAPES[Math.min(ETAPES.length-1,Math.floor(s/45))]},1000);
+  const tic=setInterval(()=>{if(!n.isConnected)return clearInterval(tic);const s=Math.round((Date.now()-t0)/1000);temps.textContent=fmt(Math.min(s,300))+" / 5 min";etape.textContent=ETAPES[Math.min(ETAPES.length-1,Math.floor(s/75))]},1000);
   return {suivi:()=>{}};
 }
 // Lecture ratée : gros boutons « Réessayer » / « Tracer moi-même ». Renvoie true pour réessayer.
