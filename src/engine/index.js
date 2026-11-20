@@ -22,7 +22,7 @@ export { vueFace } from "./facade.js";
 export { TISSUS, teinte, COMPOSITIONS } from "./rembourre.js";
 export { normaliserModele, etirerPanneau } from "./modele3d.js";
 export { depuisLecture } from "./lecture.js";
-export { hauteurSocle, croquisDefaut, normaliserCroquis, lireTrait, appliquerTrait, appliquerOutil, deplacerLigne, enleverLigne, bordsColonnes, bordsZones } from "./croquis.js";
+export { hauteurSocle, croquisDefaut, normaliserCroquis, lireTrait, appliquerTrait, appliquerOutil, deplacerLigne, enleverLigne, bordsColonnes, bordsZones, bordsSous } from "./croquis.js";
 
 export function buildRecipe(id, p, opts) {
   const r = RECIPES.find(x => x.id === id);

@@ -1,6 +1,6 @@
 // MenuiPro — éditeur « Mon dessin » : le menuisier trace la façade au doigt.
 // Trait vertical = nouvelle colonne, trait horizontal = nouvelle case. Puis il remplit chaque case avec un outil.
-import { hauteurSocle, normaliserCroquis, lireTrait, appliquerTrait, appliquerOutil, deplacerLigne, enleverLigne, bordsColonnes, bordsZones } from "./engine/index.js";
+import { hauteurSocle, normaliserCroquis, lireTrait, appliquerTrait, appliquerOutil, deplacerLigne, enleverLigne, bordsColonnes, bordsZones, bordsSous } from "./engine/index.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const S = (t, a = {}, ...c) => { const n = document.createElementNS(NS, t); for (const k in a) n.setAttribute(k, a[k]); c.forEach(x => x != null && n.append(x)); return n; };
@@ -11,7 +11,7 @@ export const OUTILS = [
   ["penderie", "👔", "Penderie"], ["vide", "⬜", "Vide"], ["gomme", "🧽", "Gomme"]
 ];
 const AIDE = {
-  trait: "✏️ Tracez un trait de haut en bas pour faire une colonne, de gauche à droite pour faire une case. Glissez une ligne pour la déplacer.",
+  trait: "✏️ De haut en bas : une colonne (ou, dans une seule case, deux casiers côte à côte). De gauche à droite : une case. Glissez une ligne pour la déplacer.",
   etagere: "📚 Touchez une case : une étagère de plus à chaque fois.",
   tiroir: "🗄️ Touchez une case : un tiroir de plus à chaque fois.",
   porte: "🚪 Touchez une case : 1 porte, puis 2 portes, puis aucune.",
@@ -70,7 +70,20 @@ export function editeurCroquis(opts) {
       const hNetCol = hNet - (col.zones.length - 1) * E / 10, sfZ = col.zones.reduce((s, z) => s + z.f, 0);
       col.zones.forEach((z, j) => {
         const [h, bas] = zb[j], y0 = h * Hi, y1 = bas * Hi;
-        kids.push(cellule(z, x0, y0, x1, y1, i, j));
+        if (z.sous) {
+          // Case partagée : chaque casier est dessiné comme une case, les portes de la case par-dessus.
+          const sb = bordsSous(z);
+          z.sous.forEach((sc, s) => {
+            const sx0 = x0 + sb[s][0] * (x1 - x0), sx1 = x0 + sb[s][1] * (x1 - x0), zz = bordsZones(sc);
+            sc.zones.forEach((sz, t) => {
+              const sy0 = y0 + zz[t][0] * (y1 - y0), sy1 = y0 + zz[t][1] * (y1 - y0);
+              kids.push(cellule(sz, sx0, sy0, sx1, sy1, i, j, s, t));
+              if (t > 0) kids.push(S("line", { x1: sx0, y1: sy1, x2: sx1, y2: sy1, class: "cq-ligne" }));
+            });
+            if (s > 0) kids.push(S("rect", { x: sx0 - 5, y: y0, width: 10, height: y1 - y0, class: "cq-sep cq-sep-int" }));
+          });
+          if (z.portes) kids.push(portesSvg(z.portes, x0, y0, x1, y1));
+        } else kids.push(cellule(z, x0, y0, x1, y1, i, j));
         kids.push(S("text", { x: x1 - 10, y: y1 - 10, class: "cq-cote", "text-anchor": "end" }, String(Math.round(hNetCol * z.f / sfZ))));
         if (j > 0) kids.push(S("line", { x1: x0, y1: y1, x2: x1, y2: y1, class: "cq-ligne" }));
       });
@@ -81,7 +94,19 @@ export function editeurCroquis(opts) {
     svg.replaceChildren(...kids);
   }
 
-  function cellule(z, x0, y0, x1, y1, i, j) {
+  // Portes dessinées devant une case (ou une case partagée entière).
+  function portesSvg(n, x0, y0, x1, y1) {
+    const g = S("g", { class: "cq-portes" }), w = x1 - x0, h = y1 - y0, m = 10;
+    for (let s = 0; s < n; s++) {
+      const pw = (w - 2 * m) / n, x = x0 + m + s * pw, gauche = n === 2 ? s === 0 : false;
+      g.append(S("rect", { x: x + 2, y: y0 + m, width: pw - 4, height: h - 2 * m, rx: 4, class: "cq-porte" }));
+      const hx = gauche || n === 1 ? x + pw - 22 : x + 22;
+      g.append(S("line", { x1: hx, y1: y0 + h / 2 - 30, x2: hx, y2: y0 + h / 2 + 30, class: "cq-poignee" }));
+    }
+    return g;
+  }
+
+  function cellule(z, x0, y0, x1, y1, i, j, s, t) {
     const g = S("g", { class: "cq-cell", "data-i": i, "data-j": j });
     const w = x1 - x0, h = y1 - y0, m = 10;
     g.append(S("rect", { x: x0, y: y0, width: w, height: h, class: "cq-fond" }));
@@ -96,12 +121,7 @@ export function editeurCroquis(opts) {
       g.append(S("line", { x1: x0 + 10, y1: y, x2: x1 - 10, y2: y, class: "cq-tringle" }));
       g.append(S("text", { x: x0 + w / 2, y: y0 + h / 2 + 30, "text-anchor": "middle", class: "cq-emoji" }, "🧥"));
     }
-    if (z.portes) for (let s = 0; s < z.portes; s++) {
-      const pw = (w - 2 * m) / z.portes, x = x0 + m + s * pw, gauche = z.portes === 2 ? s === 0 : false;
-      g.append(S("rect", { x: x + 2, y: y0 + m, width: pw - 4, height: h - 2 * m, rx: 4, class: "cq-porte" }));
-      const hx = gauche || z.portes === 1 ? x + pw - 22 : x + 22;
-      g.append(S("line", { x1: hx, y1: y0 + h / 2 - 30, x2: hx, y2: y0 + h / 2 + 30, class: "cq-poignee" }));
-    }
+    if (z.portes) g.append(portesSvg(z.portes, x0, y0, x1, y1));
     const nb = z.t === "etageres" || z.t === "tiroirs" ? z.n : 0;
     if (nb) { g.append(S("circle", { cx: x0 + 34, cy: y0 + 34, r: 24, class: "cq-badge" })); g.append(S("text", { x: x0 + 34, y: y0 + 43, "text-anchor": "middle", class: "cq-badge-t" }, String(nb))); }
     return g;
@@ -110,10 +130,17 @@ export function editeurCroquis(opts) {
   /* ---------- Gestes ---------- */
   const versDessin = e => { const p = svg.createSVGPoint(); p.x = e.clientX; p.y = e.clientY; const q = p.matrixTransform(svg.getScreenCTM().inverse()); return [q.x, q.y]; };
   const prop = ([x, y]) => [x / geo.W, y / geo.Hi];
+  // Case sous le doigt : [i, j], ou [i, j, s, t] dans un casier d'une case partagée.
   function caseSous([x, y]) {
     const px = x / geo.W, py = y / geo.Hi;
     const i = geo.cb.findIndex(([a, b]) => px >= a && px <= b); if (i < 0) return null;
-    const j = geo.zb[i].findIndex(([h, bas]) => py >= h && py <= bas); return j < 0 ? null : [i, j];
+    const j = geo.zb[i].findIndex(([h, bas]) => py >= h && py <= bas); if (j < 0) return null;
+    const z = k.cols[i].zones[j];
+    if (!z.sous) return [i, j];
+    const [a, b] = geo.cb[i], [h, bas] = geo.zb[i][j], rx = (px - a) / (b - a), ry = (py - h) / (bas - h);
+    const sb = bordsSous(z), s = Math.max(0, sb.findIndex(([u, v]) => rx >= u && rx <= v));
+    const zz = bordsZones(z.sous[s]), t = Math.max(0, zz.findIndex(([u, v]) => ry >= u && ry <= v));
+    return [i, j, s, t];
   }
   // Ligne proche du doigt (pour la déplacer) : entre colonnes, ou entre deux cases d'une colonne.
   function ligneSous([x, y]) {
@@ -122,6 +149,14 @@ export function editeurCroquis(opts) {
     const c = caseSous([x, y]); if (!c) return null;
     const zb = geo.zb[c[0]];
     for (let j = 0; j < zb.length - 1; j++) if (Math.abs(zb[j][0] * geo.Hi - y) < tol) return { type: "zone", i: c[0], j };
+    // Lignes intérieures d'une case partagée : entre casiers, ou entre deux cases d'un casier.
+    if (c.length === 4) {
+      const [i, j, s] = c, z = k.cols[i].zones[j], [a, b] = geo.cb[i], [h, bas] = zb[j];
+      const sb = bordsSous(z), X = u => (a + u * (b - a)) * geo.W, Y = v => (h + v * (bas - h)) * geo.Hi;
+      for (let q = 0; q < sb.length - 1; q++) if (Math.abs(X(sb[q][1]) - x) < tol) return { type: "sous", i, j, s: q, t: 0 };
+      const zz = bordsZones(z.sous[s]);
+      for (let q = 0; q < zz.length - 1; q++) if (Math.abs(Y(zz[q][0]) - y) < tol) return { type: "souszone", i, j, s, t: q };
+    }
     return null;
   }
   let geste = null;
@@ -143,7 +178,7 @@ export function editeurCroquis(opts) {
       geste.pts.push(p);
       svg.querySelector(".cq-trait").setAttribute("d", "M" + geste.pts.map(q => q.map(v => v.toFixed(1)).join(" ")).join(" L"));
     } else if (geste.type === "ligne") {
-      const [px, py] = prop(p), nk = deplacerLigne(k, geste.l.type, geste.l.i, geste.l.j, geste.l.type === "col" ? px : py, geo.L, geo.Hm);
+      const l = geste.l, [px, py] = prop(p), nk = deplacerLigne(k, l.type, l.i, l.j, l.type === "col" || l.type === "sous" ? px : py, geo.L, geo.Hm, 120, l.s, l.t);
       if (nk) { k = nk; dessiner(); }
     }
   });
@@ -151,11 +186,11 @@ export function editeurCroquis(opts) {
     if (!geste) return;
     const g = geste; geste = null;
     if (g.type === "ligne") { histo.push(g.avant); opts.onChange(k); return; }
-    if (g.type === "gommeLigne") { if (!changer(enleverLigne(k, g.l.type, g.l.i, g.l.j))) dire("Rien à effacer ici.", true); return; }
+    if (g.type === "gommeLigne") { if (!changer(enleverLigne(k, g.l.type, g.l.i, g.l.j, g.l.s, g.l.t))) dire("Rien à effacer ici.", true); return; }
     if (g.type === "outil") {
       const c = caseSous(g.p0);
       if (!c) return;
-      if (!changer(appliquerOutil(k, c[0], c[1], outil))) dire(outil === "gomme" ? "Il faut garder au moins une case." : "", true);
+      if (!changer(appliquerOutil(k, c[0], c[1], outil, c[2], c[3]))) dire(outil === "gomme" ? "Il faut garder au moins une case." : "", true);
       return;
     }
     const t = lireTrait(g.pts.map(prop));

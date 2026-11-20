@@ -972,14 +972,15 @@ async function importerPhoto(f,nouveau){
   // Si Google est occupé, le menuisier choisit : réessayer, ou tracer lui-même.
   if(cloud.actif&&ME){
     for(;;){
-      attenteLecture(true);
+      let arret=false;
+      const att=attenteLecture(true,()=>{arret=true});
       let msg;
       try{
-        const lu=depuisLecture(await cloud.lireImage(r.blob));
+        const lu=depuisLecture(await cloud.lireImage(r.blob,{suivi:att.suivi,annule:()=>arret}));
         attenteLecture(false);
         if(lu.ok){appliquerLecture(lu,photo);envoyer(cfg());return}
         msg=lu.remarque;
-      }catch(e){attenteLecture(false);if(e.code==="non_configure"||e.code==="non_connecte")break;msg=e.message}
+      }catch(e){attenteLecture(false);if(e.code==="annule"||e.code==="non_configure"||e.code==="non_connecte")break;msg=e.message}
       if(!(await choixApresEchec(msg)))break;
     }
   }
@@ -1000,21 +1001,34 @@ function appliquerLecture(lu,photo){
   const c=cfg();
   c.o.croquis=lu.croquis;
   ["L","H","P"].forEach(k=>{if(lu.dims[k])c[k]=lu.dims[k]});
+  // Hauteur pas écrite sur l'image : on garde au moins les proportions de la photo (hauteur = largeur × rapport mesuré).
+  if(!lu.dims.H&&lu.rapport)c.H=Math.max(30,Math.min(300,Math.round(c.L*lu.rapport)));
   c.photo={...photo,visible:0,hAuto:0};
   c.lu={nom:lu.nom,remarque:lu.remarque,confiance:lu.confiance,cotes:["L","H","P"].filter(k=>lu.dims[k])};
   delete c.fichier3d;st.vue3d=null;
   save();renderCatalog();renderControls();compute(true);setEtape("voir");
-  const nc=lu.croquis.cols.length,nz=lu.croquis.cols.reduce((s,x)=>s+x.zones.length,0);
+  const nc=lu.croquis.cols.length,nz=nbCases(lu.croquis);
   toast("🪄 "+lu.nom+" reconnu : "+nc+" colonne"+(nc>1?"s":"")+", "+nz+" cases. "+(c.lu.cotes.length===3?"Cotes lues sur l'image.":"Tapez les cotes sous la 3D."));
 }
-function attenteLecture(oui){
+// Pendant la lecture : l'IA prend son temps pour compter chaque panneau. Le menuisier voit le temps passé
+// et peut arrêter pour tracer lui-même. Renvoie { suivi(secondes) }.
+// Nombre de cases d'un dessin, casiers compris.
+const nbCases=k=>(k.cols||[]).reduce((s,x)=>s+x.zones.reduce((t,z)=>t+(z.sous?z.sous.reduce((u,c)=>u+c.zones.length,0):1),0),0);
+function attenteLecture(oui,arreter){
   let n=$("lectureImage");
   if(!oui){if(n)n.remove();return}
   if(n)n.remove();
-  const temps=el("span",{class:"note"},"");
-  n=el("div",{id:"lectureImage",class:"attente-lecture",role:"status"},el("div",{class:"attente-boite"},el("span",{class:"e","aria-hidden":"true"},"🪄"),el("b",{},"Je regarde votre image…"),el("span",{},"Je refais le meuble en 3D (jusqu'à 1 minute)."),temps));
+  const temps=el("b",{class:"attente-temps"},"0 s"),etape=el("span",{class:"note"},"🔍 Je compte les colonnes, les cases, les portes et les tiroirs…");
+  const ETAPES=["🔍 Je compte les colonnes, les cases, les portes et les tiroirs…","📐 Je mesure les proportions de chaque case…","🧐 Je vérifie que rien ne manque…","✍️ Je prépare le dessin du meuble…"];
+  n=el("div",{id:"lectureImage",class:"attente-lecture",role:"status"},el("div",{class:"attente-boite"},
+    el("span",{class:"e","aria-hidden":"true"},"🪄"),el("b",{},"Je regarde votre image…"),
+    el("span",{},"Je prends le temps de tout bien regarder : 1 à 5 minutes. Vous pouvez poser le téléphone."),
+    el("div",{class:"attente-ligne"},el("span",{"aria-hidden":"true"},"⏱️"),temps),etape,
+    arreter?el("button",{type:"button",class:"btn",onclick:()=>{arreter();n.remove();toast("✏️ Lecture arrêtée : tracez le meuble vous-même sur la photo.")}},"✋ Arrêter et tracer moi-même"):null));
   document.body.append(n);
-  const t0=Date.now(),tic=setInterval(()=>{if(!n.isConnected)return clearInterval(tic);temps.textContent="⏱️ "+Math.round((Date.now()-t0)/1000)+" s"},1000);
+  const t0=Date.now(),fmt=s=>s<60?s+" s":Math.floor(s/60)+" min "+String(s%60).padStart(2,"0")+" s";
+  const tic=setInterval(()=>{if(!n.isConnected)return clearInterval(tic);const s=Math.round((Date.now()-t0)/1000);temps.textContent=fmt(s);etape.textContent=ETAPES[Math.min(ETAPES.length-1,Math.floor(s/45))]},1000);
+  return {suivi:()=>{}};
 }
 // Lecture ratée : gros boutons « Réessayer » / « Tracer moi-même ». Renvoie true pour réessayer.
 function choixApresEchec(msg){
@@ -1033,7 +1047,7 @@ function choixApresEchec(msg){
 // Sous la 3D : ce qui a été reconnu, l'image d'origine, et les cotes à taper.
 function panneauLecture(c){
   const url=c.photo&&urlPhoto(c.photo),k=c.o.croquis||{cols:[]};
-  const nz=(k.cols||[]).reduce((s,x)=>s+x.zones.length,0);
+  const nz=nbCases(k);
   const champ=(d,lab)=>{const i=el("input",{type:"number",inputmode:"decimal",step:"0.1",min:"10",max:"600",id:"luD"+d,"aria-label":lab});i.value=c[d];
     i.addEventListener("change",()=>{const v=Math.round(parseFloat(String(i.value).replace(",","."))*10)/10;if(!(v>=10&&v<=600)){i.value=c[d];return}c[d]=v;save();renderControls();compute(true)});
     return el("label",{class:"imp-dim"},el("span",{},lab),i)};

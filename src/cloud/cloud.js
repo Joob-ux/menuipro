@@ -164,17 +164,50 @@ const ERREURS_IMAGE = {
   non_configure: "La lecture automatique des images n'est pas encore activée.", non_connecte: "Connectez-vous pour que l'appli lise l'image.",
   limite: "Limite du jour atteinte pour la lecture d'images. Réessayez demain.", image_invalide: "Image vide ou trop lourde.",
   service_google: "Le service de lecture ne répond pas. Réessayez.",
-  occupe: "Le service de lecture est très chargé en ce moment. Réessayez dans une minute."
+  occupe: "Le service de lecture est très chargé en ce moment. Réessayez dans une minute.",
+  tache_inconnue: "Cette lecture est perdue. Relancez-la."
 };
-export async function lireImage(blob, note = "") {
-  const image = await versBase64(blob);
-  const { data, error } = await sb.functions.invoke("lire-image", { body: { image, mime: String(blob.type || "image/jpeg").split(";")[0], note } });
+/* Lecture d'une image. Le serveur lance une lecture longue chez Google et rend un numéro de tâche :
+   on redemande le résultat toutes les 4 secondes, sans limite de temps (l'IA réfléchit autant qu'il faut).
+   o : { note, suivi(secondes, modele) appelé pendant l'attente, annule() → true pour arrêter } */
+async function appelImage(body) {
+  const { data, error } = await sb.functions.invoke("lire-image", { body });
   if (error) {
-    let code = error.message;
-    try { code = (await error.context.json()).erreur || code; } catch (e) { /* réponse sans JSON */ }
-    const err = new Error(ERREURS_IMAGE[code] || MESSAGES[code] || ("Erreur : " + code)); err.code = code; throw err;
+    let code = error.message, rep = {};
+    try { rep = await error.context.json(); code = rep.erreur || code; } catch (e) { /* réponse sans JSON */ }
+    const err = new Error(ERREURS_IMAGE[code] || MESSAGES[code] || ("Erreur : " + code)); err.code = code; err.modele = rep.modele; err.relancer = !!rep.relancer; throw err;
   }
-  return data.lecture;
+  return data;
+}
+export async function lireImage(blob, o = {}) {
+  const image = await versBase64(blob), mime = String(blob.type || "image/jpeg").split(";")[0], exclure = [];
+  const debut = Date.now();
+  for (let essai = 0; ; essai++) {
+    const d = await appelImage({ image, mime, note: o.note || "", exclure });
+    if (d.lecture) return d.lecture;
+    const tache = d.tache;
+    if (tache == null) throw Object.assign(new Error(ERREURS_IMAGE.service_google), { code: "service_google" });
+    try {
+      for (let ratesSuivi = 0; ;) {
+        if (o.annule && o.annule()) throw Object.assign(new Error("annule"), { code: "annule" });
+        await new Promise(ok => setTimeout(ok, 4000));
+        if (o.annule && o.annule()) throw Object.assign(new Error("annule"), { code: "annule" });
+        let r;
+        try { r = await appelImage({ tache }); ratesSuivi = 0; }
+        catch (e) {
+          if (e.relancer || e.code === "tache_inconnue") throw e;
+          if (++ratesSuivi >= 5) throw e; // réseau coupé trop longtemps
+          continue;
+        }
+        if (r.lecture) return r.lecture;
+        if (o.suivi) o.suivi(Math.round((Date.now() - debut) / 1000), r.modele);
+      }
+    } catch (e) {
+      // La lecture a échoué chez Google : on relance une fois avec un autre modèle.
+      if (e.relancer && essai === 0) { if (e.modele) exclure.push(e.modele); continue; }
+      throw e;
+    }
+  }
 }
 
 /* ---------- Comptes par QR code (fonction serveur « compte-qr ») ---------- */

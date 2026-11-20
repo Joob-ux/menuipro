@@ -418,3 +418,86 @@ describe("Image lue → meuble", () => {
     expect(l.ok).toBe(true); expect(() => buildRecipe("croquis", { L: 850, H: 1750, P: 448, ep: 18 }, { croquis: l.croquis })).not.toThrow();
   });
 });
+
+import { bordsSous, enleverLigne } from "../src/engine/index.js";
+describe("Mon dessin : cases partagées en casiers", () => {
+  const P = { L: 1200, H: 2000, P: 550, ep: 18 };
+  const deux = () => ({ socle: 0, cols: [{ f: 1, zones: [{ f: 1, t: "tiroirs", n: 2 }, { f: 2, t: "etageres", n: 1 }] }] });
+  it("un trait vertical dans une seule case la partage, sans couper toute la colonne", () => {
+    const k = appliquerTrait(deux(), { sens: "vertical", pos: 0.5, de: 0.05, a: 0.6 }, P.L, P.H);
+    expect(k.cols.length).toBe(1);
+    const z = k.cols[0].zones[1];
+    expect(z.sous.length).toBe(2); expect(z.sous[0].zones[0]).toMatchObject({ t: "etageres", n: 1 });
+    expect(k.cols[0].zones[0].sous).toBeUndefined();
+    const ctx = buildRecipe("croquis", P, { croquis: k });
+    const sep = ctx.parts.find(p => p.name.includes("Séparation intérieure"));
+    expect(sep).toBeTruthy();
+    // la séparation intérieure ne monte que sur la case du haut (≈ 2/3 de la hauteur intérieure)
+    expect(sep.box[4]).toBeLessThan(1400); expect(sep.box[4]).toBeGreaterThan(1100);
+    expect(ctx.parts.filter(p => p.name.includes("Étagère")).length).toBe(2);
+  });
+  it("un trait vertical sur toute la hauteur fait toujours une nouvelle colonne", () => {
+    const k = appliquerTrait(deux(), { sens: "vertical", pos: 0.5, de: 0.05, a: 0.95 }, P.L, P.H);
+    expect(k.cols.length).toBe(2);
+  });
+  it("armoire : 2 portes devant une penderie et une colonne d'étagères", () => {
+    const k = normaliserCroquis({ socle: 1, cols: [{ f: 1, zones: [{ f: 1, portes: 2, sous: [
+      { f: 1, zones: [{ f: 1, t: "penderie" }] }, { f: 1, zones: [{ f: 1, t: "etageres", n: 4 }] }] }] }] });
+    expect(k.cols[0].zones[0].sous.length).toBe(2);
+    const ctx = buildRecipe("croquis", P, { croquis: k });
+    expect(ctx.parts.filter(p => p.name.includes("Porte")).length).toBe(2);
+    expect(ctx.hw.tringle).toBeTruthy(); expect(ctx.parts.filter(p => /Étagère \d/.test(p.name)).length).toBe(4);
+    // les portes couvrent toute la largeur
+    const portes = ctx.parts.filter(p => p.name.includes("Porte"));
+    expect(portes.reduce((s, p) => s + p.box[3], 0)).toBeGreaterThan(1100);
+  });
+  it("outils et gomme sur un casier ; les portes de la case passent avant", () => {
+    let k = normaliserCroquis({ cols: [{ f: 1, zones: [{ f: 1, t: "vide" }, { f: 1, portes: 1, sous: [{ f: 1, zones: [{ f: 1, t: "vide" }] }, { f: 1, zones: [{ f: 1, t: "vide" }] }] }] }] });
+    k = appliquerOutil(k, 0, 1, "gomme", 0, 0);           // enlève d'abord la porte de la case
+    expect(k.cols[0].zones[1].portes).toBe(0); expect(k.cols[0].zones[1].sous.length).toBe(2);
+    k = appliquerOutil(k, 0, 1, "tiroir", 1, 0);
+    expect(k.cols[0].zones[1].sous[1].zones[0]).toMatchObject({ t: "tiroirs", n: 1 });
+    k = appliquerOutil(k, 0, 1, "gomme", 0, 0);           // casier vide : il rejoint son voisin → plus de partage
+    expect(k.cols[0].zones[1].sous).toBeUndefined(); expect(k.cols[0].zones[1].t).toBe("tiroirs");
+  });
+  it("trait horizontal dans un casier, déplacer et enlever les lignes intérieures", () => {
+    let k = appliquerTrait(deux(), { sens: "vertical", pos: 0.5, de: 0.05, a: 0.6 }, P.L, P.H);
+    k = appliquerTrait(k, { sens: "horizontal", pos: 0.3, de: 0.05, a: 0.45 }, P.L, P.H);
+    expect(k.cols[0].zones[1].sous[0].zones.length).toBe(2); expect(k.cols[0].zones[1].sous[1].zones.length).toBe(1);
+    const k2 = deplacerLigne(k, "sous", 0, 1, 0.7, P.L, P.H, 120, 0);
+    expect(bordsSous(k2.cols[0].zones[1])[0][1]).toBeCloseTo(0.7, 2);
+    expect(enleverLigne(k, "souszone", 0, 1, 0, 0).cols[0].zones[1].sous[0].zones.length).toBe(1);
+    expect(enleverLigne(k, "sous", 0, 1, 0).cols[0].zones.length).toBe(3); // casier à 2 cases → la case devient 2 cases
+  });
+  it("lecture abîmée : partage d'une seule sous-colonne, sous-cases imbriquées, trop de casiers", () => {
+    const k = normaliserCroquis({ cols: [{ zones: [{ f: 2, sous: [{ zones: [{ t: "tiroirs", n: 3, sous: [{}, {}] }] }] }, { sous: Array(9).fill({ zones: [{}] }) }] }] });
+    expect(k.cols[0].zones[0]).toMatchObject({ t: "tiroirs", n: 3 }); expect(k.cols[0].zones[0].sous).toBeUndefined();
+    expect(k.cols[0].zones[1].sous.length).toBe(4);
+    expect(() => buildRecipe("croquis", P, { croquis: k })).not.toThrow();
+  });
+});
+
+describe("Image lue → meuble : casiers, portes, proportions", () => {
+  const meubleTV = { type: "meuble TV", dimensions_mm: null, rapport_hauteur_largeur: 0.45, socle_mm: 0, pieds_mm: 120, dos: true, confiance: 0.9, remarque: "",
+    colonnes: [{ largeur_relative: 2, cases: [
+      { hauteur_relative: 1, type: "vide", nombre: 0, portes: 0, sous_colonnes: [
+        { largeur_relative: 1, cases: [{ hauteur_relative: 1, type: "tiroirs", nombre: 1, portes: 0 }] },
+        { largeur_relative: 1, cases: [{ hauteur_relative: 1, type: "tiroirs", nombre: 1, portes: 0 }] }] },
+      { hauteur_relative: 1.5, type: "vide", nombre: 0, portes: 0 }] },
+      { largeur_relative: 1, cases: [{ hauteur_relative: 1, type: "etageres", nombre: 2, portes: 1, type_porte: "vitree" }] }] };
+  it("2 tiroirs côte à côte sous une niche, porte vitrée, proportions gardées", () => {
+    const l = depuisLecture(meubleTV);
+    expect(l.ok).toBe(true); expect(l.rapport).toBeCloseTo(0.45, 3);
+    expect(l.croquis.cols[0].zones[0].sous.length).toBe(2);
+    expect(l.croquis.cols[1].zones[0]).toMatchObject({ portes: 1, pt: "vitree" });
+    const ctx = buildRecipe("croquis", { L: 1800, H: 810, P: 450, ep: 18 }, { croquis: l.croquis });
+    expect(ctx.parts.filter(p => p.name.includes("Façade tiroir")).length).toBe(2);
+    expect(ctx.hw.verre).toBeTruthy();
+    const f = ctx.parts.filter(p => p.name.includes("Façade tiroir")).map(p => p.box[0]).sort((a, b) => a - b);
+    expect(f[1] - f[0]).toBeGreaterThan(400); // côte à côte, pas empilés
+  });
+  it("vieilles réponses (sans sous_colonnes ni rapport) toujours lues", () => {
+    const l = depuisLecture({ colonnes: [{ largeur_relative: 1, cases: [{ hauteur_relative: 1, type: "vide", nombre: 0, portes: 0 }] }] });
+    expect(l.ok).toBe(true); expect(l.rapport).toBe(null);
+  });
+});

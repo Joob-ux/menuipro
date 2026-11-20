@@ -85,6 +85,19 @@ export function zonesFill(ctx, r, zones, nm) {
 /* ---------- Bloc : contenu d'une zone ---------- */
 export function fillZone(ctx, r, z, nm) {
   const E = ctx.E;
+  // Case partagée en sous-colonnes : séparations verticales, puis chaque sous-colonne comme une colonne.
+  if (z.sous && z.sous.length > 1) {
+    const n = z.sous.length, wTot = r.w - (n - 1) * E, sf = z.sous.reduce((s, c) => s + c.f, 0);
+    let x = r.x;
+    z.sous.forEach((c, i) => {
+      const w = wTot * c.f / sf;
+      if (i > 0) add(ctx, nm + "Séparation intérieure " + i, "caisson", [x - E, r.y, r.z, E, r.h, r.d - 20], { edge: r.h });
+      zonesFill(ctx, { x, y: r.y, w, h: r.h, z: r.z, d: r.d }, c.zones, nm + "Casier " + (i + 1) + " · ");
+      x += w + E;
+    });
+    if (z.portes && z.portes.n > 0) portes(ctx, r, z.portes, nm);
+    return;
+  }
   if (z.t === "etageres") {
     const n = z.n || 0;
     for (let i = 1; i <= n; i++) {
