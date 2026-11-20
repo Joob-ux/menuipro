@@ -165,8 +165,7 @@ const ERREURS_IMAGE = {
   limite: "Limite du jour atteinte pour la lecture d'images. Réessayez demain.", image_invalide: "Image vide ou trop lourde.",
   service_google: "Le service de lecture ne répond pas. Réessayez.",
   occupe: "Le service de lecture est très chargé en ce moment. Réessayez dans une minute.",
-  tache_inconnue: "Cette lecture est perdue. Relancez-la.",
-  temps_depasse: "La lecture a pris plus de 5 minutes, je l'ai arrêtée. Réessayez, ou tracez le meuble vous-même."
+  tache_inconnue: "Cette lecture est perdue. Relancez-la."
 };
 /* Lecture d'une image. Le serveur lance une lecture longue chez Google et rend un numéro de tâche :
    on redemande le résultat toutes les 4 secondes, sans limite de temps (l'IA réfléchit autant qu'il faut).
@@ -201,8 +200,6 @@ export async function lireImage(blob, o = {}) {
           continue;
         }
         if (r.lecture) return r.lecture;
-        // Sécurité côté téléphone : 5 min 30 s sans résultat (serveur injoignable…), on arrête.
-        if (Date.now() - debut > 330_000) throw Object.assign(new Error(ERREURS_IMAGE.temps_depasse), { code: "temps_depasse" });
         if (o.suivi) o.suivi(Math.round((Date.now() - debut) / 1000), r.modele);
       }
     } catch (e) {
