@@ -537,3 +537,15 @@ describe("Mon dessin : un trait ne multiplie pas les étagères", () => {
     expect(k.cols[0].zones[0].sous.length).toBe(2);
   });
 });
+describe("3D réaliste : caisson et coulisses des tiroirs", () => {
+  it("chaque façade de tiroir donne les mesures de son caisson et de ses coulisses, dans l'ouverture", () => {
+    const ctx = buildRecipe("croquis", { L: 600, H: 800, P: 500, ep: 18 }, { croquis: { socle: 0, cols: [{ f: 1, zones: [{ f: 1, t: "tiroirs", n: 3 }] }] } });
+    const f = ctx.parts.filter(p => p.drawer);
+    expect(f.length).toBe(3);
+    f.forEach(p => {
+      const t = p.tiroir;
+      expect(t.w).toBeCloseTo(600 - 36, 0); expect(t.coulisse).toBeGreaterThanOrEqual(250); expect(t.coulisse).toBeLessThanOrEqual(t.prof + 50);
+      expect(t.y).toBeGreaterThanOrEqual(p.box[1]); expect(t.y + t.h).toBeLessThanOrEqual(p.box[1] + p.box[4]);
+    });
+  });
+});

@@ -865,6 +865,9 @@ function update3D(ctx,refit){
     const mesh=new THREE.Mesh(geo,mat);
     if(!doux&&p.look!=="glass"&&p.look!=="halo"&&p.look!=="led"&&p.look!=="or")mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo),lineMat));
     const px=x+sx/2-cx,py=y+sy/2,pz=z+sz/2-cz;
+    // Réalisme : poignées sur portes et tiroirs ; caisson du tiroir et coulisses (vus en ouvrant).
+    if(p.door||p.drawer||p.slide)ajouterPoignee(mesh,p,M);
+    if(p.drawer&&p.tiroir&&(p.axis||"z")==="z")ajouterCaissonTiroir(mesh,p,M,group,cx,cz);
     (p.holes||[]).forEach(h=>{
       const r=Math.max(h.d/2,4)/1000, g=new THREE.CylinderGeometry(r,r,0.003,16);
       const m=new THREE.Mesh(g,new THREE.MeshBasicMaterial({color:HCOL[h.kind]}));
@@ -892,6 +895,55 @@ function update3D(ctx,refit){
   scene.add(group);
   $("openBtn").hidden=!movers.length;$("hint3d").hidden=!movers.length;
   if(refit)fitCamera();
+}
+/* ----- Poignées, caissons de tiroir et coulisses (3D seulement : rien ne change dans la découpe) ----- */
+const geoCache={};
+const boite3D=(sx,sy,sz)=>{const k=[sx,sy,sz].map(v=>v.toFixed(4)).join();return geoCache[k]||(geoCache[k]=new THREE.BoxGeometry(sx,sy,sz))};
+const tube3D=(r,l)=>{const k="t"+r+"_"+l.toFixed(4);return geoCache[k]||(geoCache[k]=new THREE.CylinderGeometry(r,r,l,12))};
+// Poignée barre : barre + 2 pattes, posée sur la face avant de la pièce (repère local du maillage, en m).
+function poigneeBarre(long,vertical,M){
+  const g=new THREE.Group(),r=0.006,dep=0.028,ec=long*0.8;
+  const barre=new THREE.Mesh(tube3D(r,long),M.metal);if(!vertical)barre.rotation.z=Math.PI/2;barre.position.z=dep;g.add(barre);
+  [-1,1].forEach(s=>{const patte=new THREE.Mesh(tube3D(0.0045,dep),M.metal);patte.rotation.x=Math.PI/2;patte.position.z=dep/2;
+    if(vertical)patte.position.y=s*ec/2;else patte.position.x=s*ec/2;g.add(patte)});
+  return g;
+}
+function ajouterPoignee(mesh,p,M){
+  const [x,y,z,sx,sy,sz]=p.box.map(v=>v/1000);
+  if(p.slide){ // porte coulissante : poignée cuvette encastrée près du bord qui glisse
+    const cuv=new THREE.Mesh(boite3D(0.03,0.16,0.004),M.noir);cuv.position.set((p.slide>0?-1:1)*(sx/2-0.06),0,sz/2+0.001);mesh.add(cuv);return}
+  if(p.drawer){
+    if((p.axis||"z")!=="z"){ // tiroir de lit, qui sort sur le côté
+      const h=poigneeBarre(Math.min(0.16,sz*0.4),false,M);h.rotation.y=(p.dir||1)>0?Math.PI/2:-Math.PI/2;h.position.x=(p.dir||1)*sx/2;mesh.add(h);return}
+    const long=sx<0.35?0.096:sx<0.6?0.16:0.32,h=poigneeBarre(long,false,M);
+    h.position.set(0,sy>0.3?sy/2-0.07:0,sz/2);mesh.add(h);return}
+  // Porte : barre verticale côté opposé aux charnières, à hauteur de main.
+  const long=Math.min(sy*0.3,sy<0.6?0.128:0.32),bas=y,haut=y+sy;
+  let yc=bas+sy/2;
+  if(haut<1.0)yc=haut-0.06-long/2;               // meuble bas : poignée en haut de la porte
+  else if(bas>1.3)yc=bas+0.06+long/2;            // meuble haut (au mur) : poignée en bas
+  else if(sy>1.2)yc=Math.min(haut-long/2-0.05,Math.max(bas+long/2+0.05,1.05)); // grande porte : vers 1,05 m du sol
+  const h=poigneeBarre(long,true,M);
+  h.position.set((p.hingeLeft?1:-1)*(sx/2-0.045),yc-(y+sy/2),sz/2);mesh.add(h);
+}
+// Caisson du tiroir (côtés, fond, arrière) et coulisses : la partie mobile suit la façade, le rail fixe reste dans le meuble.
+function ajouterCaissonTiroir(mesh,p,M,grp,cx,cz){
+  const t=p.tiroir,mm=v=>v/1000,[X,Y,Z,SX,SY,SZ]=p.box;
+  const centre=[X+SX/2,Y+SY/2,Z+SZ/2];
+  const jeu=12.5,ep=Math.min(t.ep,16),x0=t.x+jeu,bw=t.w-2*jeu,z0=t.front-t.prof,d=t.prof,yb=t.y,h=t.h;
+  const local=(bx,by,bz,sx_,sy_,sz_,mat,parent=mesh)=>{const m=new THREE.Mesh(boite3D(mm(sx_),mm(sy_),mm(sz_)),mat);
+    m.position.set(mm(bx+sx_/2-centre[0]),mm(by+sy_/2-centre[1]),mm(bz+sz_/2-centre[2]));parent.add(m);return m};
+  const bois=M.massif,fond=M.back;
+  local(x0,yb,z0,ep,h,d,bois);local(x0+bw-ep,yb,z0,ep,h,d,bois);         // côtés
+  local(x0+ep,yb,z0,bw-2*ep,h,ep,bois);local(x0+ep,yb,t.front-ep,bw-2*ep,h-20,ep,bois); // arrière, avant intérieur
+  local(x0+ep,yb+10,z0+ep,bw-2*ep,5,d-2*ep,fond);                           // fond
+  // Coulisses à billes : rail mobile sur le tiroir, rail fixe vissé dans le meuble.
+  const yc=yb+h*0.35,L=t.coulisse,acier=M.rail||(M.rail=new THREE.MeshStandardMaterial({color:0xc9ced2,roughness:0.3,metalness:0.55}));
+  [[t.x+1,1],[t.x+t.w-11,-1]].forEach(([xr])=>{
+    local(xr,yc-14,t.front-L-5,10,28,L-10,acier);                       // partie mobile (suit le tiroir)
+    const fixe=new THREE.Mesh(boite3D(0.011,0.036,mm(L)),acier);        // partie fixe (reste dans le meuble)
+    fixe.position.set(mm(xr+5)-cx,mm(yc),mm(t.front-L/2-8)-cz);grp.add(fixe);
+  });
 }
 $("openBtn").onclick=()=>{openState=!openState;$("openBtn").setAttribute("aria-pressed",String(openState));$("openBtn").textContent=openState?"🚪 Fermer":"🚪 Ouvrir";
   movers.forEach(m=>{m.userData.target=openState?m.userData.open:(m.userData.kind==="door"?0:m.userData.base)})};
@@ -924,13 +976,42 @@ fichierImport.onchange=()=>{const f=fichierImport.files[0];if(!f)return;
   if(imp3d.estImage(f))importerPhoto(f,importCotes);else importer3D(f,importCible||st.id,importCotes)};
 $("btnDessiner").onclick=()=>choisirMeuble("croquis");
 $("btnImporter").onclick=()=>demanderImport("modele3d",true); // « Ma 3D » : la découpe est lue dans la 3D
+/* Vraies dimensions du meuble, demandées au moment d'envoyer l'image ou la 3D (toutes facultatives).
+   Renvoie {L,H,P} en cm (null pour une cote non tapée) ; tout à null si le menuisier passe. */
+function demanderDimensions(titre,urlImage){
+  return new Promise(ok=>{
+    const champ=(k,ic,lab,min,max)=>{const i=el("input",{type:"number",inputmode:"decimal",step:"0.1",min:String(min),max:String(max),placeholder:"cm","aria-label":lab,id:"dimImp"+k});
+      return {k,i,min,max,bloc:el("label",{class:"imp-dim dim-gros"},el("span",{},ic+" "+lab),i)}};
+    const ch=[champ("L","↔️","Largeur",5,600),champ("H","↕️","Hauteur",5,300),champ("P","↗️","Profondeur",2,120)];
+    const lire=()=>{const d={};ch.forEach(c=>{const v=Math.round(parseFloat(String(c.i.value).replace(",","."))*10)/10;d[c.k]=v>=c.min&&v<=c.max?v:null});return d};
+    const fin=d=>{boite.remove();ok(d)};
+    const valider=()=>{
+      const faux=ch.filter(c=>String(c.i.value).trim()&&lire()[c.k]==null);
+      if(faux.length){faux.forEach(c=>c.i.classList.add("err"));toast("Cote impossible : "+faux.map(c=>c.k==="L"?"largeur":c.k==="H"?"hauteur":"profondeur").join(", ")+".",true);return}
+      fin(lire())};
+    ch.forEach(c=>c.i.addEventListener("keydown",e=>{if(e.key==="Enter")valider()}));
+    const boite=el("div",{class:"attente-lecture",role:"dialog","aria-label":"Dimensions du meuble"},el("div",{class:"attente-boite dims-boite"},
+      urlImage?el("img",{src:urlImage,alt:"Votre image",class:"dims-image"}):el("span",{class:"e-fixe","aria-hidden":"true"},"📏"),
+      el("b",{},titre),
+      el("span",{class:"note"},"Tapez les vraies dimensions du meuble (en cm) : la 3D et les coupes seront justes tout de suite. Laissez vide ce que vous ne savez pas."),
+      el("div",{class:"dims-champs"},...ch.map(c=>c.bloc)),
+      el("div",{class:"choix-echec"},
+        el("button",{type:"button",class:"btn primary",onclick:valider},"✅ Valider"),
+        el("button",{type:"button",class:"btn",onclick:()=>fin({L:null,H:null,P:null})},"⏭️ Je ne sais pas"))));
+    document.body.append(boite);setTimeout(()=>ch[0].i.focus(),50);
+  });
+}
+const aDesDims=d=>!!(d&&(d.L||d.H||d.P));
+const noteDims=d=>aDesDims(d)?"Dimensions réelles du meuble données par le menuisier : "+[d.L&&"largeur "+d.L+" cm",d.H&&"hauteur "+d.H+" cm",d.P&&"profondeur "+d.P+" cm"].filter(Boolean).join(", ")+". Utilise-les pour les proportions.":"";
+
 async function importer3D(f,idMeuble,prendreCotes){
   const err=imp3d.verifierFichier(f);if(err){toast(err,true);return}
+  const dims=prendreCotes?await demanderDimensions("Dimensions réelles de ce meuble 3D"):null;
   toast("⏳ Lecture de la 3D…");
   const ext=imp3d.extension(f.name);let obj;
   try{obj=await imp3d.lireObjet(f,ext,couleurImport())}catch(e){toast("Impossible de lire ce fichier 3D. Essayez de l'exporter en GLB.",true);return}
   const id="m"+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
-  const fi={id,nom:f.name.slice(0,80),ext,octets:f.size,largeur:imp3d.devinerLargeurCm(imp3d.tailleBrute(obj)),quart:0,couche:0,chemin:null};
+  const fi={id,nom:f.name.slice(0,80),ext,octets:f.size,largeur:(dims&&dims.L)||imp3d.devinerLargeurCm(imp3d.tailleBrute(obj)),quart:0,couche:0,chemin:null};
   cache3D.set(id,obj);
   try{await imp3d.garderLocal(id,f)}catch(e){}
   if(st.id!==idMeuble){st.id=idMeuble;st.modele=null;openState=false;sel=0}
@@ -938,10 +1019,12 @@ async function importer3D(f,idMeuble,prendreCotes){
   // « Mon dessin » prend les cotes de la 3D : le menuisier n'a plus qu'à tracer les cases.
   const r=R(st.id);
   if(prendreCotes&&(r.dessin||r.importe)){const t=imp3d.placer(obj,fi).taille.map(v=>Math.max(r.importe?5:30,Math.round(v*100)));c.L=t[0];c.H=t[1];c.P=Math.max(r.importe?5:20,t[2])}
+  // Cotes tapées par le menuisier : elles passent avant celles devinées dans le fichier.
+  if(dims){if(dims.L)c.L=dims.L;if(dims.H)c.H=dims.H;if(dims.P)c.P=dims.P}
   if(r.importe)lireDecoupe3D(true);
   save();renderCatalog();renderControls();compute(true);setEtape("voir");
   if(r.importe){const n=(c.o.panneaux&&c.o.panneaux.list.length)||0;
-    toast(n>=2?"✂️ "+n+" pièces lues dans votre 3D. Tapez les vraies dimensions sous la 3D : les coupes s'ajustent.":"3D importée, mais je ne trouve pas de panneaux dedans. Pour la découpe, dessinez le meuble ✏️.",n<2)}
+    toast(n>=2?"✂️ "+n+" pièces lues dans votre 3D."+(aDesDims(dims)?" Aux dimensions tapées : "+c.L+" × "+c.H+" × "+c.P+" cm.":" Tapez les vraies dimensions sous la 3D : les coupes s'ajustent."):"3D importée, mais je ne trouve pas de panneaux dedans. Pour la découpe, dessinez le meuble ✏️.",n<2)}
   else toast("✅ 3D importée. Réglez la largeur réelle sous la 3D si la taille n'est pas bonne.");
   if(ME)cloud.envoyerModele3D(id+"."+ext,f).then(ch=>{fi.chemin=ch;save();majBarreImport()}).catch(e=>toast("3D gardée sur ce téléphone seulement : "+cloud.message(e),true));
 }
@@ -968,6 +1051,8 @@ async function importerPhoto(f,nouveau){
   photosURL.set(id,URL.createObjectURL(r.blob));
   const photo={id,nom:f.name.slice(0,80),l:r.l,h:r.h,cadre:[0,0,1,1],visible:1,chemin:null};
   const envoyer=c=>{if(ME)cloud.envoyerModele3D(id+".jpg",r.blob).then(ch=>{c.photo&&c.photo.id===id&&(c.photo.chemin=ch);save()}).catch(()=>{})};
+  // Nouveau meuble : les vraies dimensions d'abord (la 3D vient tout de suite à la bonne taille).
+  const dims=nouveau?await demanderDimensions("Dimensions réelles du meuble de la photo",photosURL.get(id)):null;
   // 1. L'appli regarde l'image (Gemini) et refait le meuble toute seule.
   // Si Google est occupé, le menuisier choisit : réessayer, ou tracer lui-même.
   if(cloud.actif&&ME){
@@ -976,9 +1061,9 @@ async function importerPhoto(f,nouveau){
       const att=attenteLecture(true,()=>{arret=true});
       let msg;
       try{
-        const lu=depuisLecture(await cloud.lireImage(r.blob,{suivi:att.suivi,annule:()=>arret}));
+        const lu=depuisLecture(await cloud.lireImage(r.blob,{suivi:att.suivi,annule:()=>arret,note:noteDims(dims)}));
         attenteLecture(false);
-        if(lu.ok){appliquerLecture(lu,photo);envoyer(cfg());return}
+        if(lu.ok){appliquerLecture(lu,photo,dims);envoyer(cfg());return}
         msg=lu.remarque;
       }catch(e){attenteLecture(false);if(e.code==="annule"||e.code==="non_configure"||e.code==="non_connecte")break;msg=e.message}
       if(!(await choixApresEchec(msg)))break;
@@ -989,22 +1074,26 @@ async function importerPhoto(f,nouveau){
   const c=cfg();
   c.photo={...photo,hAuto:nouveau?1:0};delete c.lu;
   // Nouveau meuble depuis une photo : feuille blanche, hauteur d'après la photo.
-  if(nouveau){c.o.croquis={socle:0,cols:[{f:1,zones:[{f:1,t:"vide"}]}]};c.H=Math.max(30,Math.min(300,Math.round(c.L*r.h/r.l)))}
+  if(nouveau){c.o.croquis={socle:0,cols:[{f:1,zones:[{f:1,t:"vide"}]}]};
+    if(dims&&dims.L)c.L=Math.max(30,dims.L);if(dims&&dims.P)c.P=Math.max(20,dims.P);
+    if(dims&&dims.H){c.H=Math.max(30,dims.H);c.photo.hAuto=0}else c.H=Math.max(30,Math.min(300,Math.round(c.L*r.h/r.l)))}
   save();renderCatalog();renderControls();compute(true);setEtape("regler");
   if(editeurActif)editeurActif.cadrer();
   toast("✂️ Cadrez le meuble sur la photo, tapez sa vraie largeur, puis tracez ses colonnes et ses cases.");
   envoyer(c);
 }
 // Le meuble reconnu devient « Mon dessin » : 3D, coupes et devis tout de suite ; cotes modifiables.
-function appliquerLecture(lu,photo){
+function appliquerLecture(lu,photo,dims){
   st.id="croquis";st.modele=null;openState=false;sel=0;
   const c=cfg();
   c.o.croquis=lu.croquis;
   ["L","H","P"].forEach(k=>{if(lu.dims[k])c[k]=lu.dims[k]});
   // Hauteur pas écrite sur l'image : on garde au moins les proportions de la photo (hauteur = largeur × rapport mesuré).
-  if(!lu.dims.H&&lu.rapport)c.H=Math.max(30,Math.min(300,Math.round(c.L*lu.rapport)));
+  // Cotes tapées par le menuisier : elles passent avant celles lues sur l'image.
+  if(dims){if(dims.L)c.L=Math.max(30,dims.L);if(dims.H)c.H=Math.max(30,dims.H);if(dims.P)c.P=Math.max(20,dims.P)}
+  if(!lu.dims.H&&!(dims&&dims.H)&&lu.rapport)c.H=Math.max(30,Math.min(300,Math.round(c.L*lu.rapport)));
   c.photo={...photo,visible:0,hAuto:0};
-  c.lu={nom:lu.nom,remarque:lu.remarque,confiance:lu.confiance,cotes:["L","H","P"].filter(k=>lu.dims[k])};
+  c.lu={nom:lu.nom,remarque:lu.remarque,confiance:lu.confiance,cotes:["L","H","P"].filter(k=>lu.dims[k]||(dims&&dims[k]))};
   delete c.fichier3d;st.vue3d=null;
   save();renderCatalog();renderControls();compute(true);setEtape("voir");
   const nc=lu.croquis.cols.length,nz=nbCases(lu.croquis);

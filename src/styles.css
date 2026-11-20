@@ -421,3 +421,9 @@ body.verrou>.scanner,body.verrou>.modal-carte{display:flex!important}
 .attente-ligne{display:flex;gap:8px;align-items:center;font-size:22px}
 .attente-temps{font-family:var(--mono);font-size:22px}
 .attente-boite .btn{margin-top:8px}
+.dims-boite{max-width:360px;width:calc(100% - 32px)}
+.dims-image{max-width:100%;max-height:160px;border-radius:10px;object-fit:contain}
+.dims-champs{display:grid;gap:8px;width:100%}
+.dim-gros{display:grid;grid-template-columns:1fr 120px;align-items:center;gap:8px;font-size:18px;font-weight:700}
+.dim-gros input{font:700 22px var(--body);padding:10px;border:2px solid var(--line);border-radius:12px;width:100%}
+.dim-gros input.err{border-color:#c0392b}

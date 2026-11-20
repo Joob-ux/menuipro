@@ -128,7 +128,11 @@ export function tiroirs(ctx, r, n, nm, o = {}) {
   const slide = Math.max(250, Math.min(550, Math.floor(bd / 50) * 50));
   for (let i = 0; i < n; i++) {
     const y = Y + i * (fh + G), bh = Math.max(60, Math.min(fh - 40, 250));
-    add(ctx, nm + "Façade tiroir " + (i + 1), "caisson", [X, y, r.z + r.d, W, fh, E], { edge: 2 * (W + fh), flags: { drawer: true, travel: bd * 0.7 } });
+    // « tiroir » : mesures du caisson et des coulisses, pour les montrer dans la 3D quand le tiroir s'ouvre
+    // (les pièces à couper, elles, sont listées juste en dessous).
+    const yb = y + Math.max(8, Math.min(30, (fh - bh) / 3));
+    add(ctx, nm + "Façade tiroir " + (i + 1), "caisson", [X, y, r.z + r.d, W, fh, E], { edge: 2 * (W + fh),
+      flags: { drawer: true, travel: bd * 0.7, tiroir: { x: r.x, w: r.w, y: yb, h: bh, front: r.z + r.d, prof: bd, coulisse: slide, ep: E } } });
     add(ctx, nm + "Côtés tiroir " + (i + 1) + " (×2)", "caisson", null, { cut: [bd, bh], qty: 2 });
     add(ctx, nm + "Avant/arrière tiroir " + (i + 1) + " (×2)", "caisson", null, { cut: [bw - 2 * E, bh], qty: 2 });
     add(ctx, nm + "Fond tiroir " + (i + 1), "dos", null, { cut: [bw, bd] });
