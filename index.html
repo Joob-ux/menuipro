@@ -114,6 +114,7 @@
       <h2 data-voix="achat">🛒 Liste d'achat</h2>
       <div class="banner" id="buyBanner" hidden></div>
       <div class="lines" id="buy"></div>
+      <div id="artExtra"></div>
       <div class="total"><span>Total matériel</span><b id="buyTotal">—</b></div>
       <div class="actions">
         <a class="btn primary" id="waBtn" target="_blank" rel="noopener">📲 Commander sur WhatsApp</a>
@@ -175,6 +176,12 @@
   <section class="panel"><h2>Panneaux (prix de la feuille 244 × 122)</h2>
     <div class="tablewrap"><table class="ptable" id="panTable"></table></div>
     <div class="actions"><button class="btn" type="button" id="addPan">➕ Ajouter un panneau</button></div>
+  </section>
+  <section class="panel"><h2>🛍️ Mes articles</h2>
+    <p class="note">Ajoutez vos propres articles (poignées, LED, vernis…) avec leur prix : vos menuisiers les voient et les ajoutent à leurs commandes.</p>
+    <div class="art-perso" id="persoTable"></div>
+    <p class="note" id="persoVide">Aucun article pour l'instant.</p>
+    <div class="actions"><button class="btn" type="button" id="addArt">➕ Ajouter un article</button></div>
   </section>
   <section class="panel"><h2>Accessoires et quincaillerie</h2>
     <div class="tablewrap"><table class="ptable" id="artTable"></table></div>

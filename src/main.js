@@ -310,9 +310,9 @@ const EX_PRIX={mela18:22000,mela16:20000,cp18:25000,mdf18:20000,cp5:9000,chant:3
   paumelles:500,serrure:6000,espagnolette:3500,pattes:150,boulons:300,visbois:1500,chevilles:50,colle:2500,patins:100,sangles:500,mousse:12000,tissu:3000,led:2500,moraillon:500,supinv:1500,mastic:3500,vernis:6000,
   lame:2500,latte:2000,planche:6000,chevron:5000,madrier:15000,
   mousse12:15000,mousse5:6000,ouate:1500,toile:800,agrafes:1500,colleContact:4000,boutons:100,piedsBois:1000,piedsMetal:2500};
-const DEF_CAT=()=>({boutique:{nom:"",wa:"",commune:""},exemple:false,panneaux:[{id:"mela18",nom:"Mélaminé",ep:18,prix:0},{id:"mela16",nom:"Mélaminé",ep:16,prix:0},{id:"cp18",nom:"Contreplaqué",ep:18,prix:0},{id:"mdf18",nom:"MDF",ep:18,prix:0},{id:"cp5",nom:"Contreplaqué",ep:5,prix:0,dos:true}],sections:[],prix:{}});
+const DEF_CAT=()=>({boutique:{nom:"",wa:"",commune:""},exemple:false,panneaux:[{id:"mela18",nom:"Mélaminé",ep:18,prix:0},{id:"mela16",nom:"Mélaminé",ep:16,prix:0},{id:"cp18",nom:"Contreplaqué",ep:18,prix:0},{id:"mdf18",nom:"MDF",ep:18,prix:0},{id:"cp5",nom:"Contreplaqué",ep:5,prix:0,dos:true}],sections:[],articles:[],prix:{}});
 let CAT=DEF_CAT(),AT={nom:"",tel:"",jour:0,marge:20,valid:15};
-try{const c=JSON.parse(localStorage.getItem("menuipro-catalogue")||"null");if(c&&c.panneaux)CAT={...DEF_CAT(),...c};if(!Array.isArray(CAT.sections))CAT.sections=[]}catch(e){}
+try{const c=JSON.parse(localStorage.getItem("menuipro-catalogue")||"null");if(c&&c.panneaux)CAT={...DEF_CAT(),...c};if(!Array.isArray(CAT.sections))CAT.sections=[];if(!Array.isArray(CAT.articles))CAT.articles=[]}catch(e){}
 try{const a=JSON.parse(localStorage.getItem("menuipro-atelier")||"null");if(a)AT={...AT,...a}}catch(e){}
 let ME=null; // compte connecté : {user, profil, quinc}
 const saveCatLocal=()=>{try{localStorage.setItem("menuipro-catalogue",JSON.stringify(CAT))}catch(e){}};
@@ -341,11 +341,32 @@ function buyLines(ctx){
     else if(pack){const n=Math.ceil(h.qty),b=Math.ceil(n/pack);add(h.icon,h.label,n+" → "+b+" "+a[3],b,artPrice(hwArticle(k)))}
     else{const n=Math.ceil(h.qty);add(h.icon,h.label,n+" pièce"+(n>1?"s":""),n,artPrice(hwArticle(k)))}
   });
+  // Articles ajoutés à la main par le menuisier (ceux de sa quincaillerie, ou les accessoires standard).
+  Object.entries(cfg().extras||{}).forEach(([k,q])=>{if(!(q>0))return;const a=articleExtra(k);if(a)add(a.e,a.nom,"➕ "+q+" "+a.unite+(q>1&&/^(pièce|paire|boîte|feuille|rouleau|sachet|pot|lot)$/.test(a.unite)?"s":""),q,a.prix)});
   L.forEach(l=>{if(l.total===0)l.total=null});
   return {lines:L,total:L.reduce((t,l)=>t+(l.total||0),0),missing:L.filter(l=>l.total==null).length,hc,n18,n5};
 }
+/* ----- Articles de la quincaillerie ----- */
+// Clé « a:id » : article ajouté par la quincaillerie ; « s:clé » : accessoire standard de la liste des prix.
+function articleExtra(k){
+  if(k.startsWith("a:")){const a=CAT.articles.find(x=>x.id===k.slice(2));return a&&a.nom?{e:a.e||"🛍️",nom:a.nom,unite:a.unite||"pièce",prix:+a.prix||0}:null}
+  const s=ARTICLES.find(x=>x[0]===k.slice(2));return s?{e:s[1],nom:s[2],unite:s[3],prix:artPrice(s[0])}:null;
+}
+function choixArticles(){
+  const c=cfg();c.extras=c.extras||{};
+  const ligne=(k,a)=>{const q=c.extras[k]||0,out=el("output",{},String(q));
+    const chg=d=>{const v=Math.max(0,Math.min(999,(c.extras[k]||0)+d));if(v)c.extras[k]=v;else delete c.extras[k];compute()};
+    return el("div",{class:"step art-choix"+(q?" pris":"")},el("span",{class:"name"},a.e+" "+a.nom,el("small",{class:"note"}," · "+(a.prix?fmt(a.prix)+" F / ":"")+a.unite)),
+      el("div",{class:"stepper"},el("button",{type:"button","aria-label":"Moins",onclick:()=>chg(-1)},"−"),out,el("button",{type:"button","aria-label":"Plus",onclick:()=>chg(1)},"+")))};
+  const perso=CAT.articles.filter(a=>a.nom).map(a=>ligne("a:"+a.id,articleExtra("a:"+a.id)));
+  const pris=Object.keys(c.extras).filter(k=>k.startsWith("s:")).length;
+  const std=el("details",{class:"art-std",...(pris?{open:""}:{})},el("summary",{},"🧰 Autres accessoires"),...ARTICLES.map(([k])=>ligne("s:"+k,articleExtra("s:"+k))));
+  return el("div",{class:"art-extra"},el("div",{class:"sub"},"➕ Ajouter des articles"+(CAT.boutique.nom?" de "+CAT.boutique.nom:"")),
+    perso.length?el("div",{class:"art-liste"},...perso):el("p",{class:"note"},"Votre quincaillerie n'a pas encore ajouté ses propres articles."),std);
+}
 function renderKit(ctx){
   const {tools}=outils(ctx),bl=lastBuy;
+  const ex=$("artExtra");if(ex)ex.replaceChildren(choixArticles());
   $("buy").replaceChildren(...bl.lines.map(l=>el("div",{class:"line"},el("span",{class:"e","aria-hidden":"true"},l.e),el("div",{},el("b",{},l.label),el("span",{},l.detail)),l.total!=null?el("span",{class:"pr"},fmt(l.total)+" F"):el("span",{class:"pr q"},"prix ?"))));
   $("buyTotal").textContent=bl.total?fmt(bl.total)+" FCFA":"—";
   const ban=$("buyBanner");
@@ -684,16 +705,28 @@ function renderCatalogue(){
     return el("tr",{},el("td",{},nm,pn.dos?el("div",{class:"note"},"utilisé pour les dos et fonds"):null),el("td",{},ep),el("td",{},pin(pn.prix,v=>pn.prix=v)),el("td",{},del));
   })));
   $("artTable").replaceChildren(el("thead",{},el("tr",{},el("th",{},"Article"),el("th",{},"Vendu par"),el("th",{},"Prix (F)"))),el("tbody",{},ARTICLES.map(([k,e,l,u])=>el("tr",{},el("td",{},e+" "+l),el("td",{},u),el("td",{},pin(CAT.prix[k],v=>CAT.prix[k]=v))))));
+  // Articles propres à la quincaillerie : icône, nom, vendu par, prix. Les menuisiers les ajoutent à leur liste d'achat.
+  const ICONES=["🛍️","🔩","🚪","⭕","🗄️","💡","🔒","🧴","🖌️","🪟","🦵","🧵","📦","🪵","🎞️","🛞"],UNITES=["pièce","paire","m","m²","boîte","sachet","kit","lot","litre","rouleau","pot","feuille"];
+  $("persoTable").replaceChildren(...CAT.articles.map(a=>{
+    const ic=el("select",{"aria-label":"Icône"},...ICONES.map(x=>{const o=el("option",{value:x},x);if(x===(a.e||"🛍️"))o.selected=true;return o}));ic.addEventListener("change",e=>{a.e=e.target.value;saveCat()});
+    const nm=el("input",{type:"text",maxlength:"60",placeholder:"Ex. Poignée dorée 128",style:"text-align:left;font-family:var(--body)"});nm.value=a.nom||"";nm.addEventListener("input",e=>{a.nom=e.target.value.slice(0,60);saveCat()});
+    const un=el("select",{"aria-label":"Vendu par"},...UNITES.map(x=>{const o=el("option",{value:x},x);if(x===(a.unite||"pièce"))o.selected=true;return o}));un.addEventListener("change",e=>{a.unite=e.target.value;saveCat()});
+    let armed=false;const del=el("button",{type:"button",class:"btn"},"🗑️");del.onclick=()=>{if(!armed){armed=true;del.textContent="Sûr ?";return}CAT.articles=CAT.articles.filter(x=>x!==a);saveCat();renderCatalogue()};
+    const px=pin(a.prix,v=>a.prix=v);px.setAttribute("aria-label","Prix en francs");
+    return el("div",{class:"art-ligne"},ic,nm,un,el("label",{class:"prix-f"},px," F"),del);
+  }));
+  $("persoVide").hidden=CAT.articles.length>0;
   const ro=!peutModifierPrix();
   $("roBanner").hidden=!ro;
   if(ro)$("roBanner").textContent=ME&&ME.quinc&&!estAdmin()?"🔒 Prix gérés par "+ME.quinc.nom+". Ils se mettent à jour automatiquement ; seule la quincaillerie peut les modifier."
     :estAdmin()?"🔒 Les prix sont gérés par chaque quincaillerie, depuis son propre compte."
     :"🔒 Les prix viennent de votre quincaillerie. Rejoignez-la (onglet Compte, ou son lien d'invitation) pour avoir ses prix.";
   $("v-catalogue").querySelectorAll("input,button").forEach(x=>{x.disabled=ro});
-  $("v-catalogue").querySelectorAll("#fillEx,#resetCat,#addPan").forEach(x=>{x.hidden=ro});
+  $("v-catalogue").querySelectorAll("#fillEx,#resetCat,#addPan,#addArt").forEach(x=>{x.hidden=ro});
   $("ownBanner").hidden=!(estQuinc()&&ME.quinc);
 }
 [["bNom","nom"],["bWa","wa"],["bCom","commune"]].forEach(([id,k])=>$(id).addEventListener("input",e=>{CAT.boutique[k]=e.target.value;saveCat()}));
+$("addArt").onclick=()=>{CAT.articles.push({id:"art"+Date.now().toString(36),e:"🛍️",nom:"",unite:"pièce",prix:0});saveCat();renderCatalogue();const t=$("persoTable").querySelectorAll("input[type=text]");if(t.length)t[t.length-1].focus()};
 $("addPan").onclick=()=>{CAT.panneaux.splice(CAT.panneaux.length-1,0,{id:"pan"+Date.now(),nom:"Nouveau panneau",ep:18,prix:0});saveCat();renderCatalogue()};
 function remplirExemple(){CAT.panneaux.forEach(pn=>{if(!pn.prix&&EX_PRIX[pn.id])pn.prix=EX_PRIX[pn.id]});CAT.sections.forEach(x=>{if(!x.prix&&EX_PRIX[x.id])x.prix=EX_PRIX[x.id]});ARTICLES.forEach(([k])=>{if(!CAT.prix[k])CAT.prix[k]=EX_PRIX[k]||0});CAT.exemple=true;saveCat();renderCatalogue()}
 $("fillEx").onclick=remplirExemple;
@@ -1781,7 +1814,7 @@ let tCat=null,tAt=null;
 function pousserCatalogue(){
   if(!cloud.actif||!estQuinc()||!ME.quinc)return;
   clearTimeout(tCat);tCat=setTimeout(async()=>{
-    try{await cloud.sauverQuincaillerie(ME.quinc.id,{catalogue:{panneaux:CAT.panneaux,sections:CAT.sections,prix:CAT.prix,exemple:CAT.exemple},nom:(CAT.boutique.nom||ME.quinc.nom).slice(0,80),whatsapp:CAT.boutique.wa||null,commune:CAT.boutique.commune||null});
+    try{await cloud.sauverQuincaillerie(ME.quinc.id,{catalogue:{panneaux:CAT.panneaux,sections:CAT.sections,articles:CAT.articles,prix:CAT.prix,exemple:CAT.exemple},nom:(CAT.boutique.nom||ME.quinc.nom).slice(0,80),whatsapp:CAT.boutique.wa||null,commune:CAT.boutique.commune||null});
       ME.quinc.nom=CAT.boutique.nom||ME.quinc.nom;toast("✅ Prix enregistrés pour tous vos menuisiers")}
     catch(e){toast(cloud.message(e),true)}},1200);
 }
@@ -1803,7 +1836,7 @@ function appliquerCompte(){
   const q=ME.quinc;
   if(q){
     const c=q.catalogue||{};
-    if(c.panneaux&&c.panneaux.length){CAT.panneaux=c.panneaux;CAT.prix=c.prix||{};CAT.exemple=!!c.exemple;if(c.sections&&c.sections.length)CAT.sections=c.sections}
+    if(c.panneaux&&c.panneaux.length){CAT.panneaux=c.panneaux;CAT.prix=c.prix||{};CAT.exemple=!!c.exemple;if(c.sections&&c.sections.length)CAT.sections=c.sections;CAT.articles=Array.isArray(c.articles)?c.articles:[]}
     else if(estQuinc())pousserCatalogue();
     CAT.boutique={nom:q.nom||"",wa:q.whatsapp||"",commune:q.commune||""};saveCatLocal();
     if(estQuinc()&&!(c.panneaux&&c.panneaux.length))pousserCatalogue();
@@ -1904,15 +1937,15 @@ async function renderCompteBase(){
 /* ----- Choisir sa quincaillerie en comparant les prix ----- */
 // Prix de la liste d'achat du meuble actuel avec le catalogue d'une autre quincaillerie.
 function prixChez(cat){
-  const sauve={panneaux:CAT.panneaux,prix:CAT.prix,sections:CAT.sections},panSauve=st.panneau;
+  const sauve={panneaux:CAT.panneaux,prix:CAT.prix,sections:CAT.sections,articles:CAT.articles},panSauve=st.panneau;
   try{
-    if(cat&&Array.isArray(cat.panneaux)&&cat.panneaux.length){CAT.panneaux=cat.panneaux;CAT.prix=cat.prix||{};if(Array.isArray(cat.sections)&&cat.sections.length)CAT.sections=cat.sections}
-    else{CAT.panneaux=sauve.panneaux.map(x=>({...x,prix:0}));CAT.prix={}}
+    if(cat&&Array.isArray(cat.panneaux)&&cat.panneaux.length){CAT.panneaux=cat.panneaux;CAT.prix=cat.prix||{};if(Array.isArray(cat.sections)&&cat.sections.length)CAT.sections=cat.sections;CAT.articles=Array.isArray(cat.articles)?cat.articles:[]}
+    else{CAT.panneaux=sauve.panneaux.map(x=>({...x,prix:0}));CAT.prix={};CAT.articles=[]}
     if(!CAT.panneaux.some(x=>x.id===st.panneau&&!x.dos)){const m=CAT.panneaux.find(x=>!x.dos&&x.ep===st.ep);if(m)st.panneau=m.id}
     const pn=CAT.panneaux.find(x=>x.id===st.panneau&&!x.dos),b=lastCtx&&lastRes&&lastRes.caisson?buyLines(lastCtx):null;
     return {total:b?b.total:0,manque:b?b.missing:0,feuille:pn&&pn.prix?pn.prix:0,nomPan:pn?pn.nom+" "+pn.ep+" mm":"panneau"};
   }catch(e){return {total:0,manque:99,feuille:0,nomPan:""}}
-  finally{CAT.panneaux=sauve.panneaux;CAT.prix=sauve.prix;CAT.sections=sauve.sections;st.panneau=panSauve}
+  finally{CAT.panneaux=sauve.panneaux;CAT.prix=sauve.prix;CAT.sections=sauve.sections;CAT.articles=sauve.articles;st.panneau=panSauve}
 }
 function scannerQuinc(){
   ouvrirScanner({titre:"QR code de la quincaillerie",aide:"Visez le QR code affiché par votre quincaillerie.",onTexte:async t=>{

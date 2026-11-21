@@ -446,3 +446,16 @@ body.verrou>.scanner,body.verrou>.modal-carte{display:flex!important}
 .opt-titre{margin-top:8px;padding-top:10px;border-top:1px dashed var(--line,#e2d6c4);font-weight:800;font-size:16px}
 .resume-meuble{margin:4px 0 0;padding:10px 12px;border-radius:12px;background:var(--accent-soft);color:var(--accent);font-weight:700;line-height:1.4}
 .resume-meuble:empty{display:none}
+/* Articles ajoutés par le menuisier dans sa liste d'achat */
+.art-extra{display:grid;gap:8px;margin:10px 0}
+.art-liste{display:grid;gap:8px}
+.art-choix .name{display:grid}
+.art-choix.pris{background:var(--accent-soft);border-radius:12px;padding:4px 8px}
+.art-std summary{cursor:pointer;font-weight:700;padding:8px 0}
+.art-std[open]{display:grid;gap:8px}
+.art-perso{display:grid;gap:10px}
+.art-ligne{display:grid;grid-template-columns:64px 1fr auto;grid-template-areas:"ic nom nom" "un un un" "px px del";gap:8px;padding:10px;border:1px solid var(--line);border-radius:14px;align-items:center}
+.art-ligne>select:first-child{grid-area:ic}.art-ligne>input{grid-area:nom;min-width:0}.art-ligne>select:nth-of-type(2){grid-area:un}
+.art-ligne>.prix-f{grid-area:px;display:flex;gap:6px;align-items:center;margin:0}.art-ligne>.prix-f input{flex:1;min-width:0}.art-ligne>button{grid-area:del}
+.art-ligne select,.art-ligne input{font-size:16px;padding:8px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+@media (min-width:600px){.art-ligne{grid-template-columns:64px 1fr 140px 160px auto;grid-template-areas:"ic nom un px del"}}
