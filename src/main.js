@@ -10,7 +10,7 @@ import { PHRASES, parler, boutonVoix, chargerVoix, aUnAudio } from "./voix.js";
 import { catalogueIA, validerAction, DUREE_MAX_S } from "./assistant.js";
 import { versWav } from "./audio-wav.js";
 import { MODES, modeNom, acompteDu, resume, validerPaiement, prochainNumero } from "./paiements.js";
-import { DISPO, MODES_RETRAIT, reponseInitiale, totalReponse, sousTotalReponse, montantRemise, remiseLignes, validerReponse, dateLisible, texteReponse, cleSuivi, changements } from "./commandes.js";
+import { DISPO, MODES_RETRAIT, reponseInitiale, totalReponse, sousTotalReponse, montantRemise, remiseLignes, validerReponse, changerQuantite, prixCatalogue, dateLisible, texteReponse, cleSuivi, changements } from "./commandes.js";
 import qrcode from "qrcode-generator";
 import { editeurCroquis } from "./croquis-ui.js";
 import * as imp3d from "./import3d.js";
@@ -1373,14 +1373,18 @@ function panneauInviter(q){
 const STAT_FLUX=["prete","livree"];
 // Lignes d'une commande : prix du catalogue de la quincaillerie, puis prix confirmé (barré si remise).
 function ligneArticles(c){
-  const rep=c.reponse;
-  return el("ul",{class:"cmd-lignes"},...(c.lignes||[]).map((l,i)=>{const r=rep&&rep.lignes&&rep.lignes.find(x=>x.i===i);
-    const baisse=r&&r.dispo==="oui"&&l.total!=null&&r.prix!=null&&r.prix<l.total;
+  const rep=c.reponse,nb=q=>String(q).replace(".",",");
+  const lignes=(c.lignes||[]).map((l,i)=>{const r=rep&&rep.lignes&&rep.lignes.find(x=>x.i===i);
+    const cat=r?prixCatalogue(l,r):l.total,baisse=r&&r.dispo==="oui"&&cat!=null&&r.prix!=null&&r.prix<cat;
+    const qteChg=r&&r.qte!=null&&l.qte!=null&&r.qte!==l.qte;
     const prix=r?(r.dispo==="non"?el("span",{class:"pr-ligne"},"pas dispo")
-        :el("span",{class:"pr-ligne"},baisse?el("s",{class:"pr-barre"},fmt(l.total)+" F"):"",baisse?" ":"",fmt(r.prix)+" F",baisse?el("span",{class:"badge-remise"},"🏷️ −"+fmt(l.total-r.prix)):""))
+        :el("span",{class:"pr-ligne"},baisse?el("s",{class:"pr-barre"},fmt(cat)+" F"):"",baisse?" ":"",fmt(r.prix)+" F",baisse?el("span",{class:"badge-remise"},"🏷️ −"+fmt(cat-r.prix)):""))
       :(l.total!=null?el("span",{class:"pr-ligne"},fmt(l.total)+" F"):el("span",{class:"pr-ligne estime"},"prix ?"));
     return el("li",{class:r&&r.dispo==="non"?"barre-txt":""},el("span",{"aria-hidden":"true"},r?DISPO[r.dispo][0]+" ":"• "),el("b",{},l.article),
-      " · "+l.detail+(l.pu&&l.qte>1?" × "+fmt(l.pu)+" F":""),r&&r.remplacement?el("span",{class:"rempl"}," → "+r.remplacement):"",prix)}));
+      " · "+l.detail+(l.pu&&l.qte>1?" × "+fmt(l.pu)+" F":""),qteChg?el("span",{class:"modif"}," ✏️ quantité "+nb(l.qte)+" → "+nb(r.qte)):"",r&&r.remplacement?el("span",{class:"rempl"}," → "+r.remplacement):"",prix)});
+  // Articles ajoutés par la quincaillerie à la demande du menuisier.
+  const ajouts=(rep&&rep.ajouts||[]).map(a=>el("li",{class:"ajout"},el("span",{"aria-hidden":"true"},"➕ "),el("b",{},a.article)," · "+nb(a.qte)+" "+(a.unite||""),el("span",{class:"modif"}," (ajouté à la demande)"),el("span",{class:"pr-ligne"},fmt(a.prix)+" F")));
+  return el("ul",{class:"cmd-lignes"},...lignes,...ajouts);
 }
 // Total au prix du catalogue (avant réponse), sinon total confirmé avec remise et économie.
 function resumeReponse(c){
@@ -1433,7 +1437,13 @@ function formReponse(c,carte,redessiner){
     const r=rep.lignes[i];
     const prix=el("input",{type:"number",min:"0",step:"500",inputmode:"numeric","aria-label":"Prix : "+l.article});prix.value=r.prix??"";
     const badge=el("span",{class:"badge-remise"});
-    const majBadge=()=>{const p=Math.round(+String(r.prix).replace(/\s/g,""));const d=r.dispo==="oui"&&l.total!=null&&r.prix!==""&&Number.isFinite(p)?l.total-p:0;badge.hidden=!(d>0);badge.textContent="🏷️ −"+fmt(d)+" F"};
+    const majBadge=()=>{const p=Math.round(+String(r.prix).replace(/\s/g,"")),cat=prixCatalogue(l,r);const d=r.dispo==="oui"&&cat!=null&&r.prix!==""&&Number.isFinite(p)?cat-p:0;badge.hidden=!(d>0);badge.textContent="🏷️ −"+fmt(d)+" F"};
+    // Quantité : la quincaillerie peut la changer si le menuisier le demande ; le prix suit (même prix à l'unité).
+    let qteUI=null;
+    if(l.qte!=null){const out=el("output",{},String(r.qte??l.qte).replace(".",","));
+      const chg=d=>{changerQuantite(r,(+r.qte||+l.qte)+d);out.textContent=String(r.qte).replace(".",",");prix.value=r.prix??"";modif.hidden=r.qte===l.qte;err.textContent="";majBadge();majTotal()};
+      const modif=el("span",{class:"modif"},"✏️ demandé par le client");modif.hidden=(r.qte??l.qte)===l.qte;
+      qteUI=el("div",{class:"step"},el("span",{class:"name"},"🔢 Quantité ",modif),el("div",{class:"stepper"},el("button",{type:"button","aria-label":"Moins",onclick:()=>chg(-1)},"−"),out,el("button",{type:"button","aria-label":"Plus",onclick:()=>chg(1)},"+")))}
     prix.addEventListener("input",()=>{r.prix=prix.value;err.textContent="";majBadge();majTotal()});
     const rempl=el("input",{type:"text",maxlength:"80",placeholder:"Remplacé par…","aria-label":"Remplacé par"});rempl.value=r.remplacement||"";
     rempl.addEventListener("input",()=>{r.remplacement=rempl.value;err.textContent=""});
@@ -1443,8 +1453,23 @@ function formReponse(c,carte,redessiner){
     maj();
     return el("div",{class:"rep-ligne"},el("div",{},el("b",{},l.article),el("span",{class:"note"}," · "+l.detail)),
       el("div",{class:"note"},l.total!=null?"🏷️ Votre prix catalogue : "+fmt(l.total)+" F"+(l.pu&&l.qte>1?" ("+fmt(l.pu)+" F × "+String(l.qte).replace(".",",")+")":""):"⚠️ Pas de prix dans votre catalogue : entrez-le."),
-      seg,el("div",{class:"rep-prix"},rempl,el("label",{class:"prix-f"},prix," F"),badge));
+      seg,qteUI,el("div",{class:"rep-prix"},rempl,el("label",{class:"prix-f"},prix," F"),badge));
   });
+  // Articles ajoutés à la demande du client : ses propres articles (prix rempli) ou un article tapé à la main.
+  const boiteAjouts=el("div",{class:"rep-ajouts"});
+  const dessinerAjouts=()=>boiteAjouts.replaceChildren(...rep.ajouts.map((a,k)=>{
+    const nm=el("input",{type:"text",maxlength:"80",placeholder:"Article","aria-label":"Article ajouté"});nm.value=a.article||"";nm.addEventListener("input",()=>{a.article=nm.value;err.textContent=""});
+    const px=el("input",{type:"number",min:"0",step:"500",inputmode:"numeric","aria-label":"Prix"});px.value=a.prix??"";px.addEventListener("input",()=>{a.prix=px.value;err.textContent="";majTotal()});
+    const out=el("output",{},String(a.qte).replace(".",","));
+    const chg=d=>{const avant=+a.qte||1;a.qte=Math.max(1,avant+d);if(a.pu)a.prix=Math.round(a.pu*a.qte);else if(+a.prix)a.prix=Math.round(+a.prix/avant*a.qte);px.value=a.prix??"";out.textContent=String(a.qte);majTotal()};
+    return el("div",{class:"rep-ligne ajout"},el("div",{class:"row",style:"gap:8px;align-items:center"},el("span",{"aria-hidden":"true"},a.e||"➕"),nm,
+        el("button",{type:"button",class:"btn mini","aria-label":"Enlever",onclick:()=>{rep.ajouts.splice(k,1);dessinerAjouts();majTotal()}},"🗑️")),
+      el("div",{class:"step"},el("span",{class:"name"},"🔢 "+(a.unite||"Quantité")),el("div",{class:"stepper"},el("button",{type:"button","aria-label":"Moins",onclick:()=>chg(-1)},"−"),out,el("button",{type:"button","aria-label":"Plus",onclick:()=>chg(1)},"+"))),
+      el("div",{class:"rep-prix"},el("label",{class:"prix-f"},px," F")))}));
+  const ajouter=a=>{rep.ajouts.push({article:"",qte:1,unite:"pièce",prix:"",...a});dessinerAjouts();majTotal();const t=boiteAjouts.querySelectorAll("input[type=text]");if(!a.article&&t.length)t[t.length-1].focus()};
+  const choixAjout=el("div",{class:"seg ajout-choix"},...CAT.articles.filter(a=>a.nom).map(a=>el("button",{type:"button",onclick:()=>ajouter({e:a.e,article:a.nom,unite:a.unite||"pièce",pu:+a.prix||0,prix:+a.prix||""})},(a.e||"🛍️")+" "+a.nom)),
+    el("button",{type:"button",onclick:()=>ajouter({})},"✏️ Autre article"));
+  dessinerAjouts();
   const modes=el("div",{class:"seg"});
   const majModes=()=>modes.replaceChildren(...Object.entries(MODES_RETRAIT).map(([k,[ic,lb]])=>el("button",{type:"button","aria-pressed":String(rep.mode===k),onclick:()=>{rep.mode=k;majModes()}},ic+" "+lb)));majModes();
   const jour=d=>{const x=new Date();x.setDate(x.getDate()+d);return x.toISOString().slice(0,10)};
@@ -1465,6 +1490,7 @@ function formReponse(c,carte,redessiner){
   };
   carte.querySelectorAll(".rep-form").forEach(n=>n.remove());
   carte.append(el("div",{class:"rep-form"},el("div",{class:"label"},"Pour chaque article"),...lignes,
+    el("div",{class:"label"},"➕ Le client demande d'autres articles ?"),boiteAjouts,choixAjout,
     el("div",{class:"label"},"Le menuisier vient chercher ou vous livrez ?"),modes,
     el("div",{class:"label"},"Prêt pour quand ?"),dates,msg,
     el("div",{class:"label"},"🏷️ Remise sur toute la commande ?"),remSeg,

@@ -120,3 +120,42 @@ describe("Prix du catalogue et remise de la quincaillerie", () => {
     expect(t).toContain("Vous économisez 4");
   });
 });
+
+import { changerQuantite, prixCatalogue } from "../src/commandes.js";
+describe("Modifications de la quincaillerie à la demande du client", () => {
+  const cmd = { meuble: "Armoire", lignes: [{ article: "Mélaminé 18 mm", detail: "4 feuilles", qte: 4, pu: 22000, total: 88000 }, { article: "Charnières", detail: "6 pièces", total: 3000 }] };
+  it("changer la quantité garde le prix à l'unité ; ce n'est pas une remise", () => {
+    const r = reponseInitiale(cmd.lignes);
+    expect(r.lignes[0].qte).toBe(4);
+    changerQuantite(r.lignes[0], 5);
+    expect(r.lignes[0].prix).toBe(110000);
+    expect(remiseLignes(cmd.lignes, r)).toBe(0);
+    expect(prixCatalogue(cmd.lignes[0], r.lignes[0])).toBe(110000);
+    expect(totalReponse(r)).toBe(113000);
+  });
+  it("articles ajoutés : comptés dans le total, gardés à la validation et à la réouverture", () => {
+    const r = reponseInitiale(cmd.lignes);
+    r.ajouts.push({ article: "Poignée dorée", qte: 6, unite: "pièce", prix: "9000", pu: 1500 });
+    expect(totalReponse(r)).toBe(100000);
+    const v = validerReponse(r, 2);
+    expect(v.ok).toBe(true);
+    expect(v.reponse.ajouts).toEqual([{ article: "Poignée dorée", qte: 6, unite: "pièce", prix: 9000 }]);
+    expect(v.reponse.total).toBe(100000);
+    expect(reponseInitiale(cmd.lignes, v.reponse).ajouts.length).toBe(1);
+  });
+  it("refuse un article ajouté sans nom ou sans prix, ou une quantité impossible", () => {
+    const r = reponseInitiale(cmd.lignes);
+    expect(validerReponse({ ...r, ajouts: [{ article: "", qte: 1, prix: 100 }] }, 2).ok).toBe(false);
+    expect(validerReponse({ ...r, ajouts: [{ article: "Vis", qte: 1, prix: "" }] }, 2).ok).toBe(false);
+    r.lignes[0].qte = 0;
+    expect(validerReponse(r, 2).erreur).toBe("Quantité invalide.");
+  });
+  it("le message WhatsApp montre la quantité changée et les articles ajoutés", () => {
+    const r = reponseInitiale(cmd.lignes); changerQuantite(r.lignes[0], 5);
+    r.ajouts.push({ article: "Poignée dorée", qte: 6, prix: 9000 });
+    const t = texteReponse(cmd, validerReponse(r, 2).reponse);
+    expect(t).toContain("quantité 4 → 5");
+    expect(t).toContain("➕ Poignée dorée × 6");
+    expect(t).not.toContain("au lieu de");
+  });
+});
