@@ -607,3 +607,31 @@ describe("Grandes cotes : nombre exact de feuilles", () => {
     }
   });
 });
+
+describe("Chambre à coucher complète", () => {
+  const r = RECIPES.find(x => x.id === "chambre"), def = {}; r.opts.forEach(x => (def[x.k] = x.def));
+  const ch = o => buildRecipe("chambre", { L: 1600, H: 1100, P: 2000, ep: 18 }, { ...def, ...o });
+  const meubles = ctx => [...new Set(ctx.parts.filter(p => p.box).map(p => p.name.split(" · ")[0]))];
+  it("est en tête de la famille Chambre et contient lit, 2 chevets, armoire, coiffeuse", () => {
+    expect(RECIPES.find(x => x.cat === "Chambre").id).toBe("chambre");
+    expect(meubles(ch({}))).toEqual(["Armoire", "Chevet gauche", "Lit", "Chevet droit", "Coiffeuse"]);
+  });
+  it("les meubles sont posés côte à côte sans se toucher, dos au mur", () => {
+    for (const o of [{}, { typeLit: "capitonne", commode: 1, armoire: 4, largeurArmoire: 250 }]) {
+      const ctx = ch(o), ext = meubles(ctx).map(m => { const b = ctx.parts.filter(p => p.box && p.mat && p.name.startsWith(m + " · ")).map(p => p.box); return [Math.min(...b.map(x => x[0])), Math.max(...b.map(x => x[0] + x[3])), Math.min(...b.map(x => x[2]))]; });
+      for (let i = 1; i < ext.length; i++) expect(ext[i][0]).toBeGreaterThan(ext[i - 1][1]);
+      ext.forEach(e => expect(e[2]).toBeGreaterThanOrEqual(0));
+    }
+  });
+  it("une seule liste : les fournitures des meubles s'additionnent", () => {
+    const seul = buildRecipe("chevet", { L: 450, H: 550, P: 400, ep: 18 }, { tiroirs: 2 });
+    const ctx = ch({ armoire: 0, coiffeuse: 0, tiroirsChevet: 2 });
+    const k = Object.keys(seul.hw).find(x => /coulisse/i.test(x)) || Object.keys(seul.hw)[0];
+    expect(ctx.hw[k].qty).toBeGreaterThanOrEqual(2 * seul.hw[k].qty);
+    expect(r.resume(ctx)).toContain("2 chevets");
+  });
+  it("lit à tiroirs ou capitonné selon le choix", () => {
+    expect(ch({ tiroirsLit: 2 }).parts.some(p => /Lit · Façade tiroir de lit/.test(p.name))).toBe(true);
+    expect(ch({ typeLit: "capitonne" }).parts.some(p => p.name.startsWith("Lit · ") && /mousse|Mousse|tissu|Tissu/.test(p.name + JSON.stringify(p.look || "")))).toBe(true);
+  });
+});

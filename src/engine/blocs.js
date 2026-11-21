@@ -222,8 +222,8 @@ export function lit(ctx, p, o = {}) {
   const nl = Math.round(Lg / 110);
   for (let i = 0; i < nl; i++) add3d(ctx, "massif", [E, Hc - 60, 40 + i * (Lg - 80) / (nl - 1) - 35, L, 20, 70]);
   hw(ctx, "lattes", "🪵", "Lattes bois " + (L / 10) + " cm", nl);
-  hw(ctx, "tasseaux", "🪵", "Tasseaux d'appui (bois massif)", 2 * Lg / 1000, "m");
-  if (L > 1000) { add3d(ctx, "massif", [E + L / 2 - 30, 0, 40, 60, Hc - 60, Lg - 80]); hw(ctx, "poutre", "🪵", "Traverse centrale (bois massif)", Lg / 1000, "m"); }
+  hw(ctx, "tasseaux", "🪵", "Tasseaux d'appui", 2 * Lg / 1000, "m");
+  if (L > 1000) { add3d(ctx, "massif", [E + L / 2 - 30, 0, 40, 60, Hc - 60, Lg - 80]); hw(ctx, "poutre", "🪵", "Traverse centrale (chevron)", Lg / 1000, "m"); }
   hw(ctx, "equerres", "📐", "Équerres d'assemblage", 8);
   const nt = o.tiroirs || 0;
   if (nt > 0) {
