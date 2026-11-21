@@ -3,7 +3,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { readFileSync } from "node:fs";
 
 const db = new PGlite();
-const migration = ["20261112000000_init.sql", "20261112000100_durcissement.sql", "20261112000200_performance.sql", "20261112000300_administration.sql", "20261112000400_comptes_par_admin.sql", "20261114000000_quincaillerie_fluide.sql", "20261115000000_comptes.sql", "20261115000100_roles.sql", "20261120000000_cartes.sql", "20261121000000_quincaillerie_par_defaut.sql"].map(f => readFileSync(new URL("../migrations/" + f, import.meta.url), "utf8")).join("\n");
+const migration = ["20261112000000_init.sql", "20261112000100_durcissement.sql", "20261112000200_performance.sql", "20261112000300_administration.sql", "20261112000400_comptes_par_admin.sql", "20261114000000_quincaillerie_fluide.sql", "20261115000000_comptes.sql", "20261115000100_roles.sql", "20261120000000_cartes.sql", "20261121000000_quincaillerie_par_defaut.sql", "20261122000000_console_admin.sql"].map(f => readFileSync(new URL("../migrations/" + f, import.meta.url), "utf8")).join("\n");
 let ok = 0, ko = 0;
 const check = (cond, label) => { if (cond) { ok++; console.log("  ✅ " + label); } else { ko++; console.log("  ❌ " + label); } };
 const expectError = async (fn, label, msg) => { try { await fn(); check(false, label + " (aurait dû être refusé)"); } catch (e) { check(!msg || String(e.message).includes(msg), label + " → refusé : " + e.message.split("\n")[0]); } };
@@ -236,6 +236,24 @@ const auto = await nouveau("d0d0d0d0-0000-0000-0000-000000000002", null);
 check(auto.quincaillerie === q.nom && (await db.query(`select quincaillerie_id from public.profils where id = 'd0d0d0d0-0000-0000-0000-000000000002'`)).rows[0].quincaillerie_id === q.id, "un menuisier inscrit sans QR est rattaché à la quincaillerie par défaut");
 const viaCode = await nouveau("d0d0d0d0-0000-0000-0000-000000000003", q2.code);
 check(viaCode.quincaillerie === q2.nom, "avec le QR d'une autre quincaillerie, il va chez celle-là");
+
+console.log("\nConsole de l'administrateur");
+check(JSON.stringify((await as(null, `select public.reglages_publics() as r`)).rows[0].r.modeles_retires) === "[]", "tout le monde lit les modèles retirés (aucun au départ)");
+await expectError(() => as(U.ali, `select public.admin_modeles_retires(array['lit-simple'])`), "un menuisier ne peut pas retirer de modèle", "reserve_admin");
+await expectError(() => as(U.quinc, `update public.reglages set modeles_retires = '{x}'`), "personne n'écrit directement dans les réglages");
+await as(ADMIN, `select public.admin_modeles_retires(array['lit-simple','dressing','lit-simple'])`);
+const ret = (await as(U.ali, `select public.reglages_publics() as r`)).rows[0].r.modeles_retires;
+check(ret.length === 2 && ret.includes("dressing"), "l'admin retire des modèles, sans doublon ; les menuisiers le voient");
+await expectError(() => as(ADMIN, `select public.admin_modeles_retires(array['<script>'])`), "un identifiant bizarre est refusé", "modele_inconnu");
+await expectError(() => as(U.quinc, `select public.admin_par_defaut($1)`, [q.id]), "une quincaillerie ne choisit pas la quincaillerie par défaut", "reserve_admin");
+await as(ADMIN, `select public.admin_par_defaut($1)`, [q2.id]);
+const va = (await as(ADMIN, `select public.admin_vue() as v`)).rows[0].v;
+check(va.quincailleries.filter(x => x.par_defaut).map(x => x.id).join() === q2.id, "l'admin change la quincaillerie par défaut (une seule)");
+check(Array.isArray(va.commandes_recentes) && va.commandes_recentes.length >= 1 && va.commandes_recentes[0].menuisier, "l'admin voit les commandes récentes avec menuisier et quincaillerie");
+check(va.quincailleries.every(x => x.owner_id), "l'admin a le propriétaire de chaque quincaillerie (pour la supprimer)");
+check(va.modeles_retires.length === 2, "la vue admin donne les modèles retirés");
+await as(ADMIN, `select public.admin_par_defaut(null)`);
+check((await as(ADMIN, `select public.admin_vue() as v`)).rows[0].v.quincailleries.every(x => !x.par_defaut), "l'admin peut enlever la quincaillerie par défaut");
 
 console.log(`\nRésultat : ${ok} réussis, ${ko} échoués`);
 process.exit(ko ? 1 : 0);

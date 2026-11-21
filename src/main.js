@@ -23,6 +23,11 @@ const $=id=>document.getElementById(id);
 const el=(t,a={},...c)=>{const n=document.createElement(t);for(const k in a){if(k==="class")n.className=a[k];else if(k.startsWith("on"))n.addEventListener(k.slice(2),a[k]);else n.setAttribute(k,a[k])}c.flat().forEach(x=>x!=null&&n.append(x.nodeType?x:document.createTextNode(x)));return n};
 const fmt=n=>Math.round(n).toLocaleString("fr-FR");
 const R=id=>RECIPES.find(r=>r.id===id);
+// Modèles retirés de l'appli par l'administrateur (console) : cachés du catalogue pour tout le monde ;
+// un projet déjà fait avec un modèle retiré s'ouvre toujours. Gardés aussi sur le téléphone (hors ligne).
+let RETIRES=new Set();try{RETIRES=new Set(JSON.parse(localStorage.getItem("menuipro-retires")||"[]"))}catch(e){}
+const visible=r=>!r.cache&&!RETIRES.has(r.id);
+function majRetires(ids){RETIRES=new Set(ids||[]);try{localStorage.setItem("menuipro-retires",JSON.stringify([...RETIRES]))}catch(e){};if(typeof renderCatalog==="function")renderCatalog()}
 // Nom affiché : celui du modèle partenaire (ex. « Lawson Bleu ») s'il a été choisi pour ce meuble.
 const modeleActif=()=>st.modele&&st.modele.recette===st.id?st.modele:null;
 const nomMeuble=r=>{const m=modeleActif();return m&&(!r||r.id===st.id)?m.nom:(r||R(st.id)).nom};
@@ -51,15 +56,15 @@ function tuileMeuble(r){return el("button",{type:"button",class:"meuble","aria-p
 function renderCatalog(){
   // st.room : null = familles, "*" = tous les meubles, sinon le nom de la famille.
   const q=query.trim().toLowerCase(),fam=st.room==="*"||(ROOMS.includes(st.room)&&st.room!=="Tous")?st.room:null;
-  const VISIBLES=RECIPES.filter(r=>!r.cache),liste=q?VISIBLES.filter(r=>r.nom.toLowerCase().includes(q)):fam==="*"?VISIBLES:fam?VISIBLES.filter(r=>r.cat===fam):[];
+  const VISIBLES=RECIPES.filter(visible),MOD=MODELES.filter(m=>!RETIRES.has(m.id)),liste=q?VISIBLES.filter(r=>r.nom.toLowerCase().includes(q)):fam==="*"?VISIBLES:fam?VISIBLES.filter(r=>r.cat===fam):[];
   // Les modèles nommés (Lawson, Gatsby…) sont rangés dans la famille de leur meuble de base.
   const famModele=m=>R(m.recette).cat;
-  const modelesTrouves=q?MODELES.filter(m=>m.nom.toLowerCase().includes(q)):fam==="*"?MODELES:fam?MODELES.filter(m=>famModele(m)===fam):[];
+  const modelesTrouves=q?MOD.filter(m=>m.nom.toLowerCase().includes(q)):fam==="*"?MOD:fam?MOD.filter(m=>famModele(m)===fam):[];
   // Sans recherche ni famille : on montre les familles.
   const voirFamilles=!q&&!fam;
   $("familles").hidden=!voirFamilles;$("creer").hidden=!voirFamilles;
-  $("familles").replaceChildren(...FAMILLES.map(([nom,e])=>{const n=RECIPES.filter(r=>r.cat===nom&&!r.cache).length+MODELES.filter(m=>R(m.recette).cat===nom).length;return el("button",{type:"button",class:"famille",onclick:()=>{st.room=nom;save();renderCatalog()}},el("span",{class:"e","aria-hidden":"true"},e),el("b",{},nom),el("span",{class:"nb"},n+" meubles"))}),
-    el("button",{type:"button",class:"famille tous",onclick:()=>{st.room="*";save();renderCatalog()}},el("span",{class:"e","aria-hidden":"true"},"📋"),el("b",{},"Tous les meubles"),el("span",{class:"nb"},RECIPES.length+MODELES.length)));
+  $("familles").replaceChildren(...FAMILLES.map(([nom,e])=>{const n=VISIBLES.filter(r=>r.cat===nom).length+MOD.filter(m=>R(m.recette).cat===nom).length;return el("button",{type:"button",class:"famille",onclick:()=>{st.room=nom;save();renderCatalog()}},el("span",{class:"e","aria-hidden":"true"},e),el("b",{},nom),el("span",{class:"nb"},n+" meubles"))}),
+    el("button",{type:"button",class:"famille tous",onclick:()=>{st.room="*";save();renderCatalog()}},el("span",{class:"e","aria-hidden":"true"},"📋"),el("b",{},"Tous les meubles"),el("span",{class:"nb"},VISIBLES.length+MOD.length)));
   $("famHead").hidden=voirFamilles;
   $("famHead").replaceChildren(...(voirFamilles?[]:[retourFamilles(),el("b",{},q?"Résultats":fam==="*"?"Tous les meubles":fam)]));
   // Dans une famille : les modèles nommés d'abord, rangés sous un petit titre (Canapés, Salons complets…), puis les meubles de base.
@@ -2012,6 +2017,7 @@ async function vueAdmin(){
   let v;
   try{v=await cloud.adminVue()}catch(e){return [el("p",{class:"status err"},cloud.message(e))]}
   const T=v.totaux,dt=d=>d?new Date(d).toLocaleDateString("fr-FR"):"—";
+  if(Array.isArray(v.modeles_retires))majRetires(v.modeles_retires);
   const kp=(val,lab,main)=>el("div",{class:"kpi"+(main?" main":"")},el("div",{class:"v"},val),el("div",{class:"k"},lab));
   const kpis=el("div",{class:"kpis"},kp(T.quincailleries_actives+" / "+T.quincailleries,"quincailleries actives",true),kp(T.menuisiers,"menuisiers ("+T.menuisiers_rattaches+" rattachés)"),kp(T.commandes,"commandes ("+T.commandes_30j+" sur 30 jours)"),kp(fmt(T.montant_commandes)+" F","commandés ("+fmt(T.montant_30j)+" F sur 30 j)"),kp(T.projets,"projets enregistrés"));
   const search=el("input",{class:"search",id:"adminSearch",type:"search",placeholder:"🔎 Chercher un nom, une commune, un numéro…",autocomplete:"off"});
@@ -2030,6 +2036,12 @@ async function vueAdmin(){
         infos.replaceChildren(n,w,c,el("button",{type:"button",class:"btn mini",onclick:async()=>{st2.textContent="⏳";try{await cloud.adminModifierQuincaillerie(q.id,n.value,w.value,c.value);q.nom=n.value.trim();q.whatsapp=w.value.trim()||null;q.commune=c.value.trim()||null;drawQ(search.value.trim().toLowerCase())}catch(e){st2.textContent=cloud.message(e)}}},"💾"));
       }},"✏️ Modifier"));
     const voirMenus=el("button",{type:"button",class:"btn mini",title:"Voir ses menuisiers",onclick:()=>{search.value=q.nom;search.dispatchEvent(new Event("input"));mBody.closest("section").scrollIntoView({behavior:"smooth"})}},String(q.menuisiers));
+    // ⭐ Quincaillerie par défaut : les menuisiers inscrits sans QR y sont rattachés.
+    const defB=el("button",{type:"button",class:"btn mini"+(q.par_defaut?" primary":""),title:q.par_defaut?"Quincaillerie par défaut":"Mettre par défaut",onclick:async()=>{st2.textContent="⏳";try{await cloud.adminParDefaut(q.par_defaut?null:q.id);v.quincailleries.forEach(x=>x.par_defaut=!q.par_defaut&&x===q);drawQ(search.value.trim().toLowerCase())}catch(e){st2.textContent=cloud.message(e)}}},q.par_defaut?"⭐ Par défaut":"☆ Par défaut");
+    let armedQ=false;const delQ=el("button",{type:"button",class:"btn mini"},"🗑️");
+    delQ.onclick=async()=>{if(!armedQ){armedQ=true;delQ.textContent="🗑️ Supprimer "+q.nom+" et ses "+q.commandes+" commande(s) ?";return}
+      st2.textContent="⏳";try{await cloud.adminSupprimer(q.owner_id);v.quincailleries=v.quincailleries.filter(x=>x!==q);drawQ(search.value.trim().toLowerCase());toast("🗑️ "+q.nom+" supprimée")}catch(e){st2.textContent=e.message}};
+    infos.append(el("div",{class:"acts-admin"},defB,delQ));
     return el("tr",{},infos,
       el("td",{},q.proprietaire||"—",el("div",{class:"note"},q.tel_proprietaire||""),el("button",{type:"button",class:"btn mini",title:"Nouvelle carte MenuiPro du propriétaire",onclick:()=>refaireCarte(null,{quinc:q.id,nom:q.proprietaire||q.nom,role:"quincaillerie",tel:q.tel_proprietaire})},"🪪 Carte")),el("td",{class:"n"},q.code),
       el("td",{class:"n"},voirMenus),el("td",{class:"n"},String(q.commandes)),el("td",{class:"n"},fmt(q.montant)+" F"),
@@ -2101,12 +2113,40 @@ async function vueAdmin(){
     el("section",{class:"panel"},el("h2",{},"🏪 Quincailleries ("+v.quincailleries.length+")"),el("p",{class:"note"},"Réglez la date de fin d'abonnement puis 💾. Après cette date, 7 jours de grâce, puis les commandes sont bloquées. Touchez le statut pour suspendre ou réactiver. Touchez le nombre de menuisiers pour les voir."),
       el("div",{class:"tablewrap"},el("table",{},th("Quincaillerie","Propriétaire","Code","Menuisiers","Commandes","Montant","Abonnement jusqu'au","Note","Statut"),qBody))),
     el("section",{class:"panel"},el("h2",{},"🪚 Menuisiers ("+v.menuisiers.length+")"),
-      el("div",{class:"tablewrap"},el("table",{},th("Nom","Téléphone","Quincaillerie","Projets","Commandes","Inscrit le","Dernière activité","Actions"),mBody)))
+      el("div",{class:"tablewrap"},el("table",{},th("Nom","Téléphone","Quincaillerie","Projets","Commandes","Inscrit le","Dernière activité","Actions"),mBody))),
+    sectionCommandesAdmin(v,th,dt),sectionModeles()
   ];
+}
+/* ----- Console : commandes récentes ----- */
+function sectionCommandesAdmin(v,th,dt){
+  const cmds=v.commandes_recentes||[];
+  return el("section",{class:"panel"},el("h2",{},"📦 Commandes récentes ("+cmds.length+")"),
+    cmds.length?el("div",{class:"tablewrap"},el("table",{},th("Date","Meuble","Menuisier","Quincaillerie","Montant","Statut"),el("tbody",{},...cmds.map(c=>{const s=STAT_CMD[c.statut]||[ "•",c.statut];
+      return el("tr",{},el("td",{class:"n"},dt(c.created_at)),el("td",{},c.meuble),el("td",{},c.menuisier||"—",el("div",{class:"note"},c.tel_menuisier||"")),el("td",{},c.quincaillerie),el("td",{class:"n"},c.total?fmt(c.total)+" F":"—"),el("td",{},el("span",{class:"chip "+c.statut},s[0]+" "+s[1])))}))))
+      :el("p",{class:"note"},"Aucune commande pour l'instant."));
+}
+/* ----- Console : modèles de meubles ----- */
+// Retirer un modèle le cache du catalogue pour tout le monde (menuisiers, quincailleries, assistant vocal).
+// Rien n'est effacé : un projet déjà fait s'ouvre toujours, et le modèle peut être remis d'un toucher.
+function sectionModeles(){
+  const st4=el("p",{class:"status",role:"status"}),corps=el("div",{class:"admin-modeles"});
+  const tous=[...RECIPES.filter(r=>!r.cache&&!r.dessin&&!r.importe).map(r=>({id:r.id,e:r.e,nom:r.nom,cat:r.cat})),...MODELES.map(m=>({id:m.id,e:"🏷️",nom:m.nom,cat:R(m.recette).cat}))];
+  const basculer=async(id,b)=>{const avant=new Set(RETIRES),apres=new Set(RETIRES);apres.has(id)?apres.delete(id):apres.add(id);
+    b.disabled=true;st4.className="status";st4.textContent="⏳";
+    try{await cloud.adminModelesRetires([...apres]);majRetires([...apres]);st4.className="status ok";st4.textContent=apres.has(id)?"🚫 Retiré de l'appli pour tout le monde.":"✅ Remis dans l'appli.";dessiner()}
+    catch(e){RETIRES=avant;st4.className="status err";st4.textContent=cloud.message(e);b.disabled=false}};
+  const dessiner=()=>corps.replaceChildren(...FAMILLES.map(([fam,e])=>{const l=tous.filter(m=>m.cat===fam);if(!l.length)return null;
+    const nr=l.filter(m=>RETIRES.has(m.id)).length;
+    return el("details",{class:"fam-admin"},el("summary",{},e+" "+fam+" · "+(l.length-nr)+" / "+l.length+(nr?" ("+nr+" retiré"+(nr>1?"s":"")+")":"")),
+      ...l.map(m=>{const ret=RETIRES.has(m.id),b=el("button",{type:"button",class:"btn mini"+(ret?"":" primary")},ret?"↩️ Remettre":"🗑️ Retirer");b.onclick=()=>basculer(m.id,b);
+        return el("div",{class:"ligne-modele"+(ret?" retire":"")},el("span",{},m.e+" "+m.nom),b)}))}).filter(Boolean));
+  dessiner();
+  return el("section",{class:"panel"},el("h2",{},"🧩 Modèles de meubles"),
+    el("p",{class:"note"},"Retirez les modèles que vous ne voulez pas dans l'appli : ils disparaissent du catalogue pour tout le monde. Les projets déjà faits s'ouvrent toujours, et vous pouvez les remettre à tout moment."),st4,corps);
 }
 /* ----- Assistant vocal : note vocale en wolof → meuble rempli ----- */
 // « Mon dessin » se fait au doigt, pas à la voix : il reste hors de l'assistant.
-const RECETTES_IA=RECIPES.filter(r=>!r.dessin&&!r.importe&&!r.cache),CAT_IA=catalogueIA(RECETTES_IA);
+const recettesIA=()=>RECIPES.filter(r=>!r.dessin&&!r.importe&&visible(r));
 let micRec=null;
 function bulle(gros,petit){const b=$("micBulle");b.hidden=!gros;b.replaceChildren(el("b",{},gros||""),petit?el("div",{class:"note"},petit):"")}
 function appliquerAction(a){
@@ -2136,7 +2176,7 @@ $("micBtn").onclick=async()=>{
     btn.classList.add("wait");btn.textContent="⏳";bulle("⏳","Je réfléchis…");
     try{
       let note=new Blob(morceaux,{type:r.mimeType||"audio/webm"});try{note=await versWav(note)}catch(e){/* on envoie le format d'origine */}
-      const res=await cloud.assistant(note,CAT_IA,{recette:st.id,nom:R(st.id).nom,...cfg()},duree);
+      const RECETTES_IA=recettesIA(),res=await cloud.assistant(note,catalogueIA(RECETTES_IA),{recette:st.id,nom:R(st.id).nom,...cfg()},duree);
       const a=validerAction(res.action,RECETTES_IA,st.id)||{action:"inconnu",reponse:"pas_compris"};
       const ic={compris:"👍",modifie:"🔁",pas_compris:"🤔",limite:"⛔"}[a.reponse]||"💡";
       bulle(ic+" "+(a.recette?R(a.recette).nom:""),[res.texte?"« "+res.texte+" »":"",a.resume].filter(Boolean).join(" → "));
@@ -2201,6 +2241,9 @@ if(cloud.actif&&CARTE_LIEN){
       let s=null;try{s=await cloud.session()}catch(e){}
       if(s){entrerDansAppli();toast("Hors ligne : l'application marche, la synchronisation reprendra avec le réseau.",true)}else ouvrirPorte(true)});
 }else document.body.classList.remove("attente");
+
+// Modèles retirés par l'administrateur : lus au démarrage (même sans compte).
+if(cloud.actif)cloud.reglagesPublics().then(r=>majRetires(r&&r.modeles_retires)).catch(()=>{});
 
 /* ----- Application installable (hors-ligne) ----- */
 if("serviceWorker" in navigator&&location.protocol==="https:"){window.addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}))}

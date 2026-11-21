@@ -86,6 +86,10 @@ export async function changerStatut(id, statut) { return ok(await sb.from("comma
 
 /* ---------- Administration ---------- */
 export async function adminVue() { return ok(await sb.rpc("admin_vue")); }
+// Modèles retirés de l'appli par l'administrateur (lus par tout le monde, même sans compte).
+export async function reglagesPublics() { return ok(await sb.rpc("reglages_publics")); }
+export async function adminModelesRetires(ids) { return ok(await sb.rpc("admin_modeles_retires", { p_ids: ids })); }
+export async function adminParDefaut(id) { return ok(await sb.rpc("admin_par_defaut", { p_quinc: id || null })); }
 export async function adminRattacher(user, quinc) { return ok(await sb.rpc("admin_rattacher", { p_user: user, p_quinc: quinc || null })); }
 export async function adminModifierQuincaillerie(id, nom, whatsapp, commune) { return ok(await sb.rpc("admin_modifier_quincaillerie", { p_quinc: id, p_nom: nom, p_whatsapp: whatsapp || "", p_commune: commune || "" })); }
 export async function adminAbonnement(id, actif, jusqu, note) { return ok(await sb.rpc("admin_abonnement", { p_quinc: id, p_actif: actif, p_jusqu: jusqu || null, p_note: note || null })); }

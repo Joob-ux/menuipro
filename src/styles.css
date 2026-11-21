@@ -466,3 +466,9 @@ body.verrou>.scanner,body.verrou>.modal-carte{display:flex!important}
 .rep-ligne.ajout{border-style:dashed}
 .rep-ligne.ajout input[type=text]{flex:1;min-width:0;font-size:16px;padding:8px;border:1px solid var(--line);border-radius:10px}
 .ajout-choix{flex-wrap:wrap}
+/* Console : modèles de meubles */
+.admin-modeles{display:grid;gap:8px}
+.fam-admin{border:1px solid var(--line);border-radius:12px;padding:6px 10px}
+.fam-admin summary{cursor:pointer;font-weight:800;padding:6px 0}
+.ligne-modele{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px dashed var(--line)}
+.ligne-modele.retire span{opacity:.5;text-decoration:line-through}
