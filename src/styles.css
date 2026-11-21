@@ -442,3 +442,7 @@ body.verrou>.scanner,body.verrou>.modal-carte{display:flex!important}
 .dim-gros{display:grid;grid-template-columns:1fr 120px;align-items:center;gap:8px;font-size:18px;font-weight:700}
 .dim-gros input{font:700 22px var(--body);padding:10px;border:2px solid var(--line);border-radius:12px;width:100%}
 .dim-gros input.err{border-color:#c0392b}
+/* Options groupées (cuisine) et résumé sous les options */
+.opt-titre{margin-top:8px;padding-top:10px;border-top:1px dashed var(--line,#e2d6c4);font-weight:800;font-size:16px}
+.resume-meuble{margin:4px 0 0;padding:10px 12px;border-radius:12px;background:var(--accent-soft);color:var(--accent);font-weight:700;line-height:1.4}
+.resume-meuble:empty{display:none}

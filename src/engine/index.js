@@ -2,6 +2,7 @@
 import { newCtx } from "./blocs.js";
 import { RECIPES } from "./recettes.js";
 import "./rembourre.js"; // enregistre les meubles rembourrés dans RECIPES
+import "./cuisine.js"; // cuisine en I ou en L
 import { computeHoles } from "./percages.js";
 import { construireCroquis } from "./croquis.js";
 import { construireModele } from "./modele3d.js";
@@ -14,6 +15,8 @@ RECIPES.push({ id: "modele3d", nom: "Ma 3D", e: "📤", cat: "Mes dessins", impo
   opts: [{ k: "panneaux", label: "Panneaux lus dans la 3D", modele: true, def: null }], build: construireModele });
 
 export { RECIPES, BIENTOT } from "./recettes.js";
+export { modulesMur, ELECTRO } from "./cuisine.js";
+export { boiteMonde } from "./blocs.js";
 export { pack, SHEET } from "./decoupe.js";
 export { outils, vis } from "./outils.js";
 export { SECTIONS_DEF, debitMassif, dimsMassif, choisirSection } from "./massif.js";

@@ -1,7 +1,7 @@
 // MenuiPro — vue de face cotée : projection des pièces sur le plan largeur × hauteur (sans DOM).
 // Repère du moteur : x = largeur, y = hauteur (sol = 0), z = profondeur (fond → façade).
 
-const LOOKS = { glass: "verre", mirror: "miroir", top: "plan", metal: "metal", massif: "massif", back: "dos", noir: "noir", led: "led" };
+const LOOKS = { glass: "verre", mirror: "miroir", top: "plan", metal: "metal", massif: "massif", back: "dos", noir: "noir", led: "led", electro: "electro" };
 
 // Nature d'une pièce pour le dessin : porte, tiroir, verre, caisson…
 function nature(p) {
@@ -41,7 +41,8 @@ function fusion(iv) {
  */
 export function vueFace(ctx) {
   // Les rubans LED et leur halo (3D seulement) ne comptent pas dans les cotes du meuble.
-  const E = ctx.E, parts = ctx.parts.filter(p => p.box && p.box[3] > 0 && p.box[4] > 0 && p.look !== "led" && p.look !== "halo");
+  // Cuisine en L : la vue de face montre le mur 1 (le retour, tourné, a son propre repère « rep »).
+  const E = ctx.E, parts = ctx.parts.filter(p => p.box && !p.rep && p.box[3] > 0 && p.box[4] > 0 && p.look !== "led" && p.look !== "halo");
   if (!parts.length) return null;
   let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
   for (const { box: [x, y, z, sx, sy, sz] } of parts) {

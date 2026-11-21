@@ -133,25 +133,26 @@ rec({ id: "table-manger", nom: "Table à manger", e: "🍽️", cat: "Salon", di
 
 /* ----- Cuisine ----- */
 export function basCuisine(c, x, W, o) {
-  const H = 870, D = 560, zones = o.tiroirs >= 2 ? [{ t: "tiroirs", n: o.tiroirs }] : o.tiroirs === 1 ? [{ t: "etageres", n: 1, portes: { n: W > 600 ? 2 : 1 } }, { t: "tiroirs", n: 1, h: 150 }] : [{ t: "etageres", n: 1, portes: { n: W > 600 ? 2 : 1 } }];
+  // H : hauteur finie, plan de travail (38 mm) compris ; D : profondeur du caisson.
+  const H = o.H || 870, D = o.D || 560, zones = o.tiroirs >= 2 ? [{ t: "tiroirs", n: o.tiroirs }] : o.tiroirs === 1 ? [{ t: "etageres", n: 1, portes: { n: W > 600 ? 2 : 1 } }, { t: "tiroirs", n: 1, h: 150 }] : [{ t: "etageres", n: 1, portes: { n: W > 600 ? 2 : 1 } }];
   caisse(c, x, 0, 0, W, H - 38, D, { nom: o.nom, socle: 100, dessus: false, colonnes: [zones] });
   hw(c, "piedsreg", "🦵", "Pieds réglables de cuisine", 4);
 }
-export function hautCuisine(c, x, W, nom, y = 1450) {
-  caisse(c, x, y, 0, W, 700, 330, { nom, colonnes: [[{ t: "etageres", n: 1, portes: { n: W > 600 ? 2 : 1 } }]] });
+export function hautCuisine(c, x, W, nom, y = 1450, H = 700, D = 330) {
+  caisse(c, x, y, 0, W, H, D, { nom, colonnes: [[{ t: "etageres", n: H >= 600 ? 1 : 0, portes: { n: W > 600 ? 2 : 1 } }]] });
   hw(c, "fixhaut", "🔩", "Fixations meubles hauts", 2);
 }
 /* Caisson évier : pas de dos ni d'étagère (passage des tuyaux et du siphon), deux traverses en haut
    pour tenir le plan de travail, portes battantes. L'évier se pose dans une découpe du plan de travail. */
 export function evierCuisine(c, x, W, o = {}) {
-  const E = c.E, H = 870 - 38, D = 560, nm = (o.nom || "Évier") + " · ";
+  const E = c.E, H = (o.H || 870) - 38, D = o.D || 560, nm = (o.nom || "Évier") + " · ";
   caisse(c, x, 0, 0, W, H, D, { nom: o.nom || "Évier", socle: 100, dessus: false, dos: false, colonnes: [[{ t: "etageres", n: 0, portes: { n: W > 600 ? 2 : 1 } }]] });
   add(c, nm + "Traverse avant", "caisson", [x + E, H - E, D - 100, W - 2 * E, E, 100], { edge: W - 2 * E });
   add(c, nm + "Traverse arrière", "caisson", [x + E, H - E, 0, W - 2 * E, E, 100], { edge: 0 });
   hw(c, "piedsreg", "🦵", "Pieds réglables de cuisine", 4);
   // Évier, robinet et évacuation : visibles en 3D, comptés dans la liste d'achat.
-  const bacs = W >= 1000 ? 2 : 1, lb = Math.min(W - 160, bacs === 2 ? 860 : 500), y = 870;
-  for (let b = 0; b < bacs; b++) add3d(c, "metal", [x + (W - lb) / 2 + b * (lb / bacs) + 10, y - 2, 120, lb / bacs - 20, 6, 380]);
+  const bacs = W >= 1000 ? 2 : 1, lb = Math.min(W - 160, bacs === 2 ? 860 : 500), y = H + 38;
+  for (let b = 0; b < bacs; b++) add3d(c, "metal", [x + (W - lb) / 2 + b * (lb / bacs) + 10, y - 2, 120, lb / bacs - 20, 6, Math.min(380, D - 180)]);
   add3d(c, "metal", [x + W / 2 - 15, y, 40, 30, 260, 30]);
   add3d(c, "metal", [x + W / 2 - 12, y + 230, 40, 24, 24, 190]);
   hw(c, "evier", "🚰", bacs === 2 ? "Évier inox 2 bacs" : "Évier inox 1 bac", 1);
@@ -191,7 +192,7 @@ rec({ id: "cuisine-colonne", nom: "Caisson colonne (frigo, four)", e: "🧊", ca
   const zones = o.usage === "four" ? [{ t: "etageres", n: 1, h: 700, portes: { n: 1 } }, { t: "niche", h: 600 }, { t: "etageres", n: 1, portes: { n: 1 } }] : [{ t: "etageres", n: 2, portes: { n: 1 } }, { t: "etageres", n: 1, h: 600, portes: { n: 1 } }];
   caisse(c, 0, 0, 0, p.L, p.H, p.P, { socle: 100, colonnes: [zones] });
 } });
-rec({ id: "cuisine-complete", nom: "Cuisine en caissons (évier au milieu)", e: "🍳", cat: "Cuisine", dims: [300, 220, 60], dimMin: [120, 150, 50], dimLabels: ["Longueur totale", "Hauteur jusqu'en haut", "Profondeur"],
+rec({ id: "cuisine-complete", nom: "Cuisine en caissons (évier au milieu)", e: "🍳", cat: "Cuisine", cache: true, dims: [300, 220, 60], dimMin: [120, 150, 50], dimLabels: ["Longueur totale", "Hauteur jusqu'en haut", "Profondeur"], // cachée : remplacée par « Cuisine en I ou en L » (cuisine.js), gardée pour les anciens projets
   opts: [chx("position", "Place de l'évier", [["milieu", "🚰 Au milieu"], ["gauche", "⬅️ À gauche"], ["droite", "➡️ À droite"]], "milieu"),
     chx("evier", "Caisson évier", [[800, "80 cm"], [1000, "100 cm"], [1200, "120 cm (2 bacs)"]], 1000),
     stp("tiroirs", "Caissons à tiroirs", "🗄️", 1, 0, 4), stp("hauts", "Caissons hauts", "⬆️", 1, 0, 1), stp("hautEvier", "Caisson haut au-dessus de l'évier", "🪟", 0, 0, 1)],

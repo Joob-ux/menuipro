@@ -549,3 +549,64 @@ describe("3D réaliste : caisson et coulisses des tiroirs", () => {
     });
   });
 });
+
+import { modulesMur, boiteMonde } from "../src/engine/index.js";
+describe("Cuisine en I ou en L", () => {
+  const r = RECIPES.find(x => x.id === "cuisine");
+  const def = {}; r.opts.forEach(x => (def[x.k] = x.def));
+  const P = { L: 600, H: 870, P: 560, ep: 18 };
+  const cui = o => buildRecipe("cuisine", P, { ...def, ...o });
+  const nb = (ctx, re) => ctx.parts.filter(p => re.test(p.name)).length;
+  const chevauchent = (a, b) => [0, 1, 2].every(i => a[i] < b[i] + b[i + 3] - 1 && b[i] < a[i] + a[i + 3] - 1);
+  it("est en tête de la famille Cuisine, l'ancienne cuisine est cachée", () => {
+    expect(RECIPES.find(x => x.cat === "Cuisine").id).toBe("cuisine");
+    expect(RECIPES.find(x => x.id === "cuisine-complete").cache).toBe(true);
+  });
+  it("en I : le nombre de caissons choisi, évier, frigo au bout, cuisson à l'écart de l'évier", () => {
+    const m = modulesMur(5, { ...def, Wb: 600, Pt: 600, evier: 1000, frigo: "frigo", cuisson: "cuisiniere60", forme: "I" }, 1);
+    expect(m.filter(x => x.type === "bas" || x.type === "tiroirs").length).toBe(5);
+    expect(m[0].type).toBe("frigo");
+    const ie = m.findIndex(x => x.type === "evier"), ic = m.findIndex(x => x.type === "cuisson");
+    expect(Math.abs(ic - ie)).toBeGreaterThan(1);
+    expect(m.at(-1).x + m.at(-1).W).toBe(m.reduce((s, x) => s + x.W, 0)); // sans trou
+    const ctx = cui({ bas1: 5, hauts1: 3 });
+    expect(nb(ctx, /^Caisson bas \d+ · Côté gauche$/)).toBe(5);
+    expect(nb(ctx, /^Caisson haut \d+ · Côté gauche$/)).toBe(3);
+  });
+  it("les caissons hauts évitent la hotte et le frigo", () => {
+    const ctx = cui({ bas1: 4, hauts1: 8, hotte: 1 });
+    const hauts = ctx.parts.filter(p => /^Caisson haut \d+ · Côté gauche$/.test(p.name));
+    const m = ctx.cuisine.modules[0], cu = m.find(x => x.type === "cuisson"), fr = m.find(x => x.type === "frigo");
+    for (const h of hauts) for (const z of [cu, fr]) expect(h.box[0] >= z.x + z.W - 1 || h.box[0] + 600 <= z.x + 1).toBe(true);
+  });
+  for (const retour of ["gauche", "droite"]) it("en L, retour à " + retour + " : le 2e mur est tourné, rien ne se chevauche", () => {
+    const ctx = cui({ forme: "L", retour, bas1: 3, bas2: 3, hauts1: 3, hauts2: 3 });
+    const mur2 = ctx.parts.filter(p => p.rep), mur1 = ctx.parts.filter(p => p.box && !p.rep);
+    expect(mur2.length).toBeGreaterThan(20);
+    expect(nb(ctx, /^Mur 2 · Caisson bas \d+ · Côté gauche$/)).toBe(3);
+    expect(nb(ctx, /^Mur 2 · Caisson haut \d+ · Côté gauche$/)).toBe(3);
+    expect(nb(ctx, /^Caisson d'angle · Côté gauche$/)).toBe(1);
+    const corps = l => l.filter(p => p.box && p.mat && !p.door && !p.drawer).map(boiteMonde);
+    for (const a of corps(mur2)) for (const b of corps(mur1)) expect(chevauchent(a, b)).toBe(false);
+    // Le retour est contre le mur de gauche (x ≈ 0) ou de droite (x ≈ longueur du mur 1), après le coin.
+    const xs = corps(mur2).flatMap(b => [b[0], b[0] + b[3]]), zs = corps(mur2).map(b => b[2]);
+    if (retour === "gauche") expect(Math.min(...xs)).toBeGreaterThanOrEqual(-6); else expect(Math.max(...xs)).toBeLessThanOrEqual(ctx.cuisine.mur1 + 6);
+    expect(Math.min(...zs)).toBeGreaterThanOrEqual(330 - 1);
+  });
+  it("l'électroménager est en 3D seulement : ni découpe ni liste d'achat ; la plaque demande une découpe du plan", () => {
+    const ctx = cui({ cuisson: "plaque", frigo: "americain", lv: 1, micro: 1 });
+    expect(ctx.parts.some(p => p.look === "electro" && !p.mat)).toBe(true);
+    expect(ctx.parts.some(p => p.look === "electro" && p.mat)).toBe(false);
+    expect(ctx.hw.decoupePlaque).toBeTruthy();
+    expect(nb(ctx, /^Caisson four · Côté gauche$/)).toBe(1);
+    expect(nb(ctx, /^Caisson haut micro-ondes · Côté gauche$/)).toBe(1);
+    expect(r.resume(ctx)).toContain("lave-vaisselle");
+  });
+  it("en L avec tout au maximum : pièces valides et découpe possible", () => {
+    const max = { ...def }; r.opts.forEach(x => { if (!x.choice) max[x.k] = x.max; });
+    const ctx = cui({ ...max, forme: "L", cuisson: "plaque" });
+    for (const p of ctx.parts) if (p.box) expect(p.box.slice(3).every(v => v > 0)).toBe(true);
+    const it2 = items(ctx);
+    expect(pack(it2.caisson, 4, true).over.length).toBe(0);
+  });
+});

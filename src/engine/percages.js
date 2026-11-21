@@ -13,7 +13,7 @@ export function computeHoles(ctx) {
     if (B.shelf) continue;
     const tB = thin(B);
     for (const A of P) {
-      if (A === B) continue;
+      if (A === B || (A.rep || null) !== (B.rep || null)) continue; // pas d'assemblage entre deux murs d'une cuisine en L
       const tA = thin(A);
       if (tA === tB) continue;
       const tol = A.shelf ? 2.5 : 0.6;

@@ -24,6 +24,13 @@ export function add(ctx, name, mat, box, o = {}) {
   ctx.parts.push(part);
   return part;
 }
+// Boîte d'une pièce dans le repère de la pièce entière. Une pièce peut avoir un repère tourné de ±90° autour
+// de la verticale (« rep » : retour d'une cuisine en L) : rot 90 → façade vers +x, rot -90 → façade vers -x.
+export function boiteMonde(p) {
+  const b = p.box, r = p.rep; if (!r || !b) return b;
+  const [x, y, z, sx, sy, sz] = b;
+  return r.rot === 90 ? [r.x + z, y, r.z - x - sx, sz, sy, sx] : [r.x - z - sz, y, r.z + x, sz, sy, sx];
+}
 export function add3d(ctx, look, box, flags = {}) { ctx.parts.push(Object.assign({ name: "", mat: null, box, look, only3d: true, qty: 1, edge: 0, holes: [] }, flags)); }
 export function hw(ctx, key, icon, label, qty, unit = "") {
   if (!ctx.hw[key]) ctx.hw[key] = { icon, label, qty: 0, unit };
@@ -52,9 +59,13 @@ export function caisse(ctx, x0, y0, z0, W, H, D, o = {}) {
   const top = o.dessus === false ? H : H - E;
   const inner = { x: x0 + E, y: y0 + socle + E, w: W - 2 * E, h: top - socle - E, z: z0, d: D };
   const cols = o.colonnes || [[]];
-  const n = cols.length, wc = (inner.w - (n - 1) * E) / n;
+  const n = cols.length, libre = inner.w - (n - 1) * E;
+  // Largeurs de colonnes : égales, ou proportionnelles à o.largeurs (ex. caisson d'angle : partie cachée + partie avec porte).
+  const wcs = o.largeurs && o.largeurs.length === n ? o.largeurs.map(v => v * libre / o.largeurs.reduce((t, u) => t + u, 0)) : cols.map(() => libre / n);
+  let cx = inner.x;
   cols.forEach((zones, k) => {
-    const cx = inner.x + k * (wc + E);
+    const wc = wcs[k];
+    if (k > 0) cx += wcs[k - 1] + E;
     if (k > 0) add(ctx, nm + "Séparation " + k, "caisson", [cx - E, inner.y, z0, E, inner.h, D - 2], { edge: inner.h });
     zonesFill(ctx, { x: cx, y: inner.y, w: wc, h: inner.h, z: z0, d: D }, zones, nm + (n > 1 ? "Col. " + (k + 1) + " · " : ""));
   });
