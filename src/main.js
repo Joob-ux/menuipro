@@ -27,6 +27,7 @@ const R=id=>RECIPES.find(r=>r.id===id);
 const modeleActif=()=>st.modele&&st.modele.recette===st.id?st.modele:null;
 const nomMeuble=r=>{const m=modeleActif();return m&&(!r||r.id===st.id)?m.nom:(r||R(st.id)).nom};
 
+let VUE=null,RESTAURE=false,PROF=-1,tNoter=0; // écran affiché et historique (bouton retour, plus bas)
 let st={id:"armoire-2",per:{},color:0,kerf:4,ep:18,panneau:"mela18",rot:true,room:null,etape:"choisir",dv:{client:"",tel:"",jours:null,pose:0},projId:null};
 try{const s=JSON.parse(localStorage.getItem("menuipro-v2")||"null");if(s&&R(s.id))st={...st,...s}}catch(e){}
 const save=()=>{try{localStorage.setItem("menuipro-v2",JSON.stringify(st))}catch(e){}};
@@ -73,7 +74,9 @@ function renderCatalog(){
   }else $("meubles").replaceChildren(...liste.map(tuileMeuble),...modelesTrouves.map(tuileModele));
   if(q&&!liste.length&&!modelesTrouves.length)$("meubles").append(el("p",{class:"note"},"Aucun meuble ne correspond. Essayez un autre mot."));
   $("count-tag").textContent=(RECIPES.length+MODELES.length)+" meubles";
+  noterEcran();
 }
+// (la famille ouverte compte comme un écran pour le bouton retour)
 function retourFamilles(){return el("button",{type:"button",class:"btn",onclick:()=>{st.room=null;query="";$("search").value="";save();renderCatalog()}},"← Familles")}
 $("search").addEventListener("input",e=>{query=e.target.value;renderCatalog()});
 
@@ -86,6 +89,7 @@ function setEtape(e,sansDefil){
   $("etapes").replaceChildren(...ETAPES.map(([k,ic,l],i)=>el("button",{type:"button",class:"etp","aria-current":k===e?"step":"false",onclick:()=>setEtape(k)},el("span",{class:"ic","aria-hidden":"true"},ic),el("span",{},(i+1)+". "+l))));
   majBarPrix();
   if(!sansDefil)window.scrollTo(0,0);
+  noterEcran();
 }
 document.querySelectorAll("[data-aller]").forEach(b=>b.addEventListener("click",()=>setEtape(b.dataset.aller)));
 // Bandeau du haut : le meuble, les feuilles et le prix, visibles à chaque étape après le choix.
@@ -747,7 +751,7 @@ $("aKerf").addEventListener("input",e=>{st.kerf=parseFloat(e.target.value)||0;sa
 /* ----- Navigation ----- */
 // [vue, icône, libellé, libellé court (téléphone)]
 const VIEWS=[["concevoir","🪚","Concevoir","Concevoir"],["projets","📁","Mes projets","Projets"],["catalogue","🏪","Catalogue & prix","Prix"],["atelier","⚙️","Mon atelier","Atelier"],["compte","👤","Compte","Compte"]];
-function go(v){if(location.hash!=="#"+v){try{history.replaceState(null,"","#"+v)}catch(e){location.hash=v}}show(v)}
+function go(v){show(v)}
 // Onglets autorisés selon le compte : chacun ne voit que ce qui le concerne.
 //  - Quincaillerie : ses commandes et menuisiers (Compte), ses prix (Catalogue). Pas de conception.
 //  - Administrateur : la console (Compte), et Concevoir / Mes projets pour faire des démonstrations.
@@ -776,6 +780,7 @@ function dessinerNav(v){
 function show(v){
   const permises=vuesPermises();
   if(!permises.find(x=>x[0]===v))v=vueAccueil();
+  VUE=v;
   VIEWS.forEach(([k])=>$("v-"+k).hidden=k!==v);
   dessinerNav(v);
   if(v==="projets")renderProjects();
@@ -784,15 +789,72 @@ function show(v){
   if(v==="compte")renderCompte();
   if(v==="concevoir"&&lastCtx){renderPanSel();compute()}
   if(v==="concevoir")setEtape(st.etape,true);
-  if(location.hash.slice(1)!==v){try{history.replaceState(null,"","#"+v)}catch(e){}}
   document.body.classList.toggle("avec-etapes",v==="concevoir");
   majNavH();
   window.scrollTo(0,0);
+  noterEcran();
 }
+
+/* ----- Retour : bouton ← en haut, boutons « ← étape précédente », bouton retour du téléphone ----- */
+// Chaque écran (onglet, étape de Concevoir, famille de meubles) devient une entrée d'historique :
+// le bouton retour du téléphone revient à l'écran d'avant au lieu de fermer l'appli.
+const etatEcran=()=>VUE==="concevoir"?{v:VUE,e:st.etape,f:st.etape==="choisir"&&st.room||null}:{v:VUE};
+const memeEcran=(a,b)=>!!a&&a.v===b.v&&(a.e||null)===(b.e||null)&&(a.f||null)===(b.f||null);
+// Regroupe les changements faits d'un coup (ex. onglet + étape) en une seule entrée.
+function noterEcran(){
+  if(RESTAURE||!VUE||tNoter)return;
+  tNoter=setTimeout(()=>{tNoter=0;if(RESTAURE||!VUE)return;
+    const cur=history.state&&history.state.mp?history.state:null,e=etatEcran(),url=location.pathname+location.search+"#"+e.v;
+    try{
+      if(memeEcran(cur,e)){if(location.hash.slice(1)!==e.v)history.replaceState(cur,"",url)}
+      else if(!cur){PROF++;history.replaceState({mp:1,n:PROF,...e},"",url)} // premier écran, ou lien « #… » touché
+      else{PROF=cur.n+1;history.pushState({mp:1,n:PROF,...e},"",url)}
+    }catch(err){}
+    majRetour();
+  },0);
+}
+// Où mène « ← » quand il n'y a pas d'écran précédent dans l'historique.
+function parentLogique(){
+  if(VUE==="concevoir"){const i=ETAPES.findIndex(x=>x[0]===st.etape);
+    if(i>0)return ()=>setEtape(ETAPES[i-1][0]);
+    if(st.room||query)return ()=>{st.room=null;query="";$("search").value="";save();renderCatalog()};}
+  if(VUE&&VUE!==vueAccueil())return ()=>go(vueAccueil());
+  return null;
+}
+function retour(){
+  const m=document.querySelector(".modal-carte");if(m)return m.remove();
+  const s=history.state;
+  if(s&&s.mp&&s.n>0)history.back();else{const f=parentLogique();if(f)f()}
+}
+function majRetour(){
+  const b=$("btnRetour");if(!b)return;
+  const s=history.state;b.hidden=!((s&&s.mp&&s.n>0)||parentLogique());
+}
+window.addEventListener("popstate",ev=>{
+  const s=ev.state;if(!s||!s.mp)return;
+  document.querySelectorAll(".modal-carte").forEach(n=>n.remove());
+  PROF=s.n;RESTAURE=true;
+  try{
+    if(s.v==="concevoir"){
+      if(s.e==="choisir"&&(st.room||null)!==(s.f||null)){st.room=s.f||null;query="";$("search").value="";renderCatalog()}
+      if(s.e)st.etape=s.e;save();
+    }
+    show(s.v);
+  }finally{RESTAURE=false}
+  majRetour();
+});
+$("btnRetour").addEventListener("click",retour);
+// Bas de chaque étape : « ← étape précédente » à côté de « suivant ».
+document.querySelectorAll("#v-concevoir .etape").forEach(sec=>{
+  const i=ETAPES.findIndex(x=>x[0]===sec.dataset.etape);if(i<1)return;
+  const [k,ic,l]=ETAPES[i-1],b=el("button",{type:"button",class:"btn retour-etape",onclick:()=>setEtape(k)},"← "+ic+" "+l);
+  const suiv=sec.querySelector(":scope > .suivant"),pied=el("div",{class:"pied-etape"});
+  if(suiv){suiv.replaceWith(pied);pied.append(b,suiv)}else{sec.append(pied);pied.append(b)}
+});
 // Hauteur de la barre d'onglets : le bandeau prix se colle juste dessous.
 function majNavH(){const n=document.querySelector("nav.appnav");if(n)document.documentElement.style.setProperty("--nav-h",n.offsetHeight+"px")}
 window.addEventListener("resize",majNavH);
-window.addEventListener("hashchange",()=>show(location.hash.slice(1)));
+window.addEventListener("hashchange",()=>{if(location.hash.slice(1)!==VUE)show(location.hash.slice(1))});
 
 /* ----- 3D ----- */
 let renderer,scene,camera,controls,group,openState=false,movers=[],has3D=false,showHoles=false,markers=[];
