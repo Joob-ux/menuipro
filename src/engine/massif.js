@@ -28,8 +28,9 @@ export const nbLames = (W, s) => (W <= s.larg ? 1 : Math.ceil(W / (s.larg - RABO
 /** Section la plus économique : épaisseur suffisante la plus proche, puis le moins de perte en largeur. */
 export function choisirSection(p, sections = SECTIONS_DEF) {
   const { L, W, T } = dimsMassif(p);
-  const ok = sections.filter(s => s.ep >= T && s.long >= L + SURLONGUEUR);
-  if (!ok.length) return null;
+  let ok = sections.filter(s => s.ep >= T && s.long >= L + SURLONGUEUR);
+  // Pièce plus longue que toutes les barres : la plus longue barre assez épaisse, la pièce sera aboutée (joint).
+  if (!ok.length) { const ep = sections.filter(s => s.ep >= T); if (!ep.length) return null; const m = Math.max(...ep.map(s => s.long)); ok = ep.filter(s => s.long === m); }
   if (p.section) { const f = ok.find(s => s.id === p.section); if (f) return f; }
   const cout = s => { const n = nbLames(W, s); return (s.ep - T) * 1000 + (n * s.larg - W) + (n - 1) * COLLAGE; };
   return ok.slice().sort((a, b) => cout(a) - cout(b))[0];

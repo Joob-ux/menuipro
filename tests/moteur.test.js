@@ -179,14 +179,17 @@ describe("Bois massif", () => {
     expect(it0.every(i => i.lamelle)).toBe(true);
     expect(it0[0].l).toBe(820);
   });
-  it("une pièce trop épaisse ou trop longue est signalée", () => {
+  it("une pièce trop épaisse est signalée", () => {
     const d = debitMassif([{ name: "Poteau", mat: "massif", qty: 1, box: [0, 0, 0, 100, 5000, 100] }]);
     expect(d.trop.length).toBe(1);
   });
   it("les sections du catalogue remplacent celles par défaut", () => {
     const sec = SECTIONS_DEF.map(s => ({ ...s, long: 3000 }));
     const d = debitMassif([{ name: "Montant", mat: "massif", qty: 1, box: [0, 0, 0, 65, 3500, 80] }], sec);
-    expect(d.trop.length).toBe(1);
+    // Plus long que les barres de 3 m du catalogue : abouté avec un joint, compté sur ces barres.
+    expect(d.trop.length).toBe(0);
+    expect(d.sections[0].section.long).toBe(3000);
+    expect(d.sections[0].res.joints.length).toBe(1);
   });
 });
 
@@ -608,5 +611,34 @@ describe("Cuisine en I ou en L", () => {
     for (const p of ctx.parts) if (p.box) expect(p.box.slice(3).every(v => v > 0)).toBe(true);
     const it2 = items(ctx);
     expect(pack(it2.caisson, 4, true).over.length).toBe(0);
+  });
+});
+
+import { decouperTropGrand } from "../src/engine/decoupe.js";
+describe("Grandes cotes : nombre exact de feuilles", () => {
+  it("une pièce plus grande que la feuille est coupée en morceaux qui rentrent, trous compris", () => {
+    const { items, joints } = decouperTropGrand([{ id: 1, name: "Côté", l: 3000, w: 600, holes: [{ u: 100, v: 50 }, { u: 2900, v: 50 }] }], 2420, 1200);
+    expect(items.length).toBe(2); expect(joints[0].n).toBe(2);
+    items.forEach(i => expect(i.l).toBeLessThanOrEqual(2420));
+    expect(items[0].holes.length).toBe(1); expect(items[1].holes[0].u).toBe(1400);
+  });
+  it("toute cote donne des feuilles, sans pièce oubliée (armoire 3 m de haut, 4 m de large)", () => {
+    for (const [L, H, P] of [[100, 300, 60], [400, 260, 60], [250, 250, 130]]) {
+      const r = RECIPES.find(x => x.id === "armoire-2"), o = {}; r.opts.forEach(x => (o[x.k] = x.def));
+      const ctx = buildRecipe("armoire-2", { L: L * 10, H: H * 10, P: P * 10, ep: 18 }, o), it2 = items(ctx);
+      for (const mat of ["caisson", "dos"]) {
+        const res = pack(it2[mat], 4, true);
+        expect(res.over.length).toBe(0);
+        const surf = it2[mat].reduce((t, p) => t + p.l * p.w, 0), place = res.sheets.reduce((t, s) => t + s.parts.reduce((u, p) => u + p.pw * p.ph, 0), 0);
+        expect(place).toBeGreaterThanOrEqual(surf * 0.995); // toute la matière est placée
+        expect(res.sheets.length).toBeGreaterThanOrEqual(Math.ceil(surf / (2420 * 1200)));
+      }
+    }
+  });
+  it("bois massif plus long que les barres : abouté, compté", () => {
+    const r = debitMassif([{ mat: "massif", name: "Longue traverse", box: [0, 0, 0, 6000, 40, 40], qty: 1 }], SECTIONS_DEF, 4);
+    expect(r.trop.length).toBe(0);
+    expect(r.sections[0].res.over.length).toBe(0);
+    expect(r.sections[0].res.joints.length).toBe(1);
   });
 });

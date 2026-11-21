@@ -29,8 +29,27 @@ export function packOnce(items, W, H, kerf, rot, rule) {
     return true;
   }
 }
+/* Pièce plus grande que la feuille : on la coupe en morceaux égaux (assemblés avec un joint) pour que
+   chaque morceau rentre. Ainsi toutes les cotes donnent un nombre exact de feuilles.
+   Les trous suivent leur morceau. Renvoie les morceaux et la liste des pièces coupées. */
+export function decouperTropGrand(items, W, H) {
+  const out = [], joints = [];
+  for (const it of items) {
+    const na = Math.max(1, Math.ceil(it.l / W)), nb = Math.max(1, Math.ceil(it.w / H));
+    if (na * nb === 1) { out.push(it); continue; }
+    const l = Math.ceil(it.l / na), w = Math.ceil(it.w / nb), n = na * nb;
+    joints.push({ name: it.name, l: it.l, w: it.w, n });
+    for (let i = 0; i < na; i++) for (let j = 0; j < nb; j++) {
+      const holes = it.holes ? it.holes.filter(h => Math.min(na - 1, Math.floor(h.u / l)) === i && Math.min(nb - 1, Math.floor(h.v / w)) === j).map(h => ({ ...h, u: h.u - i * l, v: h.v - j * w })) : undefined;
+      out.push({ ...it, id: it.id + "-" + (i * nb + j + 1), name: it.name + " (morceau " + (i * nb + j + 1) + "/" + n + ", joint)", l, w, joint: true, ...(holes ? { holes } : {}) });
+    }
+  }
+  return { items: out, joints };
+}
 export function pack(items, kerf, rot, sheet = SHEET) {
   const W = sheet.w - 2 * sheet.trim, H = sheet.h - 2 * sheet.trim;
+  const coupe = decouperTropGrand(items, W, H);
+  items = coupe.items;
   const sorts = { aire: (a, b) => b.l * b.w - a.l * a.w, long: (a, b) => b.l - a.l || b.w - a.w, large: (a, b) => b.w - a.w || b.l - a.l, perim: (a, b) => (b.l + b.w) - (a.l + a.w) };
   let best = null;
   for (const k in sorts) for (const rule of ["short", "long"]) {
@@ -39,6 +58,7 @@ export function pack(items, kerf, rot, sheet = SHEET) {
     const score = r.over.length * 1e12 + r.sheets.length * 1e8 + last / 1e3;
     if (!best || score < best.score) best = Object.assign({}, r, { score, strategy: k + "/" + rule });
   }
+  best.joints = coupe.joints;
   return best;
 }
 

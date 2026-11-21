@@ -205,7 +205,10 @@ function compute(refit){
   k.push(el("div",{class:"kpi"},el("div",{class:"v"},items.caisson.length+items.dos.length+npb),el("div",{class:"k"},"pièces à couper")));
   k.push(el("div",{class:"kpi"},el("div",{class:"v"},bl.total?fmt(bl.total):"—"),el("div",{class:"k"},bl.total?"FCFA de matériel"+(bl.missing?" (incomplet)":""):"matériel : prix à saisir")));
   const over=[...res.caisson.over,...res.dos.over],trop=res.massif.trop;
-  $("kpis").replaceChildren(...k,...(over.length?[el("p",{class:"warn",style:"grid-column:1/-1"},"⚠️ Trop grand pour une feuille : "+over.map(o=>o.name+" ("+o.l+" × "+o.w+")").join(", ")+". Réduisez les cotes ou prévoyez un joint.")]:[]),
+  // Pièces plus grandes qu'une feuille (ou qu'une barre) : coupées en morceaux avec un joint, et comptées.
+  const joints=[...res.caisson.joints||[],...res.dos.joints||[],...res.massif.sections.flatMap(x=>x.res.joints||[])];
+  $("kpis").replaceChildren(...k,...(joints.length?[el("p",{class:"note",style:"grid-column:1/-1"},"🔗 Plus grand qu'une feuille, coupé en morceaux avec un joint (déjà compté) : "+joints.map(o=>o.name+" ("+Math.round(o.l/10)+" × "+Math.round(o.w/10)+" cm → "+o.n+" morceaux)").join(", ")+".")]:[]),
+    ...(over.length?[el("p",{class:"warn",style:"grid-column:1/-1"},"⚠️ Pièce impossible à placer : "+over.map(o=>o.name+" ("+o.l+" × "+o.w+")").join(", ")+".")]:[]),
     ...(trop.length?[el("p",{class:"warn",style:"grid-column:1/-1"},"⚠️ Aucune section de bois ne convient : "+trop.map(o=>o.name+" ("+o.L+" × "+o.W+" × "+o.T+" mm)").join(", ")+". Ajoutez une section plus grosse ou plus longue dans le catalogue.")]:[]));
   renderPlan();renderFacade(ctx);renderDebit(ctx);renderKit(ctx);renderDevis();
   update3D(ctx,refit);majBarPrix();
