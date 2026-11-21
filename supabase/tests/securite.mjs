@@ -3,7 +3,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { readFileSync } from "node:fs";
 
 const db = new PGlite();
-const migration = ["20261112000000_init.sql", "20261112000100_durcissement.sql", "20261112000200_performance.sql", "20261112000300_administration.sql", "20261112000400_comptes_par_admin.sql", "20261114000000_quincaillerie_fluide.sql", "20261115000000_comptes.sql", "20261115000100_roles.sql", "20261120000000_cartes.sql"].map(f => readFileSync(new URL("../migrations/" + f, import.meta.url), "utf8")).join("\n");
+const migration = ["20261112000000_init.sql", "20261112000100_durcissement.sql", "20261112000200_performance.sql", "20261112000300_administration.sql", "20261112000400_comptes_par_admin.sql", "20261114000000_quincaillerie_fluide.sql", "20261115000000_comptes.sql", "20261115000100_roles.sql", "20261120000000_cartes.sql", "20261121000000_quincaillerie_par_defaut.sql"].map(f => readFileSync(new URL("../migrations/" + f, import.meta.url), "utf8")).join("\n");
 let ok = 0, ko = 0;
 const check = (cond, label) => { if (cond) { ok++; console.log("  ✅ " + label); } else { ko++; console.log("  ❌ " + label); } };
 const expectError = async (fn, label, msg) => { try { await fn(); check(false, label + " (aurait dû être refusé)"); } catch (e) { check(!msg || String(e.message).includes(msg), label + " → refusé : " + e.message.split("\n")[0]); } };
@@ -87,8 +87,8 @@ console.log("\nFonctions internes");
 await expectError(() => as(U.ali, `select public.ma_quincaillerie()`), "ma_quincaillerie n'est plus exposée dans l'API");
 await expectError(() => as(U.ali, `select public.nouveau_profil()`), "nouveau_profil ne peut pas être appelée");
 console.log("\nAdministration");
-await db.query(`insert into auth.users (id, raw_user_meta_data) values ($1, $2)`, ["55555555-5555-5555-5555-555555555555", { telephone: "221770000000", nom: "Admin" }]);
-const ADMIN = "55555555-5555-5555-5555-555555555555";
+await db.query(`insert into auth.users (id, raw_user_meta_data) values ($1, $2)`, ["a1a1a1a1-0000-0000-0000-000000000001", { telephone: "221770000000", nom: "Admin" }]);
+const ADMIN = "a1a1a1a1-0000-0000-0000-000000000001";
 await expectError(() => as(ADMIN, `update public.profils set role = 'admin' where id = auth.uid()`), "personne ne peut se nommer admin depuis l'application", "modification_interdite");
 await expectError(() => as(U.ali, `select public.admin_vue()`), "un menuisier n'a pas accès à la vue admin", "reserve_admin");
 await expectError(() => as(U.quinc, `select public.admin_vue()`), "une quincaillerie non plus", "reserve_admin");
@@ -112,13 +112,13 @@ await expectError(() => as(ADMIN, `select public.svc_configurer_compte($1, 'admi
 await expectError(() => as(U.ali, `select public.svc_configurer_compte($1, 'admin')`, [U.ali]), "un menuisier ne peut pas se nommer admin par cette fonction");
 const asService = async (sql, params = []) => { await db.exec("set role service_role"); try { return await db.query(sql, params); } finally { await db.exec("reset role"); } };
 await db.exec("grant all on all tables in schema public to service_role");
-await db.query(`insert into auth.users (id, raw_user_meta_data) values ('66666666-6666-6666-6666-666666666666', '{"telephone":"221771230000","nom":"Nouvelle Quinc"}')`);
-const r1 = (await asService(`select public.svc_configurer_compte('66666666-6666-6666-6666-666666666666', 'quincaillerie', 'Quinc Rufisque', '771230000', 'Rufisque') as r`)).rows[0].r;
+await db.query(`insert into auth.users (id, raw_user_meta_data) values ('a1a1a1a1-0000-0000-0000-000000000002', '{"telephone":"221771230000","nom":"Nouvelle Quinc"}')`);
+const r1 = (await asService(`select public.svc_configurer_compte('a1a1a1a1-0000-0000-0000-000000000002', 'quincaillerie', 'Quinc Rufisque', '771230000', 'Rufisque') as r`)).rows[0].r;
 check(r1.code && r1.code.length === 6, "le serveur crée une quincaillerie avec son code (" + r1.code + ")");
-await db.query(`insert into auth.users (id, raw_user_meta_data) values ('77777777-7777-7777-7777-777777777777', '{"telephone":"221771230001","nom":"Nouveau Menuisier"}')`);
-const r2 = (await asService(`select public.svc_configurer_compte('77777777-7777-7777-7777-777777777777', 'menuisier', null, null, null, $1) as r`, [r1.code])).rows[0].r;
+await db.query(`insert into auth.users (id, raw_user_meta_data) values ('a1a1a1a1-0000-0000-0000-000000000003', '{"telephone":"221771230001","nom":"Nouveau Menuisier"}')`);
+const r2 = (await asService(`select public.svc_configurer_compte('a1a1a1a1-0000-0000-0000-000000000003', 'menuisier', null, null, null, $1) as r`, [r1.code])).rows[0].r;
 check(r2.quincaillerie === "Quinc Rufisque", "le serveur crée un menuisier déjà rattaché à sa quincaillerie");
-check((await as("77777777-7777-7777-7777-777777777777", `select nom from public.quincailleries`)).rows[0]?.nom === "Quinc Rufisque", "ce menuisier voit tout de suite les prix de sa quincaillerie");
+check((await as("a1a1a1a1-0000-0000-0000-000000000003", `select nom from public.quincailleries`)).rows[0]?.nom === "Quinc Rufisque", "ce menuisier voit tout de suite les prix de sa quincaillerie");
 
 console.log("\nLien d'invitation");
 const ap = (await as(null, `select public.apercu_invitation($1) as a`, [q.code.toLowerCase()])).rows[0].a;
@@ -222,6 +222,20 @@ check((await as(U.bob, `select public.choisir_quincaillerie($1) as r`, [q.id])).
 check((await as(U.bob, `select quincaillerie_id from public.profils where id = auth.uid()`)).rows[0].quincaillerie_id === q.id, "il y est bien rattaché");
 await expectError(() => as(U.quinc, `select public.choisir_quincaillerie($1)`, [q.id]), "une quincaillerie ne change pas de quincaillerie ainsi", "reserve_menuisier");
 await as(ADMIN, `select public.admin_abonnement($1, true, '2099-12-31', null)`, [q2.id]);
+
+console.log("\nQuincaillerie par défaut");
+const nouveau = async (id, code) => { await db.query(`insert into auth.users (id, raw_user_meta_data) values ($1, '{"nom":"x"}')`, [id]); return (await db.query(`select public.svc_configurer_compte($1, 'menuisier', null, null, null, $2) as r`, [id, code])).rows[0].r; };
+const sansDefaut = await nouveau("d0d0d0d0-0000-0000-0000-000000000001", null);
+check(!sansDefaut.quincaillerie && (await db.query(`select quincaillerie_id from public.profils where id = 'd0d0d0d0-0000-0000-0000-000000000001'`)).rows[0].quincaillerie_id === null, "sans quincaillerie par défaut, un menuisier sans QR reste libre");
+await expectError(() => as(U.quinc, `update public.quincailleries set par_defaut = true where owner_id = auth.uid()`), "une quincaillerie ne se met pas elle-même par défaut", "modification_interdite");
+await db.exec("begin; select set_config('menuipro.admin', 'oui', true);");
+await db.query(`update public.quincailleries set par_defaut = true where id = $1`, [q.id]);
+await db.exec("commit;");
+await expectError(async () => { await db.exec("begin; select set_config('menuipro.admin', 'oui', true);"); try { await db.query(`update public.quincailleries set par_defaut = true where id = $1`, [q2.id]); } finally { await db.exec("rollback;"); } }, "une seule quincaillerie par défaut", "quincailleries_une_par_defaut");
+const auto = await nouveau("d0d0d0d0-0000-0000-0000-000000000002", null);
+check(auto.quincaillerie === q.nom && (await db.query(`select quincaillerie_id from public.profils where id = 'd0d0d0d0-0000-0000-0000-000000000002'`)).rows[0].quincaillerie_id === q.id, "un menuisier inscrit sans QR est rattaché à la quincaillerie par défaut");
+const viaCode = await nouveau("d0d0d0d0-0000-0000-0000-000000000003", q2.code);
+check(viaCode.quincaillerie === q2.nom, "avec le QR d'une autre quincaillerie, il va chez celle-là");
 
 console.log(`\nRésultat : ${ok} réussis, ${ko} échoués`);
 process.exit(ko ? 1 : 0);

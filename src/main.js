@@ -1626,7 +1626,7 @@ async function ouvrirPorte(horsLigne){
     corps=[el("h2",{class:"porte-titre"},"➕ Créer mon compte"),
       ...(invit?[invit]:[el("div",{class:"porte-qr-quinc"},el("p",{class:"note"},"Votre quincaillerie a un QR code ? Scannez-le : vous verrez tout de suite ses prix."),el("button",{type:"button",class:"btn",onclick:scanner},"📷 Scanner le QR de ma quincaillerie"))]),
       form,
-      !INVITE?el("p",{class:"note"},"Sans quincaillerie, vous choisirez ensuite parmi celles de l'appli, en comparant leurs prix."):null,
+      !INVITE?el("p",{class:"note"},"Sans QR : vos prix et vos commandes seront ceux de la quincaillerie partenaire de MenuiPro."):null,
       el("button",{type:"button",class:"lien",onclick:()=>aller("accueil")},"← Retour")];
     box.replaceChildren(el("div",{class:"porte-carte"},logo,...corps.filter(Boolean)));
     nom.focus({preventScroll:true});
