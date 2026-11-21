@@ -16,6 +16,8 @@ const json = (body: unknown, status = 200) =>
 const b64url = (b: Uint8Array) => btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 const empreinte = async (cle: string) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(cle)))).map(x => x.toString(16).padStart(2, "0")).join("");
 const nouvelleCle = () => b64url(crypto.getRandomValues(new Uint8Array(32)));
+// Mot de passe jamais utilisé (connexion par QR) : 43 caractères aléatoires. Supabase refuse au-delà de 72.
+const motDePasseInterne = () => nouvelleCle();
 const normaliser = (t: unknown) => { let d = String(t ?? "").replace(/\D/g, ""); if (d.length === 9) d = "221" + d; return d; };
 
 Deno.serve(async (req) => {
@@ -72,7 +74,7 @@ Deno.serve(async (req) => {
     if (!["quincaillerie", "menuisier", "admin"].includes(type)) return json({ erreur: "type_inconnu" }, 400);
     const nom = String(corps.nom ?? "").trim().slice(0, 80);
     const { data: cree, error } = await service.auth.admin.createUser({
-      email, password: pin || nouvelleCle() + nouvelleCle(), email_confirm: true, user_metadata: { telephone: tel, nom },
+      email, password: pin || motDePasseInterne(), email_confirm: true, user_metadata: { telephone: tel, nom },
     });
     if (error) return json({ erreur: /already|registered|exists/i.test(error.message) ? "deja_inscrit" : error.message }, 400);
     const { data: conf, error: errConf } = await service.rpc("svc_configurer_compte", {

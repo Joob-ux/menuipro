@@ -19,6 +19,8 @@ const normaliser = (t: unknown) => { let d = String(t ?? "").replace(/\D/g, "");
 const b64url = (b: Uint8Array) => btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 const empreinte = async (cle: string) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(cle)))).map(x => x.toString(16).padStart(2, "0")).join("");
 const nouvelleCle = () => b64url(crypto.getRandomValues(new Uint8Array(32)));
+// Mot de passe jamais utilisé (connexion par QR) : 43 caractères aléatoires. Supabase refuse au-delà de 72.
+const motDePasseInterne = () => nouvelleCle();
 const INSCRIPTIONS_HEURE = Number(Deno.env.get("INSCRIPTIONS_HEURE") || 60); // frein contre la création de comptes en masse
 
 Deno.serve(async (req) => {
@@ -64,7 +66,7 @@ Deno.serve(async (req) => {
       }
       // Mot de passe aléatoire jamais montré : on se connecte avec la carte (ou un PIN donné plus tard par l'admin).
       const { data: cree, error } = await service.auth.admin.createUser({
-        email: `${tel}@menuipro.app`, password: nouvelleCle() + nouvelleCle(), email_confirm: true, user_metadata: { telephone: tel, nom },
+        email: `${tel}@menuipro.app`, password: motDePasseInterne(), email_confirm: true, user_metadata: { telephone: tel, nom },
       });
       if (error) return json({ erreur: /already|registered|exists/i.test(error.message) ? "deja_inscrit" : error.message }, 400);
       const id = cree.user.id;
