@@ -76,9 +76,14 @@ rec({ id: "chevet", nom: "Table de chevet", e: "🌙", cat: "Chambre", dims: [45
   const zones = o.tiroirs >= 2 ? [{ t: "tiroirs", n: o.tiroirs }] : [{ t: "niche" }, { t: "tiroirs", n: 1, h: 160 }];
   caisse(c, 0, 0, 0, p.L, p.H, p.P, { socle: 60, colonnes: [zones] });
 } });
-rec({ id: "armoire-2", nom: "Armoire 2 portes", e: "🚪", cat: "Chambre", dims: [100, 200, 58], opts: [stp("etageres", "Étagères", "📚", 3, 0, 8), stp("penderie", "Penderie", "👔", 0, 0, 1), stp("tiroirs", "Tiroirs en bas", "🗄️", 0, 0, 2)], build(c, p, o) { armoire(c, p, { portes: 2, etageres: o.etageres, penderie: o.penderie, tiroirs: o.tiroirs }); } });
-rec({ id: "armoire-34", nom: "Armoire 3 ou 4 portes", e: "🚪", cat: "Chambre", dims: [160, 210, 58], opts: [stp("portes", "Portes", "🚪", 3, 3, 4), stp("etageres", "Étagères", "📚", 4, 0, 8), stp("penderie", "Penderie", "👔", 1, 0, 1), stp("tiroirs", "Tiroirs en bas", "🗄️", 0, 0, 2)], build(c, p, o) { armoire(c, p, { portes: o.portes, etageres: o.etageres, penderie: o.penderie, tiroirs: o.tiroirs }); } });
-rec({ id: "armoire-coulissante", nom: "Armoire portes coulissantes", e: "↔️", cat: "Chambre", dims: [180, 220, 62], opts: [stp("etageres", "Étagères", "📚", 4, 0, 8), stp("penderie", "Penderie", "👔", 1, 0, 1)], build(c, p, o) { armoire(c, p, { portes: 2, type: "coulissante", etageres: o.etageres, penderie: o.penderie }); } });
+// Une seule armoire dans le catalogue : 2, 3 ou 4 portes battantes, ou 2 portes coulissantes.
+// (« armoire-34 » et « armoire-coulissante » restent cachées pour les anciens projets et les modèles KILIFEU.)
+rec({ id: "armoire-2", nom: "Armoire", e: "🚪", cat: "Chambre", dims: [100, 200, 58], opts: [chx("type", "Portes", [["battantes", "🚪 Battantes"], ["coulissantes", "↔️ Coulissantes"]], "battantes"), { ...stp("portes", "Nombre de portes", "🚪", 2, 2, 4), si: o => o.type !== "coulissantes" }, stp("etageres", "Étagères", "📚", 3, 0, 8), stp("penderie", "Penderie", "👔", 0, 0, 1), { ...stp("tiroirs", "Tiroirs en bas", "🗄️", 0, 0, 2), si: o => o.type !== "coulissantes" }], build(c, p, o) {
+  if (o.type === "coulissantes") armoire(c, p, { portes: 2, type: "coulissante", etageres: o.etageres, penderie: o.penderie });
+  else armoire(c, p, { portes: o.portes || 2, etageres: o.etageres, penderie: o.penderie, tiroirs: o.tiroirs });
+} });
+rec({ id: "armoire-34", nom: "Armoire 3 ou 4 portes", e: "🚪", cat: "Chambre", cache: true, dims: [160, 210, 58], opts: [stp("portes", "Portes", "🚪", 3, 3, 4), stp("etageres", "Étagères", "📚", 4, 0, 8), stp("penderie", "Penderie", "👔", 1, 0, 1), stp("tiroirs", "Tiroirs en bas", "🗄️", 0, 0, 2)], build(c, p, o) { armoire(c, p, { portes: o.portes, etageres: o.etageres, penderie: o.penderie, tiroirs: o.tiroirs }); } });
+rec({ id: "armoire-coulissante", nom: "Armoire portes coulissantes", e: "↔️", cat: "Chambre", cache: true, dims: [180, 220, 62], opts: [stp("etageres", "Étagères", "📚", 4, 0, 8), stp("penderie", "Penderie", "👔", 1, 0, 1)], build(c, p, o) { armoire(c, p, { portes: 2, type: "coulissante", etageres: o.etageres, penderie: o.penderie }); } });
 rec({ id: "dressing", nom: "Dressing", e: "👗", cat: "Chambre", dims: [240, 230, 58], opts: [stp("colonnes", "Colonnes", "▥", 3, 2, 5), stp("tiroirs", "Tiroirs (1re colonne)", "🗄️", 3, 0, 5)], build(c, p, o) {
   const cols = [];
   for (let k = 0; k < o.colonnes; k++) {

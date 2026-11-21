@@ -608,6 +608,19 @@ describe("Grandes cotes : nombre exact de feuilles", () => {
   });
 });
 
+describe("Chambre : un seul modèle par meuble, plusieurs lits", () => {
+  it("une seule armoire visible (2 à 4 portes ou coulissante), les anciennes restent pour les vieux projets", () => {
+    const vis = RECIPES.filter(r => r.cat === "Chambre" && !r.cache);
+    expect(vis.filter(r => /armoire/i.test(r.nom)).map(r => r.id)).toEqual(["armoire-2"]);
+    expect(RECIPES.find(r => r.id === "armoire-34").cache).toBe(true);
+    const a = RECIPES.find(r => r.id === "armoire-2"), o = {}; a.opts.forEach(x => (o[x.k] = x.def));
+    const portes = n => buildRecipe("armoire-2", { L: 1600, H: 2100, P: 580, ep: 18 }, { ...o, portes: n }).parts.filter(p => p.door).length;
+    expect(portes(4)).toBe(4); expect(portes(3)).toBe(3);
+    expect(buildRecipe("armoire-2", { L: 1800, H: 2200, P: 620, ep: 18 }, { ...o, type: "coulissantes" }).parts.some(p => p.slide)).toBe(true);
+    expect(vis.filter(r => /lit/i.test(r.nom) && !/chambre/i.test(r.nom)).length).toBeGreaterThanOrEqual(5);
+  });
+});
+
 describe("Chambre à coucher complète", () => {
   const r = RECIPES.find(x => x.id === "chambre"), def = {}; r.opts.forEach(x => (def[x.k] = x.def));
   const ch = o => buildRecipe("chambre", { L: 1600, H: 1100, P: 2000, ep: 18 }, { ...def, ...o });
@@ -617,7 +630,7 @@ describe("Chambre à coucher complète", () => {
     expect(meubles(ch({}))).toEqual(["Armoire", "Chevet gauche", "Lit", "Chevet droit", "Coiffeuse"]);
   });
   it("les meubles sont posés côte à côte sans se toucher, dos au mur", () => {
-    for (const o of [{}, { typeLit: "capitonne", commode: 1, armoire: 4, largeurArmoire: 250 }]) {
+    for (const o of [{}, { modeleLit: "capitonne", commode: 1, armoire: 4, largeurArmoire: 250 }, { modeleLit: "tiroirs", armoire: 2 }]) {
       const ctx = ch(o), ext = meubles(ctx).map(m => { const b = ctx.parts.filter(p => p.box && p.mat && p.name.startsWith(m + " · ")).map(p => p.box); return [Math.min(...b.map(x => x[0])), Math.max(...b.map(x => x[0] + x[3])), Math.min(...b.map(x => x[2]))]; });
       for (let i = 1; i < ext.length; i++) expect(ext[i][0]).toBeGreaterThan(ext[i - 1][1]);
       ext.forEach(e => expect(e[2]).toBeGreaterThanOrEqual(0));
@@ -631,7 +644,7 @@ describe("Chambre à coucher complète", () => {
     expect(r.resume(ctx)).toContain("2 chevets");
   });
   it("lit à tiroirs ou capitonné selon le choix", () => {
-    expect(ch({ tiroirsLit: 2 }).parts.some(p => /Lit · Façade tiroir de lit/.test(p.name))).toBe(true);
-    expect(ch({ typeLit: "capitonne" }).parts.some(p => p.name.startsWith("Lit · ") && /mousse|Mousse|tissu|Tissu/.test(p.name + JSON.stringify(p.look || "")))).toBe(true);
+    expect(ch({ modeleLit: "tiroirs" }).parts.some(p => /Lit · Façade tiroir de lit/.test(p.name))).toBe(true);
+    expect(ch({ modeleLit: "capitonne" }).parts.some(p => p.name.startsWith("Lit · ") && /mousse|Mousse|tissu|Tissu/.test(p.name + JSON.stringify(p.look || "")))).toBe(true);
   });
 });

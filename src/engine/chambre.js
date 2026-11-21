@@ -8,6 +8,13 @@ import { RECIPES, stp, chx } from "./recettes.js";
 
 const ECART = 400; // passage entre deux meubles (mm)
 
+// Modèles de lit proposés dans la chambre : id du modèle, options transmises, hauteur de tête en plus.
+export const MODELES_LIT = {
+  panneau: { nom: "🟫 Tête en panneau", id: "lit-double", o: () => ({}) },
+  tiroirs: { nom: "🗄️ À tiroirs", id: "lit-tiroirs", o: o => ({ tiroirs: o.tiroirsLit || 2 }) },
+  capitonne: { nom: "🛋️ Capitonné", id: "lit-rembourre", dH: 150, o: o => (o.tissu ? { tissu: o.tissu } : {}) }
+};
+
 // Construit un meuble existant à part, puis le pose dans la chambre à partir de x (dos contre le mur, z = 0).
 // Renvoie le bout droit du meuble posé.
 function placer(c, id, [L, H, P], o, x, nom) {
@@ -40,17 +47,15 @@ export function construireChambre(c, p, o) {
   let x = 0;
   // Armoire à gauche.
   if (+o.armoire) {
-    const id = +o.armoire === 2 ? "armoire-2" : "armoire-34";
-    x = placer(c, id, [o.largeurArmoire * 10, o.hauteurArmoire * 10, 580], { portes: +o.armoire, penderie: 1, tiroirs: o.tiroirsArmoire }, x, "Armoire") + ECART;
+    x = placer(c, "armoire-2", [o.largeurArmoire * 10, o.hauteurArmoire * 10, 580], { portes: +o.armoire, penderie: 1, tiroirs: o.tiroirsArmoire }, x, "Armoire") + ECART;
     pieces.push("armoire " + o.armoire + " portes " + o.largeurArmoire + " cm");
   }
   const chevet = cote => placer(c, "chevet", [o.largeurChevet * 10, 550, 400], { tiroirs: o.tiroirsChevet }, x, "Chevet " + cote) + 50;
   if (o.chevets >= 1) x = chevet(o.chevets === 2 ? "gauche" : "");
   // Le lit, au centre : en panneau, ou rembourré (tête capitonnée).
-  if (o.typeLit === "capitonne") {
-    const tissu = o.tissu ? { tissu: o.tissu } : {};
-    x = placer(c, "lit-rembourre", [p.L, p.H + 150, p.P], { ...tissu }, x, "Lit");
-  } else x = placer(c, o.tiroirsLit ? "lit-tiroirs" : "lit-double", [p.L, p.H, p.P], { tiroirs: o.tiroirsLit }, x, "Lit");
+  // Plusieurs modèles de lit (ici, c'est surtout le lit qui change d'une chambre à l'autre).
+  const ML = MODELES_LIT[o.modeleLit] || MODELES_LIT.panneau;
+  x = placer(c, ML.id, [p.L, p.H + (ML.dH || 0), p.P], ML.o(o), x, "Lit");
   pieces.unshift("lit " + p.L / 10 + " × " + p.P / 10);
   x += 50;
   if (o.chevets === 2) x = chevet("droit");
@@ -67,9 +72,9 @@ const r = RECIPES.find(q => q.id === "lit-rembourre"), tissuOpt = r && r.opts.fi
 const CHAMBRE = { id: "chambre", nom: "Chambre à coucher complète", e: "🛏️", cat: "Chambre", dims: [160, 110, 200], dimMin: [90, 60, 180],
   dimLabels: ["Largeur du matelas", "Hauteur de la tête de lit", "Longueur du matelas"],
   opts: [
-    { ...chx("typeLit", "Lit", [["panneau", "🟫 Tête en panneau"], ["capitonne", "🛋️ Tête capitonnée"]], "panneau"), titre: "🛏️ Lit" },
-    { ...stp("tiroirsLit", "Tiroirs sous le lit (par côté)", "🗄️", 0, 0, 3), si: o => o.typeLit !== "capitonne" },
-    ...(tissuOpt ? [{ ...tissuOpt, si: o => o.typeLit === "capitonne" }] : []),
+    { ...chx("modeleLit", "Modèle de lit", Object.entries(MODELES_LIT).map(([k, m]) => [k, m.nom]), "panneau"), titre: "🛏️ Lit" },
+    { ...stp("tiroirsLit", "Tiroirs sous le lit (par côté)", "🗄️", 2, 1, 3), si: o => o.modeleLit === "tiroirs" },
+    ...(tissuOpt ? [{ ...tissuOpt, si: o => o.modeleLit === "capitonne" }] : []),
     { ...stp("chevets", "Tables de chevet", "🌙", 2, 0, 2), titre: "🌙 Chevets" },
     { ...stp("tiroirsChevet", "Tiroirs par chevet", "🗄️", 2, 1, 3), si: o => o.chevets > 0 },
     { ...stp("largeurChevet", "Largeur d'un chevet (cm)", "↔️", 45, 35, 70, 5), si: o => o.chevets > 0 },
