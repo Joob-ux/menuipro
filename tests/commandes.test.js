@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { reponseInitiale, totalReponse, validerReponse, dateLisible, texteReponse, changements, cleSuivi } from "../src/commandes.js";
+import { reponseInitiale, totalReponse, montantRemise, remiseLignes, validerReponse, dateLisible, texteReponse, changements, cleSuivi } from "../src/commandes.js";
 
 const commande = { meuble: "Commode 100 × 85 × 45 cm", lignes: [{ article: "Mélaminé 18 mm blanc", detail: "2 feuilles", total: 44000 }, { article: "Coulisses 40 cm", detail: "4 paires", total: 10000 }, { article: "Poignées", detail: "4 pièces", total: null }] };
 
@@ -70,5 +70,53 @@ describe("Prévenir le menuisier", () => {
   });
   it("une commande inconnue déjà traitée donne une alerte, une simple envoi non", () => {
     expect(changements([{ id: "c", statut: "prete" }, { id: "d", statut: "envoyee" }], { a: "x" }).map(c => c.id)).toEqual(["c"]);
+  });
+});
+
+describe("Prix du catalogue et remise de la quincaillerie", () => {
+  const cmd = { meuble: "Commode", lignes: [{ article: "Mélaminé 18 mm blanc", detail: "2 feuilles", qte: 2, pu: 22000, total: 44000 }, { article: "Coulisses 40 cm", detail: "4 paires", total: 10000 }] };
+  it("la quincaillerie reçoit la commande à ses prix du catalogue, sans remise", () => {
+    const r = reponseInitiale(cmd.lignes);
+    expect(r.lignes.map(l => l.prix)).toEqual([44000, 10000]);
+    expect(totalReponse(r)).toBe(54000);
+    expect(montantRemise(r)).toBe(0);
+  });
+  it("baisser le prix d'un article est compté comme une remise", () => {
+    const r = reponseInitiale(cmd.lignes); r.lignes[0].prix = "42 000";
+    expect(remiseLignes(cmd.lignes, r)).toBe(2000);
+    expect(totalReponse(r)).toBe(52000);
+  });
+  it("remise sur le total en pourcentage ou en francs", () => {
+    const r = reponseInitiale(cmd.lignes);
+    r.remise = { type: "pct", valeur: "10" };
+    expect(totalReponse(r)).toBe(48600);
+    r.remise = { type: "f", valeur: "4 000" };
+    expect(totalReponse(r)).toBe(50000);
+  });
+  it("valide la remise et la garde à la réouverture", () => {
+    const r = reponseInitiale(cmd.lignes); r.lignes[0].prix = 42000; r.remise = { type: "pct", valeur: 10 };
+    const v = validerReponse(r, 2);
+    expect(v.ok).toBe(true);
+    expect(v.reponse.sous_total).toBe(52000);
+    expect(v.reponse.remise).toEqual({ type: "pct", pct: 10, montant: 5200 });
+    expect(v.reponse.total).toBe(46800);
+    expect(reponseInitiale(cmd.lignes, v.reponse).remise).toEqual({ type: "pct", valeur: 10 });
+    const f = validerReponse({ ...reponseInitiale(cmd.lignes), remise: { type: "f", valeur: 3000 } }, 2).reponse;
+    expect(reponseInitiale(cmd.lignes, f).remise).toEqual({ type: "f", valeur: 3000 });
+    expect(totalReponse(f)).toBe(51000);
+  });
+  it("refuse une remise impossible", () => {
+    const r = reponseInitiale(cmd.lignes);
+    expect(validerReponse({ ...r, remise: { type: "f", valeur: 60000 } }, 2).erreur).toBe("La remise est plus grande que le total.");
+    expect(validerReponse({ ...r, remise: { type: "pct", valeur: 120 } }, 2).ok).toBe(false);
+    expect(validerReponse({ ...r, remise: { type: "f", valeur: -5 } }, 2).ok).toBe(false);
+  });
+  it("le message WhatsApp montre la remise et l'économie", () => {
+    const r = reponseInitiale(cmd.lignes); r.lignes[0].prix = 42000; r.remise = { type: "f", valeur: 2000 };
+    const t = texteReponse(cmd, validerReponse(r, 2).reponse);
+    expect(t).toMatch(/Mélaminé 18 mm blanc : 42\s000 F \(au lieu de 44\s000 F\)/);
+    expect(t).toContain("Remise : −2");
+    expect(t).toContain("Total : 50");
+    expect(t).toContain("Vous économisez 4");
   });
 });

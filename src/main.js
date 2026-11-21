@@ -10,7 +10,7 @@ import { PHRASES, parler, boutonVoix, chargerVoix, aUnAudio } from "./voix.js";
 import { catalogueIA, validerAction, DUREE_MAX_S } from "./assistant.js";
 import { versWav } from "./audio-wav.js";
 import { MODES, modeNom, acompteDu, resume, validerPaiement, prochainNumero } from "./paiements.js";
-import { DISPO, MODES_RETRAIT, reponseInitiale, totalReponse, validerReponse, dateLisible, texteReponse, cleSuivi, changements } from "./commandes.js";
+import { DISPO, MODES_RETRAIT, reponseInitiale, totalReponse, sousTotalReponse, montantRemise, remiseLignes, validerReponse, dateLisible, texteReponse, cleSuivi, changements } from "./commandes.js";
 import qrcode from "qrcode-generator";
 import { editeurCroquis } from "./croquis-ui.js";
 import * as imp3d from "./import3d.js";
@@ -351,7 +351,7 @@ function buyLines(ctx){
   const {chant}=outils(ctx),L=[];
   const n18=lastRes.caisson.sheets.length,n5=lastRes.dos.sheets.length;
   const pn=CAT.panneaux.find(x=>x.id===st.panneau),dos=CAT.panneaux.find(x=>x.dos)||{prix:0};
-  const add=(e,label,detail,qty,unit)=>L.push({e,label,detail,total:unit?qty*unit:null});
+  const add=(e,label,detail,qty,unit)=>L.push({e,label,detail,qte:qty,pu:unit||null,total:unit?qty*unit:null});
   if(n18)add("🟫",panLabel(),n18+" feuille"+(n18>1?"s":"")+" 244 × 122",n18,pn?pn.prix:0);
   if(n5)add("🟫","Contreplaqué 5 mm",n5+" feuille"+(n5>1?"s":"")+" (dos, fonds, parements)",n5,dos.prix);
   (lastRes.massif?lastRes.massif.sections:[]).forEach(x=>{const n=x.res.sheets.length;add("🪵",x.section.nom+" "+secTxt(x.section),n+" barre"+(n>1?"s":"")+" de "+cm(x.section.long/10)+" m",n,+x.section.prix||0)});
@@ -1302,19 +1302,29 @@ function panneauInviter(q){
 
 /* ----- Commandes : réponse de la quincaillerie ----- */
 const STAT_FLUX=["prete","livree"];
+// Lignes d'une commande : prix du catalogue de la quincaillerie, puis prix confirmé (barré si remise).
 function ligneArticles(c){
   const rep=c.reponse;
   return el("ul",{class:"cmd-lignes"},...(c.lignes||[]).map((l,i)=>{const r=rep&&rep.lignes&&rep.lignes.find(x=>x.i===i);
+    const baisse=r&&r.dispo==="oui"&&l.total!=null&&r.prix!=null&&r.prix<l.total;
+    const prix=r?(r.dispo==="non"?el("span",{class:"pr-ligne"},"pas dispo")
+        :el("span",{class:"pr-ligne"},baisse?el("s",{class:"pr-barre"},fmt(l.total)+" F"):"",baisse?" ":"",fmt(r.prix)+" F",baisse?el("span",{class:"badge-remise"},"🏷️ −"+fmt(l.total-r.prix)):""))
+      :(l.total!=null?el("span",{class:"pr-ligne"},fmt(l.total)+" F"):el("span",{class:"pr-ligne estime"},"prix ?"));
     return el("li",{class:r&&r.dispo==="non"?"barre-txt":""},el("span",{"aria-hidden":"true"},r?DISPO[r.dispo][0]+" ":"• "),el("b",{},l.article),
-      " · "+l.detail,r&&r.remplacement?el("span",{class:"rempl"}," → "+r.remplacement):"",
-      r?(r.dispo==="non"?el("span",{class:"pr-ligne"},"pas dispo"):el("span",{class:"pr-ligne"},fmt(r.prix)+" F")):(l.total!=null?el("span",{class:"pr-ligne estime"},"~"+fmt(l.total)+" F"):""))}));
+      " · "+l.detail+(l.pu&&l.qte>1?" × "+fmt(l.pu)+" F":""),r&&r.remplacement?el("span",{class:"rempl"}," → "+r.remplacement):"",prix)}));
 }
+// Total au prix du catalogue (avant réponse), sinon total confirmé avec remise et économie.
 function resumeReponse(c){
-  const r=c.reponse;if(!r)return null;
-  const m=MODES_RETRAIT[r.mode]||MODES_RETRAIT.retrait,ecart=c.total&&r.total!==c.total;
+  const r=c.reponse;
+  if(!r)return c.total?el("div",{class:"cmd-rep cmd-cat"},el("div",{class:"cmd-total"},el("span",{},"🏷️ Total au prix du catalogue"),el("b",{},fmt(c.total)+" F"))):null;
+  const m=MODES_RETRAIT[r.mode]||MODES_RETRAIT.retrait,rem=r.remise&&r.remise.montant?r.remise:null;
+  const eco=remiseLignes(c.lignes,r)+(rem?rem.montant:0),ecart=c.total&&r.total!==c.total;
   return el("div",{class:"cmd-rep"},
-    el("div",{class:"cmd-total"},el("span",{},"Total confirmé"),el("b",{},fmt(r.total)+" F")),
-    ecart?el("div",{class:"note"},"Estimé au départ : "+fmt(c.total)+" F"):null,
+    rem?el("div",{class:"cmd-total petit"},el("span",{},"Sous-total"),el("span",{},fmt(r.sous_total??sousTotalReponse(r))+" F")):null,
+    rem?el("div",{class:"cmd-total petit remise"},el("span",{},"🏷️ Remise"+(rem.pct?" "+rem.pct+" %":"")),el("span",{},"−"+fmt(rem.montant)+" F")):null,
+    el("div",{class:"cmd-total"},el("span",{},"Total à payer"),el("b",{},fmt(r.total)+" F")),
+    eco?el("div",{class:"eco"},"🎁 Économie : "+fmt(eco)+" F"):null,
+    ecart&&!eco?el("div",{class:"note"},"Prix du catalogue : "+fmt(c.total)+" F"):ecart?el("div",{class:"note"},"Au lieu de "+fmt(c.total)+" F (prix du catalogue)"):null,
     el("div",{},m[0]+" "+m[1]+(r.date?" · "+dateLisible(r.date):"")),
     r.message?el("div",{class:"cmd-msg"},"💬 "+r.message):null);
 }
@@ -1328,7 +1338,7 @@ function carteCommandeRecue(c){
     carte.replaceChildren(
       el("div",{class:"cmd-top"},el("span",{class:"e","aria-hidden":"true"},s[0]),el("div",{},el("b",{},c.meuble),el("div",{class:"note"},who+" · "+new Date(c.created_at).toLocaleString("fr-FR",{dateStyle:"short",timeStyle:"short"}))),el("span",{class:"chip "+c.statut},s[1])),
       ligneArticles(c),
-      resumeReponse(c)||el("div",{class:"note"},c.total?"Estimé par le menuisier : "+fmt(c.total)+" F":""),
+      resumeReponse(c),
       el("div",{class:"actions"},
         el("button",{type:"button",class:c.reponse?"btn":"btn primary",onclick:()=>formReponse(c,carte,dessiner)},c.reponse?"✏️ Modifier la réponse":"✍️ Répondre"),
         tel&&c.reponse?el("a",{class:"btn",href:"https://wa.me/"+waDigits(tel)+"?text="+encodeURIComponent(texteReponse(c,c.reponse,ME.quinc&&ME.quinc.nom)),target:"_blank",rel:"noopener"},"📲 Prévenir sur WhatsApp"):null),
@@ -1340,19 +1350,31 @@ function carteCommandeRecue(c){
 function formReponse(c,carte,redessiner){
   if(c.statut==="envoyee"){cloud.changerStatut(c.id,"vue").then(()=>{c.statut="vue"}).catch(()=>{})}
   const rep=reponseInitiale(c.lignes||[],c.reponse);
-  const err=el("p",{class:"status err",role:"alert"}),total=el("b",{});
-  const majTotal=()=>{total.textContent=fmt(totalReponse(rep))+" F"};
+  const err=el("p",{class:"status err",role:"alert"}),total=el("b",{}),sousTot=el("span",{}),remTxt=el("span",{});
+  const ligneSous=el("div",{class:"cmd-total petit"},el("span",{},"Sous-total"),sousTot),ligneRem=el("div",{class:"cmd-total petit remise"},el("span",{},"🏷️ Remise"),remTxt);
+  const majTotal=()=>{const st=sousTotalReponse(rep),m=montantRemise(rep,st);sousTot.textContent=fmt(st)+" F";remTxt.textContent="−"+fmt(m)+" F";ligneSous.hidden=ligneRem.hidden=!m;total.textContent=fmt(st-m)+" F"};
+  // Remise sur toute la commande : boutons rapides en %, ou un montant en francs.
+  const remSeg=el("div",{class:"seg"}),remF=el("input",{type:"number",min:"0",step:"500",inputmode:"numeric",placeholder:"Autre montant","aria-label":"Remise en francs"});
+  const majRem=()=>{const v=String(rep.remise.valeur||"");
+    remSeg.replaceChildren(...[["Aucune",""],["−5 %","5"],["−10 %","10"],["−15 %","15"]].map(([lb,p])=>el("button",{type:"button","aria-pressed":String(p?rep.remise.type==="pct"&&v===p:!v),onclick:()=>{rep.remise={type:p?"pct":"f",valeur:p};remF.value="";err.textContent="";majRem();majTotal()}},lb)),el("label",{class:"prix-f"},remF," F"));
+    if(rep.remise.type==="f")remF.value=v};
+  remF.addEventListener("input",()=>{rep.remise={type:"f",valeur:remF.value};err.textContent="";majRem();majTotal()});
+  majRem();
   const lignes=(c.lignes||[]).map((l,i)=>{
     const r=rep.lignes[i];
     const prix=el("input",{type:"number",min:"0",step:"500",inputmode:"numeric","aria-label":"Prix : "+l.article});prix.value=r.prix??"";
-    prix.addEventListener("input",()=>{r.prix=prix.value;err.textContent="";majTotal()});
+    const badge=el("span",{class:"badge-remise"});
+    const majBadge=()=>{const p=Math.round(+String(r.prix).replace(/\s/g,""));const d=r.dispo==="oui"&&l.total!=null&&r.prix!==""&&Number.isFinite(p)?l.total-p:0;badge.hidden=!(d>0);badge.textContent="🏷️ −"+fmt(d)+" F"};
+    prix.addEventListener("input",()=>{r.prix=prix.value;err.textContent="";majBadge();majTotal()});
     const rempl=el("input",{type:"text",maxlength:"80",placeholder:"Remplacé par…","aria-label":"Remplacé par"});rempl.value=r.remplacement||"";
     rempl.addEventListener("input",()=>{r.remplacement=rempl.value;err.textContent=""});
     const seg=el("div",{class:"seg dispo"});
     const maj=()=>{seg.replaceChildren(...Object.entries(DISPO).map(([k,[ic,lb]])=>el("button",{type:"button","aria-pressed":String(r.dispo===k),title:lb,onclick:()=>{r.dispo=k;err.textContent="";maj();majTotal()}},el("span",{class:"ic","aria-hidden":"true"},ic),el("span",{},lb))));
-      rempl.hidden=r.dispo!=="remplace";prix.disabled=r.dispo==="non"};
+      rempl.hidden=r.dispo!=="remplace";prix.disabled=r.dispo==="non";majBadge()};
     maj();
-    return el("div",{class:"rep-ligne"},el("div",{},el("b",{},l.article),el("span",{class:"note"}," · "+l.detail)),seg,el("div",{class:"rep-prix"},rempl,el("label",{class:"prix-f"},prix," F")));
+    return el("div",{class:"rep-ligne"},el("div",{},el("b",{},l.article),el("span",{class:"note"}," · "+l.detail)),
+      el("div",{class:"note"},l.total!=null?"🏷️ Votre prix catalogue : "+fmt(l.total)+" F"+(l.pu&&l.qte>1?" ("+fmt(l.pu)+" F × "+String(l.qte).replace(".",",")+")":""):"⚠️ Pas de prix dans votre catalogue : entrez-le."),
+      seg,el("div",{class:"rep-prix"},rempl,el("label",{class:"prix-f"},prix," F"),badge));
   });
   const modes=el("div",{class:"seg"});
   const majModes=()=>modes.replaceChildren(...Object.entries(MODES_RETRAIT).map(([k,[ic,lb]])=>el("button",{type:"button","aria-pressed":String(rep.mode===k),onclick:()=>{rep.mode=k;majModes()}},ic+" "+lb)));majModes();
@@ -1376,16 +1398,17 @@ function formReponse(c,carte,redessiner){
   carte.append(el("div",{class:"rep-form"},el("div",{class:"label"},"Pour chaque article"),...lignes,
     el("div",{class:"label"},"Le menuisier vient chercher ou vous livrez ?"),modes,
     el("div",{class:"label"},"Prêt pour quand ?"),dates,msg,
-    el("div",{class:"cmd-total"},el("span",{},"Total confirmé"),total),err,
+    el("div",{class:"label"},"🏷️ Remise sur toute la commande ?"),remSeg,
+    ligneSous,ligneRem,el("div",{class:"cmd-total"},el("span",{},"Total à payer"),total),err,
     el("div",{class:"actions"},envoyer,el("button",{type:"button",class:"btn",onclick:()=>carte.querySelector(".rep-form").remove()},"Annuler"))));
 }
 // Carte d'une commande envoyée (écran du menuisier)
 function carteCommandeMenuisier(c){
   const s=STAT_CMD[c.statut]||STAT_CMD.envoyee,q=ME&&ME.quinc,wa=q&&waDigits(q.whatsapp);
   return el("div",{class:"cmd"+(c.reponse?" repondue":"")},
-    el("div",{class:"cmd-top"},el("span",{class:"e","aria-hidden":"true"},s[0]),el("div",{},el("b",{},c.meuble),el("div",{class:"note"},new Date(c.created_at).toLocaleDateString("fr-FR")+(c.total?" · estimé "+fmt(c.total)+" F":""))),el("span",{class:"chip "+c.statut},s[1])),
-    c.reponse?ligneArticles(c):null,
-    resumeReponse(c)||el("div",{class:"note"},c.statut==="envoyee"?"⏳ En attente de la réponse de "+(q?q.nom:"la quincaillerie")+".":"👀 "+(q?q.nom:"La quincaillerie")+" a vu votre commande."),
+    el("div",{class:"cmd-top"},el("span",{class:"e","aria-hidden":"true"},s[0]),el("div",{},el("b",{},c.meuble),el("div",{class:"note"},new Date(c.created_at).toLocaleDateString("fr-FR"))),el("span",{class:"chip "+c.statut},s[1])),
+    ligneArticles(c),resumeReponse(c),
+    c.reponse?null:el("div",{class:"note"},c.statut==="envoyee"?"⏳ En attente de la réponse de "+(q?q.nom:"la quincaillerie")+".":"👀 "+(q?q.nom:"La quincaillerie")+" a vu votre commande."),
     el("div",{class:"actions"},
       wa?el("a",{class:"btn",href:"https://wa.me/"+wa+"?text="+encodeURIComponent("Bonjour, à propos de ma commande « "+c.meuble+" » : "),target:"_blank",rel:"noopener"},"📲 Écrire à "+q.nom):null,
       ["envoyee","vue","confirmee"].includes(c.statut)?boutonAnnuler(c):null));
@@ -1736,7 +1759,7 @@ function enregistrerCommande(){
   if(!cloud.actif||!ME||!ME.quinc||estQuinc()||!lastCtx)return;
   const txt=orderText();if(txt===derniereCommande)return;derniereCommande=txt;
   const pr=PROJ.find(x=>x.id===st.projId);
-  cloud.envoyerCommande({quincaillerie_id:ME.quinc.id,projet_id:pr&&pr.cloudId||null,meuble:(nomMeuble()+" "+dimsText()).slice(0,200),lignes:lastBuy.lines.map(l=>({article:l.label,detail:l.detail,total:l.total})),total:lastBuy.total?Math.round(lastBuy.total):null})
+  cloud.envoyerCommande({quincaillerie_id:ME.quinc.id,projet_id:pr&&pr.cloudId||null,meuble:(nomMeuble()+" "+dimsText()).slice(0,200),lignes:lastBuy.lines.map(l=>({article:l.label,detail:l.detail,total:l.total,...(l.pu?{qte:l.qte,pu:Math.round(l.pu)}:{})})),total:lastBuy.total?Math.round(lastBuy.total):null})
     .then(r=>{if(r&&r.id){const v=lireVu();v[r.id]=cleSuivi(r);ecrireVu(v)}toast("📦 Commande envoyée à "+ME.quinc.nom+" : sa réponse arrivera dans « Compte »")}).catch(e=>{derniereCommande="";toast(cloud.message(e),true)});
 }
 function appliquerCompte(){

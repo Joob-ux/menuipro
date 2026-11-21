@@ -256,6 +256,13 @@ body.avec-etapes .micbox,body.avec-etapes .toast{bottom:calc(88px + env(safe-are
 .cmd-total{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
 .cmd-total b{font:800 22px var(--display);font-variant-numeric:tabular-nums;color:var(--accent);white-space:nowrap}
 .cmd-msg{font-style:italic}
+.cmd-total.petit{font-size:14px;color:var(--muted)}
+.cmd-total.remise{color:var(--wood);font-weight:700}
+.cmd-cat{background:var(--bg)}
+.pr-barre{color:var(--muted);font-weight:400}
+.badge-remise{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent);font-weight:800;font-size:13px;white-space:nowrap}
+.badge-remise[hidden]{display:none}
+.eco{font-weight:800;color:var(--accent)}
 .rep-form{display:grid;gap:10px;border-top:2px dashed var(--line);padding-top:10px}
 .rep-ligne{display:grid;gap:6px;padding:8px;border-radius:12px;background:var(--bg)}
 .seg.dispo{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}
