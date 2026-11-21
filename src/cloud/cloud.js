@@ -27,7 +27,7 @@ const MESSAGES = {
   "quincaillerie_inconnue": "Quincaillerie introuvable.",
   "nom_quincaillerie_manquant": "Entrez le nom de la quincaillerie."
 };
-export const message = e => { const m = (e && (e.message || e.error_description)) || String(e); for (const k in MESSAGES) if (m.includes(k)) return MESSAGES[k]; return "Erreur : " + m; };
+export const message = e => { const m = (e && (e.message || e.error_description)) || String(e); for (const k in MESSAGES) if (m.includes(k)) return MESSAGES[k]; return /^Erreur\s*:/.test(m) ? m : "Erreur : " + m; }; // pas de « Erreur : Erreur : »
 const ok = ({ data, error }) => { if (error) throw error; return data; };
 
 export async function inscrire(tel, pin, nom) {
