@@ -1,5 +1,5 @@
 // MenuiPro — meubles rembourrés : canapés, fauteuils, poufs, banquettes, lits et têtes de lit capitonnés, salons.
-// Structure fabriquée en atelier : cadre en bois massif + panneaux (contreplaqué conseillé), puis mousse, ouate et tissu.
+// Structure fabriquée en atelier : cadre en bandes de contreplaqué contrecollées + panneaux, puis mousse, ouate et tissu.
 // Cotes en mm. Repère : x = largeur, y = hauteur, z = profondeur (z = 0 au dos du meuble).
 // Les éléments « tissu » (mousse habillée) ne sont que dans la 3D ; leurs quantités vont dans la liste d'achat.
 import { add, add3d, hw } from "./blocs.js";
@@ -83,7 +83,7 @@ export function canape(c, p, o, place = {}, pre = "") {
   const angle = o.angle ? Math.max(1300, Math.min(2000, o.retour || 1600)) : 0;               // profondeur de la méridienne
   const wl = angle ? Math.min(Wi, Math.round(Wi / n) + 150) : 0;
 
-  /* Cadre d'assise en bois massif */
+  /* Cadre d'assise (bandes de panneau contrecollées) */
   A.bois("Longeron arrière", [a, hp, 0, Wi, hr, 27]);
   A.bois("Longeron avant", [a, hp, P - 27, Wi - (angle ? wl : 0), hr, 27]);
   const nt = n + 1;
@@ -206,7 +206,7 @@ export function litRembourre(c, p, o) {
   const L = p.L, Lg = p.P, e = 70, W = L + 2 * e, sortePieds = o.pieds || "socle", hp = sortePieds === "socle" ? 40 : HAUT_PIEDS[sortePieds];
   const hb = o.base === "fine" ? 180 : 300;           // hauteur de la caisse du lit
   const T = repere(0, 0), A = atelier(c, o, T, ""), S = A.S, E = c.E;
-  /* Cadre en bois massif */
+  /* Cadre (bandes de panneau contrecollées) */
   A.bois("Longeron gauche", [e - 27, hp, 80, 27, hb - 40, Lg], "planche");
   A.bois("Longeron droit", [e + L, hp, 80, 27, hb - 40, Lg], "planche");
   A.bois("Traverse de pied", [e - 27, hp, 80 + Lg, L + 54, hb - 40, 27], "planche");

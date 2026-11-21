@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { MODELES_KILIFEU as MODELES } from "./kilifeu.js";
-import { boiteMonde, RECIPES, BIENTOT, buildRecipe, pack, outils, SHEET, holeLocal, HOLE_KINDS, SECTIONS_DEF, debitMassif, vueFace, depuisLecture } from "./engine/index.js";
+import { boiteMonde, RECIPES, BIENTOT, buildRecipe, pack, outils, SHEET, holeLocal, HOLE_KINDS, vueFace, depuisLecture } from "./engine/index.js";
 import { HCOL, sheetHoles, cncSVG, cncDXF, makeZip, ascii } from "./export/cnc.js";
 import * as cloud from "./cloud/cloud.js";
 import { PHRASES, parler, boutonVoix, chargerVoix, aUnAudio } from "./voix.js";
@@ -96,7 +96,7 @@ document.querySelectorAll("[data-aller]").forEach(b=>b.addEventListener("click",
 function majBarPrix(){
   const b=$("barPrix");if(!b)return;
   if(st.etape==="choisir"||!lastRes||!lastRes.caisson){b.hidden=true;return}
-  const r=R(st.id),n18=lastRes.caisson.sheets.length,nb=lastRes.massif.sections.reduce((t,x)=>t+x.res.sheets.length,0);
+  const r=R(st.id),n18=lastRes.caisson.sheets.length,nb=0;
   const d=devisCalc(),prix=d.prix&&!lastBuy.missing?fmt(d.prix)+" F":lastBuy.total?fmt(lastBuy.total)+" F":"prix ?";
   b.hidden=false;
   b.replaceChildren(el("div",{class:"wrap"},
@@ -111,7 +111,7 @@ function panneauModele(c){
   if(n<1)return el("div",{class:"modele-resume"},
     el("p",{class:"warn"},f?"Je ne trouve pas de panneaux dans cette 3D (objet d'un seul bloc, ou tissu). Pour la découpe, dessinez le meuble ✏️.":"Importez votre 3D : je lis ses panneaux pour faire les coupes."),
     el("div",{class:"actions"},el("button",{type:"button",class:"btn primary",onclick:()=>demanderImport("modele3d",true)},"📤 Importer ma 3D"),f?el("button",{type:"button",class:"btn",onclick:versDessin},"✏️ Dessiner à la place"):null));
-  const par={};m.list.forEach(p=>{const k=p.m==="caisson"?"panneaux "+st.ep+" mm":p.m==="dos"?"fonds 5 mm":"bois massif";par[k]=(par[k]||0)+1});
+  const par={};m.list.forEach(p=>{const k=p.m==="caisson"?"panneaux "+st.ep+" mm":p.m==="dos"?"fonds 5 mm":"pièces épaisses (bandes collées)";par[k]=(par[k]||0)+1});
   const eps=[...new Set(m.list.filter(p=>p.m==="caisson").map(p=>p.ep))].sort((a,b)=>a-b);
   return el("div",{class:"modele-resume"},
     el("p",{class:"imp-ok"},"✂️ "+n+" pièces lues dans votre 3D"),
@@ -189,27 +189,23 @@ function compute(refit){
   lastCtx=ctx;
   const rs=$("resumeMeuble");if(rs&&r.resume)rs.textContent=r.resume(ctx);
   const items={caisson:[],dos:[]};let id=0;
-  ctx.parts.filter(p=>p.mat&&p.mat!=="massif").forEach(p=>{const hl=p.box?(p.holes||[]).map(h=>{const L=holeLocal(p,h);const t=[0,1,2].find(i=>i===h.axis);const face=Math.abs(h.p[t]-p.box[t])<0.6?"A":"B";return {u:L.u,v:L.v,d:h.d,kind:h.kind,face,through:h.kind==="vis"}}):[];for(let q=0;q<p.qty;q++)items[p.mat].push({id:++id,name:p.name,l:p.cut[0],w:p.cut[1],holes:hl})});
-  const res={caisson:pack(items.caisson,st.kerf,st.rot),dos:pack(items.dos,st.kerf,true),massif:debitMassif(ctx.parts,sectionsBois(),st.kerf)};lastRes=res;
-  const nb=res.massif.sections.reduce((t,x)=>t+x.res.sheets.length,0);
+  ctx.parts.filter(p=>p.mat).forEach(p=>{const hl=p.box?(p.holes||[]).map(h=>{const L=holeLocal(p,h);const t=[0,1,2].find(i=>i===h.axis);const face=Math.abs(h.p[t]-p.box[t])<0.6?"A":"B";return {u:L.u,v:L.v,d:h.d,kind:h.kind,face,through:h.kind==="vis"}}):[];for(let q=0;q<p.qty;q++)items[p.mat].push({id:++id,name:p.name,l:p.cut[0],w:p.cut[1],holes:hl})});
+  const res={caisson:pack(items.caisson,st.kerf,st.rot),dos:pack(items.dos,st.kerf,true)};lastRes=res;
   const n18=res.caisson.sheets.length,n5=res.dos.sheets.length;
   const used=res.caisson.sheets.reduce((t,s)=>t+s.parts.reduce((u,p)=>u+p.pw*p.ph,0),0);
   const util=n18?used/(n18*SHEET.w*SHEET.h)*100:0;
   const bl=buyLines(ctx);lastBuy=bl;
-  const npb=res.massif.sections.reduce((t,x)=>t+x.items.length,0);
   const k=[];
-  res.massif.sections.forEach((x,i)=>k.push(el("div",{class:"kpi"+(i===0&&!n18?" main":"")},el("div",{class:"v"},x.res.sheets.length+" "+x.section.nom.toLowerCase()+(x.res.sheets.length>1?"s":"")),el("div",{class:"k"},"bois "+secTxt(x.section)))));
-  if(n18||!nb)k.push(el("div",{class:"kpi"+(nb?"":" main")},el("div",{class:"v"},n18+" feuille"+(n18>1?"s":"")),el("div",{class:"k"},panLabel())));
-  if(n5||!nb)k.push(el("div",{class:"kpi"},el("div",{class:"v"},n5+" feuille"+(n5>1?"s":"")),el("div",{class:"k"},"contreplaqué 5 mm"+(nb?" (parements)":" (dos, fonds)"))));
+  k.push(el("div",{class:"kpi main"},el("div",{class:"v"},n18+" feuille"+(n18>1?"s":"")),el("div",{class:"k"},panLabel())));
+  k.push(el("div",{class:"kpi"},el("div",{class:"v"},n5+" feuille"+(n5>1?"s":"")),el("div",{class:"k"},"contreplaqué 5 mm (dos, fonds)")));
   if(n18)k.push(el("div",{class:"kpi"},el("div",{class:"v"},Math.round(util)+" %"),el("div",{class:"k"},"de la matière utilisée")));
-  k.push(el("div",{class:"kpi"},el("div",{class:"v"},items.caisson.length+items.dos.length+npb),el("div",{class:"k"},"pièces à couper")));
+  k.push(el("div",{class:"kpi"},el("div",{class:"v"},items.caisson.length+items.dos.length),el("div",{class:"k"},"pièces à couper")));
   k.push(el("div",{class:"kpi"},el("div",{class:"v"},bl.total?fmt(bl.total):"—"),el("div",{class:"k"},bl.total?"FCFA de matériel"+(bl.missing?" (incomplet)":""):"matériel : prix à saisir")));
-  const over=[...res.caisson.over,...res.dos.over],trop=res.massif.trop;
+  const over=[...res.caisson.over,...res.dos.over];
   // Pièces plus grandes qu'une feuille (ou qu'une barre) : coupées en morceaux avec un joint, et comptées.
-  const joints=[...res.caisson.joints||[],...res.dos.joints||[],...res.massif.sections.flatMap(x=>x.res.joints||[])];
+  const joints=[...res.caisson.joints||[],...res.dos.joints||[]];
   $("kpis").replaceChildren(...k,...(joints.length?[el("p",{class:"note",style:"grid-column:1/-1"},"🔗 Plus grand qu'une feuille, coupé en morceaux avec un joint (déjà compté) : "+joints.map(o=>o.name+" ("+Math.round(o.l/10)+" × "+Math.round(o.w/10)+" cm → "+o.n+" morceaux)").join(", ")+".")]:[]),
-    ...(over.length?[el("p",{class:"warn",style:"grid-column:1/-1"},"⚠️ Pièce impossible à placer : "+over.map(o=>o.name+" ("+o.l+" × "+o.w+")").join(", ")+".")]:[]),
-    ...(trop.length?[el("p",{class:"warn",style:"grid-column:1/-1"},"⚠️ Aucune section de bois ne convient : "+trop.map(o=>o.name+" ("+o.L+" × "+o.W+" × "+o.T+" mm)").join(", ")+". Ajoutez une section plus grosse ou plus longue dans le catalogue.")]:[]));
+    ...(over.length?[el("p",{class:"warn",style:"grid-column:1/-1"},"⚠️ Pièce impossible à placer : "+over.map(o=>o.name+" ("+o.l+" × "+o.w+")").join(", ")+".")]:[]));
   renderPlan();renderFacade(ctx);renderDebit(ctx);renderKit(ctx);renderDevis();
   update3D(ctx,refit);majBarPrix();
 }
@@ -218,45 +214,19 @@ let planEtat=null;
 const planDebout=()=>window.innerWidth<600;
 window.addEventListener("resize",()=>{if(lastRes&&planEtat!==null&&planEtat!==planDebout())renderPlan()});
 function renderPlan(){
-  const all=[...lastRes.caisson.sheets.map((s,i)=>({s,label:"Feuille panneau "+(i+1),dim:SHEET})),...lastRes.dos.sheets.map((s,i)=>({s,label:"Feuille 5 mm "+(i+1),dim:SHEET})),
-    ...lastRes.massif.sections.map(x=>({groupes:grouperBarres(x.res.sheets),label:"🪵 "+x.section.nom+" ("+x.res.sheets.length+")",bois:x.section,dim:{w:x.section.long,h:x.section.larg,trim:0}}))];
+  const all=[...lastRes.caisson.sheets.map((s,i)=>({s,label:"Feuille panneau "+(i+1),dim:SHEET})),...lastRes.dos.sheets.map((s,i)=>({s,label:"Feuille 5 mm "+(i+1),dim:SHEET}))];
   if(sel>=all.length)sel=0;
   $("sheetTabs").replaceChildren(...all.map((x,i)=>el("button",{type:"button",class:"btn","aria-pressed":String(i===sel),onclick:()=>{sel=i;renderPlan()}},x.label)));
   const cur=all[sel];if(!cur){$("plan").replaceChildren();$("sheetInfo").textContent="";return}
   const D=cur.dim,T=D.trim,NS="http://www.w3.org/2000/svg";
   // Sur téléphone, la feuille est dessinée debout (x ↔ y) : elle tient dans l'écran et le texte reste lisible.
-  const debout=!cur.bois&&planDebout();planEtat=debout;
+  const debout=planDebout();planEtat=debout;
   const W=debout?D.h:D.w,Hs=debout?D.w:D.h,tr=(x,y,w,h)=>debout?[y,x,h,w]:[x,y,w,h];
   // Une barre de bois est très fine : on l'affiche plus haute (échelle verticale ×k) pour qu'on puisse lire les pièces.
-  const ky=cur.bois?Math.max(1,Math.min(8,(D.w/4)/D.h)):1,capY=Hs*ky+60;
+  const ky=1,capY=Hs*ky+60;
   const svg=document.createElementNS(NS,"svg");svg.setAttribute("viewBox",`-20 -20 ${W+40} ${capY+30}`);if(debout)svg.setAttribute("class","debout");svg.setAttribute("role","img");svg.setAttribute("aria-label","Plan de découpe, "+cur.label);
   const mk=(t,a)=>{const n=document.createElementNS(NS,t);for(const k in a)n.setAttribute(k,a[k]);return n};
   svg.append(mk("rect",{x:0,y:0,width:W,height:Hs*ky,fill:"var(--waste)",rx:6}));
-  if(cur.bois){
-    // Chaque ligne = une barre (ou un groupe de barres identiques « × n »).
-    const hb=D.h*ky,pas=hb+150;svg.setAttribute("viewBox",`-20 -20 ${D.w+40} ${cur.groupes.length*pas+120}`);svg.replaceChildren();
-    cur.groupes.forEach((gr,r)=>{
-      const y0=r*pas+110;
-      const lb=mk("text",{x:0,y:y0-24,"font-size":90,"font-family":"Atkinson Hyperlegible, sans-serif","font-weight":700,fill:"var(--ink)"});lb.textContent=gr.n>1?"× "+gr.n+" barres identiques":"Barre "+(r+1);svg.append(lb);
-      svg.append(mk("rect",{x:0,y:y0,width:D.w,height:hb,fill:"var(--waste)",rx:6}));
-      gr.s.parts.forEach(p=>{
-        const g=mk("g",{}),y=y0+p.y*ky,h=p.ph*ky;
-        g.append(mk("rect",{x:p.x,y,width:p.pw,height:h,fill:"var(--part)",stroke:p.lamelle?"var(--accent, var(--part-line))":"var(--part-line)","stroke-width":p.lamelle?8:4}));
-        const fs=Math.max(50,Math.min(110,Math.min(p.pw/7,h/2.4)));
-        const nm=p.name.replace(/^.*· /,"");
-        const t1=mk("text",{x:p.x+p.pw/2,y:y+h/2-fs*.1,"text-anchor":"middle","font-size":fs,"font-family":"Atkinson Hyperlegible, sans-serif","font-weight":700,fill:"var(--ink)"});t1.textContent=nm.length>26?nm.slice(0,25)+"…":nm;
-        const t2=mk("text",{x:p.x+p.pw/2,y:y+h/2+fs,"text-anchor":"middle","font-size":fs*.85,"font-family":"JetBrains Mono, monospace",fill:"var(--muted)"});t2.textContent=p.pw+" × "+p.ph;
-        if(p.pw>500&&h>fs*2.2)g.append(t1,t2);else if(p.pw>300){t2.setAttribute("y",y+h/2+fs/3);g.append(t2)}
-        svg.append(g);
-      });
-    });
-    const cap=mk("text",{x:0,y:cur.groupes.length*pas+90,"font-size":70,"font-family":"JetBrains Mono, monospace",fill:"var(--muted)"});cap.textContent=cur.bois.nom+" "+secTxt(cur.bois)+" · barre de "+D.w+" mm · trait de scie "+st.kerf+" mm"+(ky>1?" · hauteur agrandie ×"+Math.round(ky):"");svg.append(cap);
-    $("plan").replaceChildren(svg);
-    const nbar=cur.groupes.reduce((t,g)=>t+g.n,0),np=cur.groupes.reduce((t,g)=>t+g.n*g.s.parts.length,0),used=cur.groupes.reduce((t,g)=>t+g.n*g.s.parts.reduce((u,p)=>u+p.pw,0),0);
-    const nl=cur.groupes.reduce((t,g)=>t+g.n*g.s.parts.filter(p=>p.lamelle).length,0);
-    $("sheetInfo").textContent=`${nbar} barre${nbar>1?"s":""} · ${np} pièces · ${Math.round(used/(nbar*D.w)*100)} % de la longueur utilisée · +20 mm de surlongueur par pièce`+(nl?` · ${nl} lames à coller (lamellé-collé, bord épais)`:"")+" · en beige : la chute.";
-    $("keys").replaceChildren();return;
-  }
   cur.s.parts.forEach(p=>{
     const g=mk("g",{});
     const [px,py,pw,ph]=tr(T+p.x,T+p.y,p.pw,p.ph);
@@ -310,19 +280,13 @@ $("zipBtn").onclick=()=>{const all=allSheets();if(!all.length)return;const files
 };
 
 function renderDebit(ctx){
-  const rows=ctx.parts.filter(p=>p.mat).map(p=>el("tr",{},el("td",{},p.name.replace(/ \(×2\)/,"")),el("td",{class:"n"},String(p.qty)),el("td",{class:"n"},p.mat==="massif"?coteBois(p):p.cut[0]+" × "+p.cut[1]),el("td",{},matiere(p)),el("td",{class:"n"},p.edge?((p.edge*p.qty/1000).toFixed(2)+" m"):"—"),el("td",{class:"n"},(p.holes||[]).length?String(p.holes.length):"—")));
+  const rows=ctx.parts.filter(p=>p.mat).map(p=>el("tr",{},el("td",{},p.name.replace(/ \(×2\)/,"")),el("td",{class:"n"},String(p.qty)),el("td",{class:"n"},p.cut[0]+" × "+p.cut[1]),el("td",{},matiere(p)),el("td",{class:"n"},p.edge?((p.edge*p.qty/1000).toFixed(2)+" m"):"—"),el("td",{class:"n"},(p.holes||[]).length?String(p.holes.length):"—")));
   $("debit").replaceChildren(el("thead",{},el("tr",{},el("th",{},"Pièce"),el("th",{},"Qté"),el("th",{},"Cotes (mm)"),el("th",{},"Matière"),el("th",{},"Chant"),el("th",{},"Perçages"))),el("tbody",{},rows));
 }
 
-/* ----- Bois massif ----- */
-// Sections du catalogue (prix de la barre) ; à défaut, sections standard du moteur.
-function sectionsBois(){return (CAT.sections&&CAT.sections.length?CAT.sections:SECTIONS_DEF).filter(x=>x.ep>0&&x.larg>0&&x.long>0)}
+// Cotes et matière d'une pièce (une pièce épaisse est faite de bandes de panneau contrecollées).
 const cm=v=>String(Math.round(v)/10).replace(".",",");
-const secTxt=x=>cm(x.ep)+" × "+cm(x.larg)+" cm";
-function grouperBarres(sheets){const m=new Map();sheets.forEach(sh=>{const k=sh.parts.map(p=>p.pw+"x"+p.ph+p.name.replace(/[0-9]+/g,"")).join("|");if(m.has(k))m.get(k).n++;else m.set(k,{s:sh,n:1})});return [...m.values()]}
-function sectionDe(p){for(const x of (lastRes.massif?lastRes.massif.sections:[]))if(x.items.some(i=>i.src===p))return x.section;return null}
-function coteBois(p){const d=[p.box[3],p.box[4],p.box[5]].map(Math.round).sort((a,b)=>b-a);return d[0]+" × "+d[1]+" × "+d[2]}
-function matiere(p){if(p.mat==="dos")return "Contreplaqué 5 mm";if(p.mat!=="massif")return "Panneau "+st.ep+" mm";const x=sectionDe(p);return x?"🪵 "+x.nom+" "+secTxt(x):"🪵 bois massif"}
+function matiere(p){if(p.mat==="dos")return "Contreplaqué 5 mm";return "Panneau "+st.ep+" mm"+(p.plein?" (bandes collées)":"")}
 
 /* ===================== CATALOGUE, PRIX, ATELIER ===================== */
 const ARTICLES=[
@@ -331,7 +295,7 @@ const ARTICLES=[
  ["taquets","📌","Taquet d'étagère","pièce"],["tringle","➖","Tringle de penderie","m"],["supports","🔩","Support de tringle","pièce"],["rail","↔️","Rail coulissant","m"],
  ["galets","⚙️","Kit galets coulissants","kit"],["cuvettes","✋","Poignée cuvette","pièce"],["verre","🪟","Verre trempé","m²"],["miroir","🪞","Miroir 60 × 80","pièce"],
  ["pieds","🦵","Pied de table","pièce"],["piedsreg","🦵","Pied réglable cuisine","pièce"],["pdt","🟫","Plan de travail 38 mm","m"],["roulettes","🛞","Roulette","pièce"],
- ["lattes","🪵","Latte de lit","pièce"],["tasseaux","🪵","Tasseau bois","m"],["poutre","🪵","Traverse bois massif","m"],["equerres","📐","Équerre","pièce"],
+ ["lattes","🪵","Latte de lit","pièce"],["tasseaux","🪵","Tasseau bois","m"],["poutre","🪵","Traverse bois (chevron)","m"],["equerres","📐","Équerre","pièce"],
  ["fixmur","🔩","Fixations murales","lot de 4",4],["fixhaut","🔩","Fixation meuble haut","pièce"],["pointes","🔨","Pointes","boîte de 500",500],["vasque","🚰","Vasque à poser","pièce"],
  ["paumelles","⚙️","Paumelle de porte","pièce"],["serrure","🔒","Serrure + cylindre","pièce"],["espagnolette","🔒","Espagnolette / crémone","pièce"],["pattes","🔩","Patte de scellement","pièce"],
  ["boulons","🔩","Boulon de lit 8 × 120","pièce"],["visbois","🔩","Vis à bois","boîte de 100",100],["chevilles","🔩","Cheville + vis","pièce"],["colle","🧴","Colle à bois","pot"],
@@ -346,9 +310,9 @@ const EX_PRIX={mela18:22000,mela16:20000,cp18:25000,mdf18:20000,cp5:9000,chant:3
   paumelles:500,serrure:6000,espagnolette:3500,pattes:150,boulons:300,visbois:1500,chevilles:50,colle:2500,patins:100,sangles:500,mousse:12000,tissu:3000,led:2500,moraillon:500,supinv:1500,mastic:3500,vernis:6000,
   lame:2500,latte:2000,planche:6000,chevron:5000,madrier:15000,
   mousse12:15000,mousse5:6000,ouate:1500,toile:800,agrafes:1500,colleContact:4000,boutons:100,piedsBois:1000,piedsMetal:2500};
-const DEF_CAT=()=>({boutique:{nom:"",wa:"",commune:""},exemple:false,panneaux:[{id:"mela18",nom:"Mélaminé",ep:18,prix:0},{id:"mela16",nom:"Mélaminé",ep:16,prix:0},{id:"cp18",nom:"Contreplaqué",ep:18,prix:0},{id:"mdf18",nom:"MDF",ep:18,prix:0},{id:"cp5",nom:"Contreplaqué",ep:5,prix:0,dos:true}],sections:SECTIONS_DEF.map(x=>({...x,prix:0})),prix:{}});
+const DEF_CAT=()=>({boutique:{nom:"",wa:"",commune:""},exemple:false,panneaux:[{id:"mela18",nom:"Mélaminé",ep:18,prix:0},{id:"mela16",nom:"Mélaminé",ep:16,prix:0},{id:"cp18",nom:"Contreplaqué",ep:18,prix:0},{id:"mdf18",nom:"MDF",ep:18,prix:0},{id:"cp5",nom:"Contreplaqué",ep:5,prix:0,dos:true}],sections:[],prix:{}});
 let CAT=DEF_CAT(),AT={nom:"",tel:"",jour:0,marge:20,valid:15};
-try{const c=JSON.parse(localStorage.getItem("menuipro-catalogue")||"null");if(c&&c.panneaux)CAT={...DEF_CAT(),...c};if(!CAT.sections||!CAT.sections.length)CAT.sections=DEF_CAT().sections}catch(e){}
+try{const c=JSON.parse(localStorage.getItem("menuipro-catalogue")||"null");if(c&&c.panneaux)CAT={...DEF_CAT(),...c};if(!Array.isArray(CAT.sections))CAT.sections=[]}catch(e){}
 try{const a=JSON.parse(localStorage.getItem("menuipro-atelier")||"null");if(a)AT={...AT,...a}}catch(e){}
 let ME=null; // compte connecté : {user, profil, quinc}
 const saveCatLocal=()=>{try{localStorage.setItem("menuipro-catalogue",JSON.stringify(CAT))}catch(e){}};
@@ -365,7 +329,6 @@ function buyLines(ctx){
   const add=(e,label,detail,qty,unit)=>L.push({e,label,detail,qte:qty,pu:unit||null,total:unit?qty*unit:null});
   if(n18)add("🟫",panLabel(),n18+" feuille"+(n18>1?"s":"")+" 244 × 122",n18,pn?pn.prix:0);
   if(n5)add("🟫","Contreplaqué 5 mm",n5+" feuille"+(n5>1?"s":"")+" (dos, fonds, parements)",n5,dos.prix);
-  (lastRes.massif?lastRes.massif.sections:[]).forEach(x=>{const n=x.res.sheets.length;add("🪵",x.section.nom+" "+secTxt(x.section),n+" barre"+(n>1?"s":"")+" de "+cm(x.section.long/10)+" m",n,+x.section.prix||0)});
   if(chant>0){const m=Math.ceil(chant*1.1);add("🎞️","Bande de chant "+COLORS[st.color][0].toLowerCase(),m+" m (marge comprise)",m,artPrice("chant"))}
   const hc={};ctx.parts.forEach(p=>(p.holes||[]).forEach(h=>hc[h.kind]=(hc[h.kind]||0)+p.qty));
   const small=(ctx.hw.charn?ctx.hw.charn.qty:0)*4+Object.keys(ctx.hw).filter(k=>k.startsWith("coulisses")).reduce((t,k)=>t+ctx.hw[k].qty*8,0);
@@ -719,11 +682,6 @@ function renderCatalogue(){
     let armed=false;const del=el("button",{type:"button",class:"btn"},"🗑️");del.onclick=()=>{if(pn.dos)return;if(!armed){armed=true;del.textContent="Sûr ?";return}CAT.panneaux=CAT.panneaux.filter(x=>x!==pn);saveCat();renderCatalogue()};
     if(pn.dos)del.disabled=true;
     return el("tr",{},el("td",{},nm,pn.dos?el("div",{class:"note"},"utilisé pour les dos et fonds"):null),el("td",{},ep),el("td",{},pin(pn.prix,v=>pn.prix=v)),el("td",{},del));
-  })));
-  $("secTable").replaceChildren(el("thead",{},el("tr",{},el("th",{},"Bois"),el("th",{},"Épaisseur × largeur (cm)"),el("th",{},"Longueur (cm)"),el("th",{},"Prix de la barre (F)"))),el("tbody",{},CAT.sections.map(x=>{
-    const nm=el("input",{type:"text",style:"text-align:left;font-family:var(--body)"});nm.value=x.nom;nm.addEventListener("input",e=>{x.nom=e.target.value;saveCat()});
-    const num=(k,w)=>{const i=el("input",{type:"number",min:"1",step:"0.5",inputmode:"decimal",style:"max-width:"+w+"px"});i.value=x[k]/10;i.addEventListener("input",e=>{const v=parseFloat(String(e.target.value).replace(",","."));if(v>0){x[k]=Math.round(v*10);saveCat()}});return i};
-    return el("tr",{},el("td",{},nm),el("td",{},el("div",{class:"row",style:"gap:6px;flex-wrap:nowrap;align-items:center"},num("ep",70),"×",num("larg",70))),el("td",{},num("long",90)),el("td",{},pin(x.prix,v=>x.prix=v)));
   })));
   $("artTable").replaceChildren(el("thead",{},el("tr",{},el("th",{},"Article"),el("th",{},"Vendu par"),el("th",{},"Prix (F)"))),el("tbody",{},ARTICLES.map(([k,e,l,u])=>el("tr",{},el("td",{},e+" "+l),el("td",{},u),el("td",{},pin(CAT.prix[k],v=>CAT.prix[k]=v))))));
   const ro=!peutModifierPrix();

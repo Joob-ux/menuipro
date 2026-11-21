@@ -6,7 +6,7 @@
    - tourillons Ø8 borgnes quand le panneau repose dessous (plateaux)
    - taquets Ø5 sous les étagères mobiles ; charnières Ø35 sur les portes */
 export function computeHoles(ctx) {
-  const P = ctx.parts.filter(p => p.box && p.mat === "caisson" && !p.door && !p.drawer && !p.slide);
+  const P = ctx.parts.filter(p => p.box && p.mat === "caisson" && !p.plein && !p.door && !p.drawer && !p.slide);
   const lo = (p, i) => p.box[i], hi = (p, i) => p.box[i] + p.box[i + 3];
   const thin = p => { const d = [p.box[3], p.box[4], p.box[5]]; return d.indexOf(Math.min(...d)); };
   for (const B of P) {

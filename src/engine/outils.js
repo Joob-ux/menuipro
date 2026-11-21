@@ -9,9 +9,8 @@ export function outils(ctx) {
   if (has(p => p.drawer)) t.push(["➖", "Niveau + gabarit", "pose des coulisses"]);
   if (has(p => p.shelf)) t.push(["📐", "Gabarit de perçage + mèche 5 mm", "trous de taquets"]);
   if (has(p => p.look === "glass" || p.look === "mirror")) t.push(["🪟", "Ventouses / pose du verre", "verre coupé par le vitrier"]);
-  if (has(p => p.mat === "massif")) {
-    t.push(["🪵", "Dégauchisseuse / raboteuse", "mise à l'épaisseur du bois"], ["🪚", "Scie à ruban ou circulaire", "refente des planches"], ["🔨", "Mortaiseuse ou défonceuse", "tenons et mortaises"], ["🧴", "Colle à bois + serre-joints", "lamellé-collé"]);
-  } else if (has(p => p.look === "massif")) t.push(["🪚", "Scie à onglet", "lattes et tasseaux"]);
+  if (has(p => p.plein)) t.push(["🧴", "Colle à bois + serre-joints", "pièces contrecollées (bandes de panneau)"]);
+  if (has(p => p.look === "massif")) t.push(["🪚", "Scie à onglet", "lattes et tasseaux"]);
   return { tools: t, chant };
 }
 export function vis(ctx) {

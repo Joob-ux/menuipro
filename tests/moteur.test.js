@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { catalogueIA, validerAction } from "../src/assistant.js";
-import { RECIPES, BIENTOT, buildRecipe, pack, holeLocal, SHEET, debitMassif, SECTIONS_DEF, vueFace } from "../src/engine/index.js";
+import { RECIPES, BIENTOT, buildRecipe, pack, holeLocal, SHEET, vueFace } from "../src/engine/index.js";
 
 const variantes = r => {
   const base = {}; r.opts.forEach(x => (base[x.k] = x.def));
@@ -88,16 +88,10 @@ describe("Déco murale", () => {
     expect(Math.abs(gauche - droite)).toBeLessThan(1);
   });
   it("tasseaux en MDF plus hauts qu'une feuille : coupés en deux morceaux qui tiennent dans la feuille", () => {
-    const ctx = ctxDe("mur-tasseaux", { matiere: "panneau" }, [100, 300, 4]);
+    const ctx = ctxDe("mur-tasseaux", {}, [100, 300, 4]);
     const t = ctx.parts.filter(p => p.name.startsWith("Tasseau"));
     expect(t.every(p => p.cut[0] <= 2420)).toBe(true);
     expect(t.length).toBe(2 * 17); // 17 tasseaux de 4 cm + 16 écarts de 2 cm = 100 cm
-  });
-  it("le bois massif de chaque modèle trouve sa section (options mini et maxi)", () => {
-    for (const id of ids) for (const which of ["min", "max", "def"]) {
-      const r = RECIPES.find(x => x.id === id), o = {}; r.opts.forEach(x => (o[x.k] = x.choice ? x.def : which === "def" ? x.def : x[which]));
-      expect(debitMassif(ctxDe(id, o).parts).trop, r.nom + " " + which).toEqual([]);
-    }
   });
   it("fond, finition et fixations sont dans la liste de quincaillerie", () => {
     const hw = ctxDe("mur-tasseaux", { led: 1 }).hw;
@@ -145,53 +139,30 @@ describe("Plan de façade coté", () => {
   });
 });
 
-describe("Bois massif", () => {
-  const massifs = RECIPES.filter(r => r.massif);
-  it("les 7 meubles en bois massif sont disponibles et plus rien n'est « bientôt »", () => {
-    expect(massifs.length).toBe(7);
+describe("Plus de bois massif : tout en panneaux", () => {
+  it("les menuiseries tout en bois (porte pleine, fenêtre, lambris) sont retirées, plus rien n'est « bientôt »", () => {
+    for (const id of ["porte-pleine", "fenetre", "lambris"]) expect(RECIPES.find(r => r.id === id)).toBeFalsy();
     expect(BIENTOT.length).toBe(0);
   });
-  for (const r of massifs) {
-    for (const [nom, o] of Object.entries(variantes(r))) {
-      it(`${r.nom} (${nom}) : chaque pièce trouve sa section, barres sans chevauchement`, () => {
-        const ctx = build(r, o);
-        const bois = ctx.parts.filter(p => p.mat === "massif");
-        expect(bois.length).toBeGreaterThan(0);
-        const d = debitMassif(ctx.parts);
-        expect(d.trop).toEqual([]);
-        const total = d.sections.reduce((t, s) => t + s.items.length, 0);
-        expect(total).toBeGreaterThanOrEqual(bois.reduce((t, p) => t + p.qty, 0));
-        for (const { section, res } of d.sections) {
-          expect(res.over.length).toBe(0);
-          for (const b of res.sheets) {
-            expect(chevauche(b)).toBe(false);
-            for (const p of b.parts) { expect(p.x + p.pw).toBeLessThanOrEqual(section.long); expect(p.y + p.ph).toBeLessThanOrEqual(section.larg); }
-          }
-        }
-      });
+  it("aucun meuble ne contient de bois massif : les pièces épaisses sont des bandes de panneau collées", () => {
+    for (const r of RECIPES.filter(x => !x.dessin && !x.importe)) {
+      const o = {}; r.opts.forEach(x => (o[x.k] = x.def));
+      expect(build(r, o).parts.some(p => p.mat === "massif"), r.nom).toBe(false);
     }
-  }
-  it("une pièce plus large que la planche devient un panneau lamellé-collé", () => {
-    const d = debitMassif([{ name: "Plateau", mat: "massif", qty: 1, box: [0, 0, 0, 800, 27, 600] }]);
-    expect(d.trop).toEqual([]);
-    const it0 = d.sections[0].items;
-    expect(it0.length).toBeGreaterThan(1);
-    expect(it0.every(i => i.lamelle)).toBe(true);
-    expect(it0[0].l).toBe(820);
+    const chaise = build(RECIPES.find(r => r.id === "chaise"), { nombre: 4 });
+    const pied = chaise.parts.find(p => p.plein && /épaisseurs collées/.test(p.name));
+    expect(pied).toBeTruthy(); expect(pied.qty).toBe(4 * 3); // 4 chaises × 3 bandes de 18 mm pour un pied de 4 cm
+    expect(pied.holes.length).toBe(0);
   });
-  it("une pièce trop épaisse est signalée", () => {
-    const d = debitMassif([{ name: "Poteau", mat: "massif", qty: 1, box: [0, 0, 0, 100, 5000, 100] }]);
-    expect(d.trop.length).toBe(1);
-  });
-  it("les sections du catalogue remplacent celles par défaut", () => {
-    const sec = SECTIONS_DEF.map(s => ({ ...s, long: 3000 }));
-    const d = debitMassif([{ name: "Montant", mat: "massif", qty: 1, box: [0, 0, 0, 65, 3500, 80] }], sec);
-    // Plus long que les barres de 3 m du catalogue : abouté avec un joint, compté sur ces barres.
-    expect(d.trop.length).toBe(0);
-    expect(d.sections[0].section.long).toBe(3000);
-    expect(d.sections[0].res.joints.length).toBe(1);
+  it("canapé rembourré : la structure est comptée en feuilles de panneau", () => {
+    const r = RECIPES.find(x => x.id === "canape");
+    const o = {}; r.opts.forEach(x => (o[x.k] = x.def));
+    const ctx = build(r, o), it2 = items(ctx);
+    expect(ctx.parts.filter(p => p.plein).length).toBeGreaterThan(0);
+    expect(pack(it2.caisson, 4, true).over.length).toBe(0);
   });
 });
+
 
 describe("Assistant vocal : contrôle des actions de l'IA", () => {
   it("le catalogue envoyé à l'IA contient tous les meubles et reste léger", () => {
@@ -634,11 +605,5 @@ describe("Grandes cotes : nombre exact de feuilles", () => {
         expect(res.sheets.length).toBeGreaterThanOrEqual(Math.ceil(surf / (2420 * 1200)));
       }
     }
-  });
-  it("bois massif plus long que les barres : abouté, compté", () => {
-    const r = debitMassif([{ mat: "massif", name: "Longue traverse", box: [0, 0, 0, 6000, 40, 40], qty: 1 }], SECTIONS_DEF, 4);
-    expect(r.trop.length).toBe(0);
-    expect(r.sections[0].res.over.length).toBe(0);
-    expect(r.sections[0].res.joints.length).toBe(1);
   });
 });

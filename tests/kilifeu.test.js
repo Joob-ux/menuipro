@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { RECIPES, buildRecipe, debitMassif, pack } from "../src/engine/index.js";
+import { RECIPES, buildRecipe, pack } from "../src/engine/index.js";
 import { MODELES_KILIFEU, FAMILLES_KILIFEU } from "../src/kilifeu.js";
 
 const R = id => RECIPES.find(r => r.id === id);
@@ -30,12 +30,12 @@ describe("Modèles ETS KILIFEU", () => {
       }
     }
   });
-  it("chaque modèle se construit : pas de cote invalide, tout le bois trouve sa section, panneaux plaçables", () => {
+  it("chaque modèle se construit : pas de cote invalide, plus de bois massif, panneaux plaçables", () => {
     for (const m of MODELES_KILIFEU) {
       const c = construire(m);
       expect(c.parts.length, m.nom).toBeGreaterThan(0);
       expect(c.parts.every(p => !p.box || p.box.every(Number.isFinite)), m.nom).toBe(true);
-      expect(debitMassif(c.parts).trop, m.nom).toEqual([]);
+      expect(c.parts.some(p => p.mat === "massif"), m.nom).toBe(false);
       const items = c.parts.filter(p => p.mat === "caisson" && p.cut).flatMap(p => Array.from({ length: p.qty }, () => ({ l: p.cut[0], w: p.cut[1], name: p.name })));
       expect(pack(items, 4, true).over, m.nom).toEqual([]);
     }

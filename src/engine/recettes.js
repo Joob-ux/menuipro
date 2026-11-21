@@ -364,15 +364,15 @@ function panneauDecoupe(c, nom, mat, x0, y0, z0, W, H, T, edge = 0, look) {
 const vernis = (c, m2) => hw(c, "vernis", "🖌️", "Vernis ou peinture (2 couches)", Math.max(0.5, Math.ceil(m2 * 2 / 10 * 2) / 2), "L");
 
 rec({ id: "mur-tasseaux", nom: "Mur en tasseaux", e: "🎋", cat: DECO, dims: [200, 240, 4], dimMin: [30, 30, 2], dimLabels: ["Largeur du mur", "Hauteur", "Largeur d'un tasseau"],
-  opts: [stp("ecart", "Écart entre tasseaux (cm)", "↔️", 2, 1, 10), chx("matiere", "Tasseaux en", [["massif", "Bois massif"], ["panneau", "MDF / mélaminé"]], "massif"), chx("fond", "Fond", [["noir", "Panneau de fond noir"], ["aucun", "Directement sur le mur"]], "noir"), stp("led", "Ruban LED sur les côtés", "💡", 0, 0, 1)],
+  opts: [stp("ecart", "Écart entre tasseaux (cm)", "↔️", 2, 1, 10), chx("fond", "Fond", [["noir", "Panneau de fond noir"], ["aucun", "Directement sur le mur"]], "noir"), stp("led", "Ruban LED sur les côtés", "💡", 0, 0, 1)],
   build(c, p, o) {
-    const w = p.P, e = o.ecart * 10, massif = o.matiere === "massif", T = massif ? 27 : c.E, zf = o.fond === "noir" ? 5 : 0;
+    const w = p.P, e = o.ecart * 10, T = c.E, zf = o.fond === "noir" ? 5 : 0;
     const n = Math.max(1, Math.floor((p.L + e) / (w + e))), x0 = (p.L - (n * w + (n - 1) * e)) / 2;
     if (zf) { const k = panneauDecoupe(c, "Panneau de fond (à peindre en noir)", "dos", 0, 0, 0, p.L, p.H, 5, 0, "noir"); hw(c, "fixmur", "🔩", "Fixations murales + chevilles", 4 * k); }
     // Un tasseau en panneau ne dépasse pas la longueur d'une feuille : au-delà, il est fait en deux morceaux.
-    const morceaux = !massif && p.H > 2400 ? 2 : 1;
+    const morceaux = p.H > 2400 ? 2 : 1;
     for (let i = 0; i < n; i++) for (let m = 0; m < morceaux; m++)
-      add(c, "Tasseau " + (i + 1) + (morceaux > 1 ? (m ? " (haut)" : " (bas)") : ""), massif ? "massif" : "caisson", [x0 + i * (w + e), m * p.H / morceaux, zf, w, p.H / morceaux, T], massif ? { flags: { section: "latte" } } : { edge: 2 * p.H / morceaux });
+      add(c, "Tasseau " + (i + 1) + (morceaux > 1 ? (m ? " (haut)" : " (bas)") : ""), "caisson", [x0 + i * (w + e), m * p.H / morceaux, zf, w, p.H / morceaux, T], { edge: 2 * p.H / morceaux });
     // Collage par plots : environ 10 m de tasseau par cartouche.
     hw(c, "mastic", "🧴", "Colle mastic de fixation", Math.ceil(n * p.H / 1000 / 10), "cartouche(s)");
     hw(c, "pointes", "🔨", "Pointes sans tête", n * Math.ceil(p.H / 400) * 2);
@@ -449,14 +449,14 @@ rec({ id: "niches-murales", nom: "Niches murales", e: "🔳", cat: DECO, dims: [
     hw(c, "fixmur", "🔩", "Fixations murales + chevilles", 2 * o.nombre);
   } });
 
-/* Bientôt (bois massif, menuiserie de bâtiment) */
+/* Bientôt */
 export const BIENTOT = [];
 
-/* ===================== BOIS MASSIF ===================== */
-// Pièce en bois massif : la section (planche, chevron, madrier…) est choisie au débit, ou imposée par « sec ».
+/* ===================== PIÈCES ÉPAISSES ===================== */
+// Pièce épaisse (montant, chevron, pied…) : faite en bandes de panneau contrecollées (voir add dans blocs.js).
 const M = (c, name, box, sec, extra = {}) => add(c, name, "massif", box, { flags: { section: sec, ...extra } });
 
-rec({ id: "lit-superpose", nom: "Lit superposé", e: "🪜", cat: "Chambre", massif: true, dims: [90, 165, 190], dimLabels: ["Largeur matelas", "Hauteur totale", "Longueur matelas"], opts: [stp("echelle", "Échelle", "🪜", 1, 0, 1)], build(c, p, o) {
+rec({ id: "lit-superpose", nom: "Lit superposé", e: "🪜", cat: "Chambre", dims: [90, 165, 190], dimLabels: ["Largeur matelas", "Hauteur totale", "Longueur matelas"], opts: [stp("echelle", "Échelle", "🪜", 1, 0, 1)], build(c, p, o) {
   const L = p.L, H = p.H, P = p.P, pw = 65, pd = 80, D = P + 2 * pd, X2 = L + pw;
   [[0, 0], [X2, 0], [0, D - pd], [X2, D - pd]].forEach(([x, z], i) => M(c, "Montant " + (i + 1), [x, 0, z, pw, H, pd], "chevron"));
   const niveaux = [250, Math.max(900, H - 650)];
@@ -485,7 +485,7 @@ rec({ id: "lit-superpose", nom: "Lit superposé", e: "🪜", cat: "Chambre", mas
   hw(c, "visbois", "🔩", "Vis à bois 5 × 60", 40);
 } });
 
-rec({ id: "chaise", nom: "Chaise", e: "🪑", cat: "Salon", massif: true, dims: [44, 90, 44], dimMin: [30, 60, 30], dimLabels: ["Largeur", "Hauteur du dossier", "Profondeur"], opts: [stp("nombre", "Nombre de chaises", "🪑", 4, 1, 12)], build(c, p, o) {
+rec({ id: "chaise", nom: "Chaise", e: "🪑", cat: "Salon", dims: [44, 90, 44], dimMin: [30, 60, 30], dimLabels: ["Largeur", "Hauteur du dossier", "Profondeur"], opts: [stp("nombre", "Nombre de chaises", "🪑", 4, 1, 12)], build(c, p, o) {
   const L = p.L, H = p.H, P = p.P, A = 450, f = 40;
   const q = { qty: o.nombre };
   M(c, "Pied avant gauche", [0, 0, P - f, f, A, f], null, q); M(c, "Pied avant droit", [L - f, 0, P - f, f, A, f], null, q);
@@ -498,7 +498,7 @@ rec({ id: "chaise", nom: "Chaise", e: "🪑", cat: "Salon", massif: true, dims: 
   hw(c, "patins", "⚪", "Patins de pieds", 4 * o.nombre);
 } });
 
-rec({ id: "canape", nom: "Cadre de canapé", e: "🛋️", cat: "Salon", massif: true, dims: [200, 85, 85], opts: [stp("places", "Places", "🛋️", 3, 2, 4)], build(c, p, o) {
+rec({ id: "canape", nom: "Cadre de canapé", e: "🛋️", cat: "Salon", dims: [200, 85, 85], opts: [stp("places", "Places", "🛋️", 3, 2, 4)], build(c, p, o) {
   const L = p.L, H = p.H, P = p.P, s = 65, h = 80, yA = 180;
   [[0, 0], [L - s, 0], [0, P - s], [L - s, P - s]].forEach(([x, z], i) => M(c, "Pied " + (i + 1), [x, 0, z, s, yA, s], "chevron"));
   M(c, "Longeron avant", [0, yA, P - s, L, h, s], "chevron"); M(c, "Longeron arrière", [0, yA, 0, L, h, s], "chevron");
@@ -520,18 +520,7 @@ function huisserie(c, L, H) {
   M(c, "Huisserie traverse", [-70, H + 5, -20, L + 140, 65, 80], "chevron");
   hw(c, "pattes", "🔩", "Pattes de scellement", 6);
 }
-rec({ id: "porte-pleine", nom: "Porte pleine en bois massif", e: "🚪", cat: "Portes et autres", massif: true, dims: [83, 204, 4], dimMin: [40, 100, 3], dimLabels: DIMS_PORTE, opts: [stp("huisserie", "Avec huisserie", "🧱", 1, 0, 1)], build(c, p, o) {
-  const L = p.L, H = p.H, T = p.P, m = 120;
-  M(c, "Montant gauche", [0, 0, 0, m, H, T]); M(c, "Montant droit", [L - m, 0, 0, m, H, T]);
-  M(c, "Traverse basse", [m, 0, 0, L - 2 * m, 200, T]); M(c, "Traverse du milieu", [m, H / 2 - 75, 0, L - 2 * m, 150, T]); M(c, "Traverse haute", [m, H - m, 0, L - 2 * m, m, T]);
-  const pe = Math.max(15, T - 20);
-  M(c, "Panneau bas", [m, 200, (T - pe) / 2, L - 2 * m, H / 2 - 75 - 200, pe]);
-  M(c, "Panneau haut", [m, H / 2 + 75, (T - pe) / 2, L - 2 * m, H / 2 - 75 - m, pe]);
-  if (o.huisserie) huisserie(c, L, H);
-  hw(c, "paumelles", "⚙️", "Paumelles", 3); hw(c, "serrure", "🔒", "Serrure + cylindre", 1); hw(c, "poignees", "🚪", "Poignée de porte", 1);
-  hw(c, "colle", "🧴", "Colle à bois", 1);
-} });
-rec({ id: "porte-isoplane", nom: "Porte isoplane", e: "🚪", cat: "Portes et autres", massif: true, dims: [83, 204, 4], dimMin: [40, 100, 3], dimLabels: DIMS_PORTE, opts: [stp("huisserie", "Avec huisserie", "🧱", 1, 0, 1)], build(c, p, o) {
+rec({ id: "porte-isoplane", nom: "Porte isoplane", e: "🚪", cat: "Portes et autres", dims: [83, 204, 4], dimMin: [40, 100, 3], dimLabels: DIMS_PORTE, opts: [stp("huisserie", "Avec huisserie", "🧱", 1, 0, 1)], build(c, p, o) {
   const L = p.L, H = p.H, T = p.P, ec = T - 10, b = 40;
   M(c, "Cadre montant gauche", [0, 0, 5, b, H, ec]); M(c, "Cadre montant droit", [L - b, 0, 5, b, H, ec]);
   M(c, "Cadre traverse basse", [b, 0, 5, L - 2 * b, b, ec]); M(c, "Cadre traverse haute", [b, H - b, 5, L - 2 * b, b, ec]);
@@ -541,39 +530,5 @@ rec({ id: "porte-isoplane", nom: "Porte isoplane", e: "🚪", cat: "Portes et au
   if (o.huisserie) huisserie(c, L, H);
   hw(c, "paumelles", "⚙️", "Paumelles", 3); hw(c, "serrure", "🔒", "Serrure + cylindre", 1); hw(c, "poignees", "🚪", "Poignée de porte", 1);
   hw(c, "colle", "🧴", "Colle à bois", 1); hw(c, "pointes", "🔨", "Pointes", Math.ceil((2 * (L + H) * 2) / 100));
-} });
-rec({ id: "fenetre", nom: "Fenêtre / persienne", e: "🪟", cat: "Portes et autres", massif: true, dims: [120, 140, 8], dimMin: [40, 40, 5], dimLabels: ["Largeur", "Hauteur", "Épaisseur du dormant"], opts: [stp("vantaux", "Vantaux", "🪟", 2, 1, 2)], build(c, p, o) {
-  const L = p.L, H = p.H, T = p.P, d = 65;
-  M(c, "Dormant montant gauche", [0, 0, 0, d, H, T], "chevron"); M(c, "Dormant montant droit", [L - d, 0, 0, d, H, T], "chevron");
-  M(c, "Dormant traverse basse", [d, 0, 0, L - 2 * d, d, T], "chevron"); M(c, "Dormant traverse haute", [d, H - d, 0, L - 2 * d, d, T], "chevron");
-  const n = o.vantaux, wv = (L - 2 * d - G * (n + 1)) / n, hv = H - 2 * d - 2 * G, yv = d + G, ev = 45;
-  for (let v = 0; v < n; v++) {
-    const x = d + G + v * (wv + G), nm = n > 1 ? " (vantail " + (v + 1) + ")" : "";
-    M(c, "Montant gauche" + nm, [x, yv, 10, 50, hv, ev]); M(c, "Montant droit" + nm, [x + wv - 50, yv, 10, 50, hv, ev]);
-    M(c, "Traverse basse" + nm, [x + 50, yv, 10, wv - 100, 70, ev]); M(c, "Traverse haute" + nm, [x + 50, yv + hv - 60, 10, wv - 100, 60, ev]);
-    const nl = Math.max(1, Math.floor((hv - 130) / 45));
-    for (let i = 0; i < nl; i++) M(c, "Lame" + nm + " " + (i + 1), [x + 50, yv + 70 + i * 45, 18, wv - 100, 55, 12], "lame");
-  }
-  hw(c, "paumelles", "⚙️", "Paumelles", 2 * n); hw(c, "espagnolette", "🔒", "Espagnolette / crémone", 1); hw(c, "colle", "🧴", "Colle à bois", 1);
-} });
-rec({ id: "lambris", nom: "Faux plafond / lambris", e: "🏠", cat: "Portes et autres", massif: true, dims: [400, 280, 300], dimLabels: ["Longueur de la pièce", "Hauteur sous plafond", "Largeur de la pièce"], opts: [], build(c, p) {
-  const L = p.L, H = p.H, P = p.P, utile = 90, maxL = 3980;
-  // Lames pleine longueur ; le complément (au moins 60 cm) est pris dans les chutes, qui servent à plusieurs rangs.
-  const rangs = Math.ceil(P / utile), longs = [];
-  let reste = L;
-  while (reste > maxL) { longs.push(maxL); reste -= maxL; }
-  if (longs.length && reste < 600) { longs[longs.length - 1] -= 600 - reste; reste = 600; }
-  longs.push(reste);
-  for (let r = 0; r < rangs; r++) {
-    let x = 0;
-    longs.forEach((lg, k) => {
-      M(c, "Lame rang " + (r + 1) + (longs.length > 1 ? " (" + (k + 1) + "/" + longs.length + ")" : ""), [x, H - 15, r * utile, lg, 15, Math.min(100, P - r * utile + 10)], "lame");
-      x += lg;
-    });
-  }
-  const nt = Math.floor(L / 400) + 1;
-  for (let i = 0; i < nt; i++) M(c, "Tasseau " + (i + 1), [Math.min(i * 400, L - 27), H - 15 - 27, 0, 27, 27, P], "latte");
-  hw(c, "chevilles", "🔩", "Chevilles + vis de fixation des tasseaux", nt * Math.ceil(P / 600));
-  hw(c, "pointes", "🔨", "Pointes de lambris", rangs * nt);
 } });
 

@@ -12,6 +12,17 @@ export const G = 3; // jeu entre façades (mm)
 export function newCtx(p) { return { E: p.ep, parts: [], hw: {}, p }; }
 
 export function add(ctx, name, mat, box, o = {}) {
+  // L'atelier travaille en panneaux (mélaminé, contreplaqué) : une pièce épaisse (pied, tasseau, cadre…)
+  // est faite de bandes de panneau collées les unes sur les autres (contrecollé), découpées sur les feuilles.
+  if (mat === "massif") {
+    const d = box ? [box[3], box[4], box[5]].sort((a, b) => b - a) : null, E = ctx.E;
+    if (d) {
+      const couches = d[2] <= E * 1.3 ? 1 : Math.ceil(d[2] / E);
+      return add(ctx, name + (couches > 1 ? " (" + couches + " épaisseurs collées)" : ""), "caisson", box,
+        { cut: [d[0], d[1]], edge: 0, flags: { ...(o.flags || {}), section: undefined, plein: true, qty: ((o.flags && o.flags.qty) || o.qty || 1) * couches } });
+    }
+    mat = "caisson";
+  }
   let cut = o.cut;
   if (!cut && box) { const d = [box[3], box[4], box[5]].sort((a, b) => b - a); cut = [d[0], d[1]]; }
   const part = Object.assign({
