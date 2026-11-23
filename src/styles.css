@@ -472,3 +472,6 @@ body.verrou>.scanner,body.verrou>.modal-carte{display:flex!important}
 .fam-admin summary{cursor:pointer;font-weight:800;padding:6px 0}
 .ligne-modele{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px dashed var(--line)}
 .ligne-modele.retire span{opacity:.5;text-decoration:line-through}
+
+/* Cote fixe (non modifiable) */
+.num input.fixe{background:#eee;color:#555;cursor:not-allowed}

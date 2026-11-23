@@ -12,9 +12,9 @@
    ne mélangent pas les deux murs). L'électroménager est en 3D seulement : il n'entre ni dans la découpe
    ni dans la liste d'achat (le client l'achète). */
 import { add3d, hw, caisse, planTravail } from "./blocs.js";
-import { RECIPES, stp, chx, basCuisine, hautCuisine, evierCuisine } from "./recettes.js";
+import { RECIPES, stp, chx, basCuisine, hautCuisine, evierCuisine, traversesHaut, CAISSON_BAS, HAUT_FINI, PDT_CUISINE, profCorps, DIMS_CAISSON } from "./recettes.js";
 
-const PDT = 38; // épaisseur du plan de travail (mm)
+const PDT = PDT_CUISINE; // épaisseur du plan de travail (mm)
 export const ELECTRO = {
   cuisiniere60: { W: 600, nom: "Cuisinière 60 cm" },
   cuisiniere90: { W: 900, nom: "Cuisinière 90 cm" },
@@ -73,14 +73,15 @@ function cuisiniere(c, x, W, H) {
 }
 function plaqueFour(c, x, W, H, D) {
   // Caisson four : ouvert devant (le four se glisse dedans), un tiroir en bas ; plaque posée dans le plan de travail.
-  caisse(c, x, 0, 0, W, H - PDT, D, { nom: "Caisson four", socle: 100, dessus: false, colonnes: [[{ t: "tiroirs", n: 1, h: 120 }, { t: "niche", h: 600 }]] });
-  hw(c, "piedsreg", "🦵", "Pieds réglables de cuisine", 4);
+  c._debutCaisson = c.parts.length;
+  caisse(c, x, 0, 0, W, H - PDT, D, { nom: "Caisson four", socle: CAISSON_BAS.socle, dessus: false, colonnes: [[{ t: "tiroirs", n: 1, h: 120 }, { t: "niche", h: 580 }]] });
+  traversesHaut(c, x, W, H - PDT, D, "Caisson four · ");
   hw(c, "decoupePlaque", "🪚", "Découpe de la plaque dans le plan de travail", 1);
   const yf = 100 + c.E + 120 + c.E + 10;
   add3d(c, "electro", [x + 25, yf, D - 20, W - 50, 580, 20]);
   add3d(c, "noir", [x + 60, yf + 60, D, W - 120, 380, 6]);
   add3d(c, "metal", [x + 70, yf + 480, D, W - 140, 18, 24]);
-  add3d(c, "noir", [x + 40, H, 40, W - 80, 6, Math.min(520, D)]);              // plaque vitrocéramique
+  add3d(c, "noir", [x + 40, H, 30, W - 80, 6, Math.min(420, D)]);              // plaque vitrocéramique
 }
 function hotte(c, x, W, y, yHaut, Hh) {
   const Wh = Math.min(W, 900);
@@ -110,16 +111,17 @@ function construireMur(c, mods, o, nHauts, mur, nm) {
     if (m.type === "frigo") { fermer(m.x); frigo(c, m.x, m.W, 1800); continue; }
     if (m.type === "cuisson" && o.cuisson !== "plaque") { fermer(m.x); cuisiniere(c, m.x, m.W, H); continue; }
     ouvrir(m.x);
-    if (m.type === "evier") evierCuisine(c, m.x, m.W, { nom: nm + "Caisson évier", H, D });
+    if (m.type === "evier") evierCuisine(c, m.x, m.W, { nom: nm + "Caisson évier" });
     else if (m.type === "lv") laveVaisselle(c, m.x, H, D);
     else if (m.type === "cuisson") plaqueFour(c, m.x, m.W, H, D);
     else if (m.type === "angle") {
       // Caisson d'angle : la partie contre le retour est cachée (façade fixe), une porte sur la partie libre.
       const gauche = o.retour !== "droite", Wl = m.W - Pt;
-      caisse(c, m.x, 0, 0, m.W, H - PDT, D, { nom: "Caisson d'angle", socle: 100, dessus: false, colonnes: gauche ? [[{ t: "etageres", n: 1 }], [{ t: "etageres", n: 1, portes: { n: 1 } }]] : [[{ t: "etageres", n: 1, portes: { n: 1 } }], [{ t: "etageres", n: 1 }]], largeurs: gauche ? [Pt, Wl] : [Wl, Pt] });
-      hw(c, "piedsreg", "🦵", "Pieds réglables de cuisine", 4);
+      c._debutCaisson = c.parts.length;
+      caisse(c, m.x, 0, 0, m.W, H - PDT, D, { nom: "Caisson d'angle", socle: CAISSON_BAS.socle, dessus: false, colonnes: gauche ? [[{ t: "etageres", n: 1 }], [{ t: "etageres", n: 1, portes: { n: 1 } }]] : [[{ t: "etageres", n: 1, portes: { n: 1 } }], [{ t: "etageres", n: 1 }]], largeurs: gauche ? [Pt, Wl] : [Wl, Pt] });
+      traversesHaut(c, m.x, m.W, H - PDT, D, "Caisson d'angle · ");
     }
-    else basCuisine(c, m.x, m.W, { nom: nm + "Caisson bas " + (++nb), tiroirs: m.type === "tiroirs" ? 3 : 1, H, D });
+    else basCuisine(c, m.x, m.W, { nom: nm + "Caisson bas " + (++nb), tiroirs: m.type === "tiroirs" ? 3 : 0 });
   }
   const fin = mods.length ? mods[mods.length - 1].x + mods[mods.length - 1].W : 0;
   fermer(fin);
@@ -151,7 +153,8 @@ function construireMur(c, mods, o, nHauts, mur, nm) {
 
 export function construireCuisine(c, p, o0) {
   const o = {
-    ...o0, H: p.H, D: p.P, Pt: p.P + 40, Wb: p.L,
+    // Système de caisson unique : hauteur et profondeur fixes, seule la largeur vient des cotes.
+    ...o0, H: HAUT_FINI, D: profCorps(c), Pt: CAISSON_BAS.plan, Wb: p.L,
     Wh: (+o0.largeurHaut || 60) * 10, Hh: (+o0.hauteurHaut || 70) * 10, Dh: (+o0.profHaut || 33) * 10
   };
   const L = o.forme === "L";
@@ -173,8 +176,8 @@ export function construireCuisine(c, p, o0) {
   c.cuisine.mur2 = l2; c.cuisine.modules.push(m2);
 }
 
-const CUISINE = ({ id: "cuisine", nom: "Cuisine en I ou en L", e: "🍳", cat: "Cuisine", dims: [60, 87, 56], dimMin: [30, 70, 40],
-  dimLabels: ["Largeur d'un caisson bas", "Hauteur (avec plan de travail)", "Profondeur des caissons bas"],
+const CUISINE = ({ id: "cuisine", nom: "Cuisine en I ou en L", e: "🍳", cat: "Cuisine", dims: [60, 82, 46], dimMin: [30, 82, 46],
+  ...DIMS_CAISSON, dimLabels: ["Largeur d'un caisson bas", "Hauteur (fixe)", "Profondeur façades comprises (fixe)"],
   opts: [
     chx("forme", "Forme de la cuisine", [["I", "▬ En I (un mur)"], ["L", "⌐ En L (deux murs)"]], "I"),
     { ...chx("retour", "Le 2e mur est", [["gauche", "⬅️ À gauche"], ["droite", "➡️ À droite"]], "gauche"), si: o => o.forme === "L" },

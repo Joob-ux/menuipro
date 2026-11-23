@@ -137,35 +137,65 @@ rec({ id: "table-manger", nom: "Table à manger", e: "🍽️", cat: "Salon", di
 } });
 
 /* ----- Cuisine ----- */
-export function basCuisine(c, x, W, o) {
-  // H : hauteur finie, plan de travail (38 mm) compris ; D : profondeur du caisson.
-  const H = o.H || 870, D = o.D || 560, zones = o.tiroirs >= 2 ? [{ t: "tiroirs", n: o.tiroirs }] : o.tiroirs === 1 ? [{ t: "etageres", n: 1, portes: { n: W > 600 ? 2 : 1 } }, { t: "tiroirs", n: 1, h: 150 }] : [{ t: "etageres", n: 1, portes: { n: W > 600 ? 2 : 1 } }];
-  caisse(c, x, 0, 0, W, H - 38, D, { nom: o.nom, socle: 100, dessus: false, colonnes: [zones] });
-  hw(c, "piedsreg", "🦵", "Pieds réglables de cuisine", 4);
+/* Système de caisson bas unique (le même pour toutes les cuisines, seule la largeur change) :
+   - hauteur 82 cm = caisson 72 cm + socle 10 cm ; les côtés descendent jusqu'au sol, plinthe en retrait ;
+   - profondeur 46 cm façades comprises (corps = 46 cm − épaisseur de la porte) ;
+   - pas de dessus : deux traverses de 10 cm (avant et arrière) tiennent le plan de travail ;
+   - dos 5 mm, une étagère, 2 portes (1 seule sous 45 cm de large).
+   Le plan de travail (38 mm) se pose au-dessus des 82 cm. */
+export const CAISSON_BAS = { H: 820, P: 460, socle: 100, traverse: 100, plan: 500 };
+export const PDT_CUISINE = 38;
+export const HAUT_FINI = CAISSON_BAS.H + PDT_CUISINE; // dessus du plan de travail
+export const profCorps = c => CAISSON_BAS.P - c.E;
+export const portesCaisson = W => (W >= 450 ? 2 : 1);
+// Sans dessus, les façades (portes, tiroirs) dépasseraient de E/2 en haut : on les descend pour qu'elles
+// couvrent exactement du socle jusqu'au haut du caisson (82 cm).
+export function recalerFacades(c, debut) {
+  const d = c.E / 2;
+  for (const p of c.parts.slice(debut)) {
+    if (!(p.door || p.drawer) || !p.box) continue;
+    p.box = p.box.slice(); p.box[1] -= d;
+    for (const h of p.holes || []) h.p = [h.p[0], h.p[1] - d, h.p[2]];
+    if (p.tiroir) p.tiroir = { ...p.tiroir, y: p.tiroir.y - d };
+  }
+}
+export function traversesHaut(c, x, W, H, D, nm) {
+  recalerFacades(c, c._debutCaisson ?? 0); delete c._debutCaisson;
+  const E = c.E, T = CAISSON_BAS.traverse;
+  add(c, nm + "Traverse avant", "caisson", [x + E, H - E, D - T, W - 2 * E, E, T], { edge: W - 2 * E });
+  add(c, nm + "Traverse arrière", "caisson", [x + E, H - E, 0, W - 2 * E, E, T], { edge: 0 });
+}
+export function basCuisine(c, x, W, o = {}) {
+  const { H, socle } = CAISSON_BAS, D = profCorps(c), np = portesCaisson(W);
+  const zones = o.tiroirs >= 2 ? [{ t: "tiroirs", n: o.tiroirs }] : o.tiroirs === 1 ? [{ t: "etageres", n: 1, portes: { n: np } }, { t: "tiroirs", n: 1, h: 150 }] : [{ t: "etageres", n: 1, portes: { n: np } }];
+  c._debutCaisson = c.parts.length;
+  caisse(c, x, 0, 0, W, H, D, { nom: o.nom, socle, dessus: false, colonnes: [zones] });
+  traversesHaut(c, x, W, H, D, o.nom ? o.nom + " · " : "");
 }
 export function hautCuisine(c, x, W, nom, y = 1450, H = 700, D = 330) {
   caisse(c, x, y, 0, W, H, D, { nom, colonnes: [[{ t: "etageres", n: H >= 600 ? 1 : 0, portes: { n: W > 600 ? 2 : 1 } }]] });
   hw(c, "fixhaut", "🔩", "Fixations meubles hauts", 2);
 }
-/* Caisson évier : pas de dos ni d'étagère (passage des tuyaux et du siphon), deux traverses en haut
-   pour tenir le plan de travail, portes battantes. L'évier se pose dans une découpe du plan de travail. */
+/* Caisson évier : même système, mais sans dos ni étagère (passage des tuyaux et du siphon).
+   L'évier se pose dans une découpe du plan de travail. */
 export function evierCuisine(c, x, W, o = {}) {
-  const E = c.E, H = (o.H || 870) - 38, D = o.D || 560, nm = (o.nom || "Évier") + " · ";
-  caisse(c, x, 0, 0, W, H, D, { nom: o.nom || "Évier", socle: 100, dessus: false, dos: false, colonnes: [[{ t: "etageres", n: 0, portes: { n: W > 600 ? 2 : 1 } }]] });
-  add(c, nm + "Traverse avant", "caisson", [x + E, H - E, D - 100, W - 2 * E, E, 100], { edge: W - 2 * E });
-  add(c, nm + "Traverse arrière", "caisson", [x + E, H - E, 0, W - 2 * E, E, 100], { edge: 0 });
-  hw(c, "piedsreg", "🦵", "Pieds réglables de cuisine", 4);
+  const { H, socle } = CAISSON_BAS, D = profCorps(c), nm = (o.nom || "Évier") + " · ";
+  c._debutCaisson = c.parts.length;
+  caisse(c, x, 0, 0, W, H, D, { nom: o.nom || "Évier", socle, dessus: false, dos: false, colonnes: [[{ t: "etageres", n: 0, portes: { n: portesCaisson(W) } }]] });
+  traversesHaut(c, x, W, H, D, nm);
   // Évier, robinet et évacuation : visibles en 3D, comptés dans la liste d'achat.
-  const bacs = W >= 1000 ? 2 : 1, lb = Math.min(W - 160, bacs === 2 ? 860 : 500), y = H + 38;
-  for (let b = 0; b < bacs; b++) add3d(c, "metal", [x + (W - lb) / 2 + b * (lb / bacs) + 10, y - 2, 120, lb / bacs - 20, 6, Math.min(380, D - 180)]);
-  add3d(c, "metal", [x + W / 2 - 15, y, 40, 30, 260, 30]);
-  add3d(c, "metal", [x + W / 2 - 12, y + 230, 40, 24, 24, 190]);
+  const bacs = W >= 1000 ? 2 : 1, lb = Math.min(W - 160, bacs === 2 ? 860 : 500), y = HAUT_FINI;
+  for (let b = 0; b < bacs; b++) add3d(c, "metal", [x + (W - lb) / 2 + b * (lb / bacs) + 10, y - 2, 80, lb / bacs - 20, 6, Math.min(340, D - 100)]);
+  add3d(c, "metal", [x + W / 2 - 15, y, 30, 30, 260, 30]);
+  add3d(c, "metal", [x + W / 2 - 12, y + 230, 30, 24, 24, 170]);
   hw(c, "evier", "🚰", bacs === 2 ? "Évier inox 2 bacs" : "Évier inox 1 bac", 1);
   hw(c, "robinet", "🚿", "Robinet mitigeur d'évier", 1);
   hw(c, "siphon", "🔧", "Siphon + bonde d'évier", 1);
   hw(c, "silicone", "🧴", "Silicone sanitaire (joint évier)", 1, "tube");
   hw(c, "decoupe", "🪚", "Découpe de l'évier dans le plan de travail", 1);
 }
+// Cotes affichées pour les caissons bas : seule la largeur se règle.
+export const DIMS_CAISSON = { fixes: [false, true, true], dimLabels: ["Largeur du caisson", "Hauteur (fixe)", "Profondeur façades comprises (fixe)"] };
 
 /* Cuisine en caissons : la longueur est partagée en modules d'environ 60 cm autour du caisson évier.
    Renvoie la liste des modules [{ x, W, type }] (utile aux tests et au dessin). */
@@ -189,7 +219,7 @@ export function modulesCuisine(L, o) {
   ordre.slice(0, o.tiroirs || 0).forEach(i => mods[i].type = "tiroirs");
   return mods;
 }
-rec({ id: "cuisine-bas", nom: "Caisson bas de cuisine", e: "🧽", cat: "Cuisine", dims: [60, 87, 56], fixedHP: true, opts: [stp("tiroirs", "Tiroirs", "🗄️", 1, 0, 4)], build(c, p, o) { basCuisine(c, 0, p.L, { tiroirs: o.tiroirs }); planTravail(c, 0, 832, 0, p.L, 600); } });
+rec({ id: "cuisine-bas", nom: "Caisson bas de cuisine", e: "🧽", cat: "Cuisine", dims: [60, 82, 46], dimMin: [30, 82, 46], ...DIMS_CAISSON, opts: [stp("tiroirs", "Tiroirs", "🗄️", 0, 0, 4)], build(c, p, o) { basCuisine(c, 0, p.L, { tiroirs: o.tiroirs }); planTravail(c, 0, CAISSON_BAS.H, 0, p.L, CAISSON_BAS.plan); } });
 rec({ id: "cuisine-haut", nom: "Caisson haut de cuisine", e: "⬆️", cat: "Cuisine", dims: [80, 70, 33], opts: [stp("etageres", "Étagères", "📚", 1, 0, 3)], build(c, p, o) {
   caisse(c, 0, 0, 0, p.L, p.H, p.P, { colonnes: [[{ t: "etageres", n: o.etageres, portes: { n: p.L > 600 ? 2 : 1 } }]] }); hw(c, "fixhaut", "🔩", "Fixations meubles hauts", 2);
 } });
@@ -210,10 +240,10 @@ rec({ id: "cuisine-complete", nom: "Cuisine en caissons (évier au milieu)", e: 
       // Au-dessus de l'évier : souvent une fenêtre. Un caisson haut seulement si on le demande.
       if (o.hauts && (m.type !== "evier" || o.hautEvier)) hautCuisine(c, m.x, m.W, "Caisson haut " + (++nh), yHaut);
     });
-    planTravail(c, 0, 832, 0, p.L, 600);
+    planTravail(c, 0, CAISSON_BAS.H, 0, p.L, CAISSON_BAS.plan);
   } });
-rec({ id: "caisson-evier", nom: "Caisson évier (sous-évier)", e: "🚰", cat: "Cuisine", dims: [100, 87, 56], dimMin: [60, 87, 56], fixedHP: true, opts: [], build(c, p) {
-  evierCuisine(c, 0, p.L, { nom: "Caisson évier" }); planTravail(c, 0, 832, 0, p.L, 600);
+rec({ id: "caisson-evier", nom: "Caisson évier (sous-évier)", e: "🚰", cat: "Cuisine", dims: [100, 82, 46], dimMin: [60, 82, 46], ...DIMS_CAISSON, opts: [], build(c, p) {
+  evierCuisine(c, 0, p.L, { nom: "Caisson évier" }); planTravail(c, 0, CAISSON_BAS.H, 0, p.L, CAISSON_BAS.plan);
 } });
 rec({ id: "placard", nom: "Placard de rangement", e: "🚪", cat: "Cuisine", dims: [80, 200, 45], opts: [stp("portes", "Portes", "🚪", 2, 1, 4), stp("etageres", "Étagères", "📚", 4, 0, 8)], build(c, p, o) { armoire(c, p, { portes: o.portes, etageres: o.etageres, socle: 60 }); } });
 
@@ -329,13 +359,13 @@ rec({ id: "vestiaire-casiers", nom: "Vestiaire à casiers", e: "🔐", cat: "Bur
 } });
 
 /* ----- Cuisine ----- */
-rec({ id: "ilot-cuisine", nom: "Îlot de cuisine / bar", e: "🏝️", cat: "Cuisine", dims: [180, 87, 56], fixedHP: true, opts: [stp("tiroirs", "Modules à tiroirs", "🗄️", 1, 0, 3), stp("bar", "Débord côté bar (cm)", "🍹", 30, 0, 40, 5)], build(c, p, o) {
+rec({ id: "ilot-cuisine", nom: "Îlot de cuisine / bar", e: "🏝️", cat: "Cuisine", dims: [180, 82, 46], dimMin: [60, 82, 46], ...DIMS_CAISSON, dimLabels: ["Longueur de l'îlot", "Hauteur (fixe)", "Profondeur façades comprises (fixe)"], opts: [stp("tiroirs", "Modules à tiroirs", "🗄️", 1, 0, 3), stp("bar", "Débord côté bar (cm)", "🍹", 30, 0, 40, 5)], build(c, p, o) {
   const E = c.E, n = Math.max(1, Math.round(p.L / 600)), W = p.L / n;
   for (let i = 0; i < n; i++) {
     basCuisine(c, i * W, W, { nom: "Module " + (i + 1), tiroirs: i < o.tiroirs ? 3 : 0 });
-    add(c, "Habillage côté bar " + (i + 1), "caisson", [i * W, 0, -5 - E, W, 832, E], { edge: W });
+    add(c, "Habillage côté bar " + (i + 1), "caisson", [i * W, 0, -5 - E, W, CAISSON_BAS.H, E], { edge: W });
   }
-  planTravail(c, 0, 832, -5 - E - o.bar * 10, p.L, 560 + 5 + E + o.bar * 10);
+  planTravail(c, 0, CAISSON_BAS.H, -5 - E - o.bar * 10, p.L, CAISSON_BAS.P + 5 + E + o.bar * 10);
 } });
 
 /* ----- Boutique ----- */

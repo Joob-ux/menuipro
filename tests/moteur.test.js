@@ -648,3 +648,36 @@ describe("Chambre à coucher complète", () => {
     expect(ch({ modeleLit: "capitonne" }).parts.some(p => p.name.startsWith("Lit · ") && /mousse|Mousse|tissu|Tissu/.test(p.name + JSON.stringify(p.look || "")))).toBe(true);
   });
 });
+
+import { CAISSON_BAS } from "../src/engine/recettes.js";
+describe("Système de caisson bas unique (82 cm, 46 cm façades comprises)", () => {
+  const P = { L: 600, H: 870, P: 560, ep: 18 }; // anciennes cotes : la hauteur et la profondeur sont ignorées
+  const piece = (ctx, re) => ctx.parts.find(p => re.test(p.name));
+  it("caisson de 60 cm : côtés jusqu'au sol, fond sur le socle, 2 traverses, plinthe, dos 5 mm, 2 portes", () => {
+    const ctx = buildRecipe("cuisine-bas", P, { tiroirs: 0 });
+    expect(piece(ctx, /Côté gauche$/).cut).toEqual([820, 442]);
+    expect(piece(ctx, /Dessous$/).box[1]).toBe(100);
+    expect(piece(ctx, /Dessus$/)).toBeUndefined();
+    expect(ctx.parts.filter(p => /Traverse (avant|arrière)$/.test(p.name)).map(p => p.cut)).toEqual([[564, 100], [564, 100]]);
+    expect(piece(ctx, /Plinthe$/).cut).toEqual([564, 100]);
+    expect(piece(ctx, /Dos$/).cut).toEqual([720, 600]);
+    const portes = ctx.parts.filter(p => p.door);
+    expect(portes.length).toBe(2);
+    // Façades comprises : 46 cm de profondeur ; caisson 72 cm au-dessus du socle de 10 cm.
+    for (const d of portes) { expect(d.box[2] + d.box[5]).toBe(CAISSON_BAS.P); expect(Math.abs(d.box[1] + d.box[4] - 820)).toBeLessThanOrEqual(2); expect(d.box[1]).toBeGreaterThanOrEqual(100); }
+  });
+  it("seule la largeur change ; sous 45 cm une seule porte", () => {
+    const a = buildRecipe("cuisine-bas", { ...P, L: 800 }, { tiroirs: 0 }), b = buildRecipe("cuisine-bas", { ...P, L: 400 }, { tiroirs: 0 });
+    expect(piece(a, /Côté gauche$/).cut).toEqual([820, 442]);
+    expect(piece(b, /Côté gauche$/).cut).toEqual([820, 442]);
+    expect(b.parts.filter(p => p.door).length).toBe(1);
+  });
+  it("la cuisine en I ou en L utilise ce caisson partout, la hauteur et la profondeur sont fixes", () => {
+    const r = RECIPES.find(x => x.id === "cuisine"), o = {}; r.opts.forEach(x => (o[x.k] = x.def));
+    expect(r.dims.slice(1)).toEqual([82, 46]); expect(r.fixes).toEqual([false, true, true]);
+    const ctx = buildRecipe("cuisine", { L: 600, H: 900, P: 600, ep: 18 }, { ...o, forme: "L" });
+    const cotes = ctx.parts.filter(p => /Caisson (bas \d+|évier|d'angle) · Côté gauche$/.test(p.name));
+    expect(cotes.length).toBeGreaterThan(3);
+    for (const p of cotes) expect(p.cut).toEqual([820, 442]);
+  });
+});

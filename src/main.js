@@ -137,7 +137,10 @@ function renderControls(){
   const mod=modeleActif();
   $("current").replaceChildren(el("span",{class:"e","aria-hidden":"true"},r.e),el("div",{},el("b",{},mod?mod.nom:r.nom),el("div",{class:"note"},mod?r.nom:r.cat)));
   const labels=r.dimLabels||["Largeur","Hauteur","Profondeur"];
-  $("dims").replaceChildren(...["L","H","P"].map((k,i)=>{const inp=el("input",{id:"d"+k,type:"number",inputmode:"numeric",min:String((r.dimMin||[10,10,10])[i]),max:"2000"});inp.value=c[k];inp.addEventListener("input",e=>{c[k]=parseFloat(e.target.value)||0;
+  $("dims").replaceChildren(...["L","H","P"].map((k,i)=>{const inp=el("input",{id:"d"+k,type:"number",inputmode:"numeric",min:String((r.dimMin||[10,10,10])[i]),max:"2000"});
+    // Cote fixe (ex. caissons de cuisine : 82 cm de haut, 46 cm de profondeur) : affichée, non modifiable.
+    if(r.fixes&&r.fixes[i]){c[k]=r.dims[i];inp.readOnly=true;inp.classList.add("fixe")}
+    inp.value=c[k];inp.addEventListener("input",e=>{c[k]=parseFloat(e.target.value)||0;
       // Photo cadrée : tant que le menuisier n'a pas tapé la hauteur, elle suit la largeur (proportions de la photo).
       const ph=c.photo;
       if(ph&&r.dessin){if(k==="H")ph.hAuto=0;else if(k==="L"&&ph.hAuto&&c.L>=10){const q=ph.cadre||[0,0,1,1];c.H=Math.max(30,Math.min(300,Math.round(c.L*((q[3]-q[1])*ph.h)/((q[2]-q[0])*ph.l))));const dh=$("dH");if(dh)dh.value=c.H}}
