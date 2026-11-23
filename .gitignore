@@ -3,3 +3,7 @@ dist/
 .DS_Store
 *.log
 .env
+# Projet Android généré par Bubblewrap (refait à chaque fabrication)
+outils/android/*
+!outils/android/twa-manifest.json
+!outils/android/LISEZMOI.md

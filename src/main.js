@@ -1753,10 +1753,23 @@ function panneauMonCompte(p){
       if(b.value!==c.value){st.className="status err";st.textContent="Les deux nouveaux codes PIN ne sont pas les mêmes.";return}
       if(b.value===a.value){st.className="status err";st.textContent="Choisissez un code différent de l'ancien.";return}
       st.className="status";st.textContent="⏳";try{await cloud.changerPin(p.telephone,a.value,b.value);st.className="status ok";st.textContent="✅ Code PIN changé. Retenez-le bien.";zone.replaceChildren()}catch(e){st.className="status err";st.textContent=cloud.message(e)}}},"💾 Changer le code PIN"),el("button",{type:"button",class:"btn",onclick:()=>{zone.replaceChildren();st.textContent=""}},"Annuler")));a.focus()};
+  // Supprimer mon compte (exigé par le Play Store) : menuisier seulement, avec un écran d'avertissement.
+  const formSuppr=()=>{
+    const oui=el("button",{type:"button",class:"btn danger"},"🗑️ Oui, tout supprimer");
+    oui.onclick=async()=>{oui.disabled=true;oui.textContent="⏳ Suppression…";
+      try{await cloud.supprimerMonCompte();CLES_COMPTE.forEach(k=>{try{localStorage.removeItem(k)}catch(e){}});
+        try{localStorage.removeItem("menuipro-projets")}catch(e){};toast("✅ Votre compte est supprimé");setTimeout(()=>location.replace(location.pathname),1500)}
+      catch(e){oui.disabled=false;oui.textContent="🗑️ Oui, tout supprimer";st.className="status err";st.textContent=cloud.message(e)}};
+    zone.replaceChildren(el("div",{class:"suppr-compte"},el("b",{},"⚠️ Supprimer mon compte ?"),
+      el("p",{},"Tout sera effacé pour toujours : vos projets 🗂️, vos commandes 📦, vos photos 📷 et votre carte 🪪. On ne pourra pas les récupérer."),
+      el("div",{class:"actions"},oui,el("button",{type:"button",class:"btn",onclick:()=>{zone.replaceChildren();st.textContent=""}},"↩️ Non, garder mon compte"))));
+  };
   const titre=el("h2",{},(estAdmin()?"🛡️ ":"👤 ")+(p.nom||"Mon compte"));
   return el("section",{class:"panel"},titre,el("p",{class:"note"},"📱 "+(p.telephone||"")+" · "+role),
     el("div",{class:"actions"},el("button",{type:"button",class:"btn",onclick:formNom},"✏️ Changer mon nom"),estAdmin()?el("button",{type:"button",class:"btn",onclick:formPin},"🔑 Changer mon code PIN"):null,out),zone,st,
-    panneauMaCarte(p));
+    panneauMaCarte(p),
+    !estAdmin()&&!estQuinc()?el("div",{class:"actions suppr-lien"},el("button",{type:"button",class:"btn mini",onclick:formSuppr},"🗑️ Supprimer mon compte")):null,
+    el("p",{class:"note"},el("a",{href:"/confidentialite.html",target:"_blank",rel:"noopener"},"🔒 Confidentialité et données")));
 }
 
 /* ----- Abonnement de la quincaillerie : alerte avant et après la date de fin (7 jours de grâce) ----- */

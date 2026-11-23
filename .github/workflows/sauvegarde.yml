@@ -1,0 +1,56 @@
+name: Sauvegarde et réveil de la base
+# 1. Réveil : Supabase (offre gratuite) met en pause un projet sans activité pendant 7 jours.
+#    On appelle la base tous les 3 jours pour qu'elle reste toujours allumée.
+# 2. Sauvegarde : l'offre gratuite n'a pas de sauvegarde automatique. On fait une copie complète
+#    de la base (comptes, quincailleries, commandes, projets) gardée 30 jours dans GitHub
+#    (onglet Actions → ce flux → « sauvegarde-menuipro »). Rien n'est rendu public : le dépôt est privé.
+#
+# Secrets GitHub à créer (Settings → Secrets and variables → Actions) :
+#   SUPABASE_URL       adresse du projet (https://…supabase.co)
+#   SUPABASE_ANON_KEY  clé publique « anon » (la même que dans l'appli)
+#   SUPABASE_DB_URL    chaîne de connexion Postgres (Supabase → Connect → « Session pooler »), mot de passe compris
+on:
+  schedule:
+    - cron: "17 3 */3 * *"   # tous les 3 jours à 3h17 (heure de Dakar = UTC)
+  workflow_dispatch: {}      # bouton « Run workflow » pour lancer à la main
+
+jobs:
+  reveil:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Appeler la base
+        env:
+          URL: ${{ secrets.SUPABASE_URL }}
+          CLE: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$URL" ] || [ -z "$CLE" ]; then echo "::warning::Secrets SUPABASE_URL / SUPABASE_ANON_KEY absents"; exit 0; fi
+          code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$URL/rest/v1/rpc/reglages_publics" \
+            -H "apikey: $CLE" -H "Authorization: Bearer $CLE" -H "Content-Type: application/json" -d '{}')
+          echo "Réponse de la base : $code"
+          [ "$code" = "200" ]
+
+  sauvegarde:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Installer pg_dump 17
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-17
+      - name: Copier la base
+        env:
+          DB: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$DB" ]; then echo "::warning::Secret SUPABASE_DB_URL absent : pas de sauvegarde"; exit 0; fi
+          mkdir -p sauvegarde
+          d=$(date -u +%Y-%m-%d)
+          # Schémas de l'appli + comptes (auth) : de quoi tout remettre en place sur un nouveau projet.
+          /usr/lib/postgresql/17/bin/pg_dump "$DB" --no-owner --no-privileges -n public -n prive -n auth -Fc -f "sauvegarde/menuipro-$d.dump"
+          ls -lh sauvegarde
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sauvegarde-menuipro
+          path: sauvegarde/
+          retention-days: 30
+          if-no-files-found: ignore

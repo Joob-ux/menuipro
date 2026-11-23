@@ -13,6 +13,7 @@ export const normaliserTel = t => { let d = String(t || "").replace(/\D/g, ""); 
 const emailPour = tel => normaliserTel(tel) + "@menuipro.app";
 
 const MESSAGES = {
+  suppression_par_admin: "Un compte de quincaillerie se supprime en contactant MenuiPro.",
   "Invalid login credentials": "Numéro ou code PIN incorrect.",
   "User already registered": "Ce numéro a déjà un compte. Touchez « Me connecter ».",
   "code_inconnu": "Ce code de quincaillerie n'existe pas. Vérifiez les 6 caractères.",
@@ -162,6 +163,19 @@ export async function envoyerModele3D(nomFichier, blob) {
   return chemin;
 }
 export async function telechargerModele3D(chemin) { return ok(await sb.storage.from("modeles3d").download(chemin)); }
+
+/* ---------- Supprimer mon compte (menuisier) : fichiers 3D/photos, puis compte, projets et commandes ---------- */
+export async function supprimerMonCompte() {
+  const s = await session();
+  if (!s) throw new Error("non_connecte");
+  try {
+    const { data } = await sb.storage.from("modeles3d").list(s.user.id, { limit: 1000 });
+    const chemins = (data || []).map(f => s.user.id + "/" + f.name);
+    if (chemins.length) await sb.storage.from("modeles3d").remove(chemins);
+  } catch (e) { /* les fichiers restants sont effacés par l'administrateur */ }
+  ok(await sb.rpc("supprimer_mon_compte"));
+  try { await sb.auth.signOut({ scope: "local" }); } catch (e) { /* le compte n'existe plus */ }
+}
 
 /* ---------- Lire une image de meuble (fonction serveur « lire-image » : Gemini ou Qwen3-VL) ---------- */
 const ERREURS_IMAGE = {
