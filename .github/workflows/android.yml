@@ -27,6 +27,9 @@ jobs:
           echo "{\"jdkPath\":\"$JAVA_HOME\",\"androidSdkPath\":\"$ANDROID_SDK_ROOT\"}" > ~/.bubblewrap/config.json
           cat ~/.bubblewrap/config.json
           yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          # Bubblewrap cherche sdkmanager dans <sdk>/bin (ancienne disposition) : on lui donne ce chemin.
+          sudo ln -sfn "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" "$ANDROID_SDK_ROOT/bin"
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --install "build-tools;36.1.0" > /dev/null
       - name: Clé de signature
         working-directory: outils/android
         env:
@@ -69,6 +72,7 @@ jobs:
             outils/android/empreinte.txt
           retention-days: 90
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: cle-android-A-GARDER
           path: cle-a-garder/
