@@ -6,10 +6,7 @@ name: Appli Android (Play Store)
 #     → La garder précieusement, et la mettre dans les secrets du dépôt (voir outils/android/LISEZMOI.md),
 #       sinon chaque passage fabriquera une nouvelle clé et le Play Store refusera les mises à jour.
 on:
-  workflow_dispatch: {}
-  push:
-    branches: [play-store]
-    paths: [outils/android/**, .github/workflows/android.yml]
+  workflow_dispatch: {}   # Actions → « Appli Android (Play Store) » → Run workflow
 
 jobs:
   android:
@@ -53,7 +50,10 @@ jobs:
             echo "::warning::Nouvelle clé créée : télécharger l'artifact cle-android-A-GARDER et la mettre dans les secrets."
           fi
           echo "Empreinte SHA-256 (pour assetlinks.json) :"
-          keytool -list -v -keystore android.keystore -alias menuipro -storepass "$KS_PASS" | grep "SHA256:" | tee empreinte.txt
+          keytool -list -v -keystore android.keystore -alias menuipro -storepass "$KS_PASS" 2>&1 | grep -i "sha256" | tee empreinte.txt
+          EMP=$(grep -io "[0-9A-F]\{2\}\(:[0-9A-F]\{2\}\)\{31\}" empreinte.txt | head -1)
+          printf '[{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"android_app","package_name":"com.xelkoomvalley.menuipro","sha256_cert_fingerprints":["%s"]}}]\n' "$EMP" > assetlinks.json
+          cat assetlinks.json
       - name: Fabriquer le projet et l'appli
         working-directory: outils/android
         env:
@@ -70,6 +70,7 @@ jobs:
             outils/android/app-release-bundle.aab
             outils/android/app-release-signed.apk
             outils/android/empreinte.txt
+            outils/android/assetlinks.json
           retention-days: 90
       - uses: actions/upload-artifact@v4
         if: always()
