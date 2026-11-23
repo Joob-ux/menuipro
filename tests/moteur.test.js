@@ -689,3 +689,15 @@ describe("Noms des cotes", () => {
     expect(libellesCotes(RECIPES.find(x => x.id === "cuisine"))[1]).toContain("fixe");
   });
 });
+
+import { resumeCroquis as _resume } from "../src/engine/index.js";
+describe("Résumé d'un dessin lu (comparaison des IA)", () => {
+  it("compte colonnes, cases, portes, tiroirs, casiers compris", () => {
+    const r = _resume({ cols: [
+      { f: 1, zones: [{ f: 1, t: "penderie", portes: 1 }] },
+      { f: 1, zones: [{ f: 1, t: "tiroirs", n: 3 }, { f: 2, t: "vide", portes: 2, sous: [
+        { f: 1, zones: [{ f: 1, t: "etageres", n: 2 }] }, { f: 1, zones: [{ f: 1, t: "vide" }] }] }] }] });
+    expect(r).toEqual({ colonnes: 2, cases: 4, portes: 3, tiroirs: 3, etageres: 2, penderies: 1, niches: 1 });
+  });
+  it("dessin vide", () => { expect(_resume(null).colonnes).toBe(0); });
+});

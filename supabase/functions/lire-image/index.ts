@@ -1,7 +1,10 @@
-// MenuiPro — lire une image de meuble (rendu SketchUp, photo, croquis, image WhatsApp) avec Gemini.
+// MenuiPro — lire une image de meuble (rendu SketchUp, photo, croquis, image WhatsApp) avec une IA de vision :
+// Gemini (Google) ou Qwen3-VL (open source, hébergé par OpenRouter).
+// Choix par le secret IA_IMAGE : "gemini", "qwen", ou "auto" (Qwen d'abord, Gemini en secours).
+// Par défaut : "auto" si OPENROUTER_API_KEY est réglé, sinon "gemini". L'administrateur peut forcer une IA (écran de test).
 // Renvoie la structure du meuble (colonnes, cases, portes, tiroirs, socle…) et les cotes écrites sur l'image.
 // L'appli transforme cette description en meuble MenuiPro (src/engine/lecture.js) : 3D, coupes, devis.
-// Mêmes secrets que l'assistant vocal : GEMINI_API_KEY (AI Studio, gratuit) ou GOOGLE_SA_JSON (Vertex AI).
+// Secrets : GEMINI_API_KEY (AI Studio) ou GOOGLE_SA_JSON (Vertex AI) ; OPENROUTER_API_KEY pour Qwen ; QWEN_MODELE (facultatif).
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
@@ -33,6 +36,14 @@ const LECTURE_MAX_MS = 15 * 60_000; // au-delà, on abandonne une lecture en arr
 const LIMITE = Number(Deno.env.get("IMAGE_LIMITE_JOUR") || 30);
 const IMAGE_MAX = 2_500_000; // octets
 const MIMES = ["image/jpeg", "image/png", "image/webp"];
+// Qwen3-VL par OpenRouter (API compatible OpenAI). Appel direct, il doit finir avant la coupure de Supabase.
+const CLE_OR = Deno.env.get("OPENROUTER_API_KEY") || "";
+const MODELES_QWEN = [Deno.env.get("QWEN_MODELE") || "", "qwen/qwen3-vl-235b-a22b-instruct", "qwen/qwen3-vl-32b-instruct"].filter(Boolean);
+const DELAI_QWEN = 100_000;
+const IA_DEFAUT = (Deno.env.get("IA_IMAGE") || (CLE_OR ? "auto" : "gemini")).toLowerCase();
+// La lecture en arrière-plan de Gemini (Interactions API) échoue (« failed ») depuis le 21/11/2026 : coupée
+// par défaut, l'appel direct (réflexion « medium », 1 à 2 min) a toujours marché. GEMINI_ARRIERE_PLAN=1 pour la rallumer.
+const ARRIERE_PLAN = Deno.env.get("GEMINI_ARRIERE_PLAN") === "1";
 
 const CONSIGNE = `Tu es un menuisier expert et un dessinateur précis. On te montre UNE image d'un meuble en panneaux
 (rendu 3D SketchUp, photo, croquis à la main ou plan). L'application MenuiPro va le refabriquer À L'IDENTIQUE à partir de ta description :
@@ -224,7 +235,9 @@ async function suivreInteraction(cle: string, id: string): Promise<{ etat: "en_c
     try { return { etat: "fini", lecture: lireJSON(texteInteraction(d)) }; }
     catch { return { etat: "rate", erreur: "réponse illisible" }; }
   }
-  return { etat: "rate", erreur: "statut " + statut + " " + String(d.error?.message || "").slice(0, 160) };
+  // Google ne met pas toujours la cause au même endroit : on garde la réponse brute (sans l'image) pour comprendre.
+  const brut = JSON.stringify({ error: d.error, status_details: d.status_details, steps: (d.steps || []).map((x: any) => ({ type: x.type, error: x.error, status: x.status })) }).slice(0, 600);
+  return { etat: "rate", erreur: "statut " + statut + " " + String(d.error?.message || "") .slice(0, 160) + " " + brut };
 }
 
 /* ---------- Appel direct (secours, et Vertex AI) ---------- */
@@ -285,12 +298,44 @@ async function demanderDirect(liste: string[], image: string, mime: string, note
   throw new Error("gemini: " + essais.join(" | "));
 }
 
+/* ---------- Qwen3-VL (open source) par OpenRouter ---------- */
+async function demanderQwen(image: string, mime: string, note: string, essais: string[]): Promise<{ lecture: any; modele: string }> {
+  if (!CLE_OR) throw new Error("non_configure");
+  const debut = Date.now();
+  for (const modele of MODELES_QWEN) {
+    const reste = DELAI_QWEN - (Date.now() - debut);
+    if (reste < 10_000) break;
+    let r: Response;
+    try {
+      r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST", signal: AbortSignal.timeout(reste),
+        headers: { Authorization: "Bearer " + CLE_OR, "Content-Type": "application/json", "HTTP-Referer": "https://menuipro.app", "X-Title": "MenuiPro" },
+        body: JSON.stringify({
+          model: modele, temperature: 0.1, max_tokens: 8000, response_format: { type: "json_object" },
+          messages: [
+            { role: "system", content: CONSIGNE + "\n\n" + FORME_JSON },
+            { role: "user", content: [
+              { type: "image_url", image_url: { url: "data:" + mime + ";base64," + image } },
+              { type: "text", text: (note ? "Précision du menuisier : " + note + "\n" : "") + "Décris ce meuble. Réponds uniquement avec l'objet JSON." },
+            ] },
+          ],
+        }),
+      });
+    } catch (e) { essais.push(modele + ": " + (/abort|timeout/i.test(String(e)) ? "trop lent" : "réseau " + String(e).slice(0, 120))); continue; }
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.error) { essais.push(modele + ": " + (d.error?.code || r.status) + " " + String(d.error?.message || "").slice(0, 160)); continue; }
+    try { return { lecture: lireJSON(d.choices?.[0]?.message?.content || ""), modele }; }
+    catch { essais.push(modele + ": réponse illisible (" + (d.choices?.[0]?.finish_reason || "?") + ")"); }
+  }
+  throw new Error("qwen: " + essais.join(" | "));
+}
+
 const codeErreur = (msg: string) => msg === "non_configure" ? "non_configure" : /UNAVAILABLE|RESOURCE_EXHAUSTED|429|503|trop lent/.test(msg) ? "occupe" : "service_google";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ erreur: "methode" }, 405);
-  if (!Deno.env.get("GEMINI_API_KEY") && !Deno.env.get("GOOGLE_SA_JSON")) return json({ erreur: "non_configure" }, 503);
+  if (!Deno.env.get("GEMINI_API_KEY") && !Deno.env.get("GOOGLE_SA_JSON") && !CLE_OR) return json({ erreur: "non_configure" }, 503);
 
   const service = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
   const jwt = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
@@ -299,7 +344,7 @@ Deno.serve(async (req) => {
   const uid = qui.user.id;
   const cle = Deno.env.get("GEMINI_API_KEY") || "";
 
-  let corps: { image?: string; mime?: string; note?: string; tache?: number; exclure?: string[] };
+  let corps: { image?: string; mime?: string; note?: string; tache?: number; exclure?: string[]; ia?: string };
   try { corps = await req.json(); } catch { return json({ erreur: "requete_invalide" }, 400); }
 
   /* ----- 2. Suivi d'une lecture en arrière-plan ----- */
@@ -336,16 +381,45 @@ Deno.serve(async (req) => {
   const note = String(corps.note || "").slice(0, 300);
   const exclure = new Set((Array.isArray(corps.exclure) ? corps.exclure : []).map(String).slice(0, 10));
   const debut = Date.now(), essais: string[] = [];
+  // IA forcée : seulement pour l'administrateur (écran de test de la console).
+  let ia = IA_DEFAUT;
+  if (corps.ia === "gemini" || corps.ia === "qwen") {
+    const { data: profil } = await service.from("profils").select("role").eq("id", uid).maybeSingle();
+    if (profil?.role === "admin") ia = corps.ia;
+  }
+  const journal = (action: Record<string, unknown>) => service.from("assistant_journal")
+    .insert({ user_id: uid, duree_s: 0, texte: "[image]", action: { ...action, ia, essais: essais.length ? essais : undefined }, ms: Date.now() - debut });
+
+  // Qwen3-VL (open source) d'abord, si choisi.
+  if (ia === "qwen" || (ia === "auto" && CLE_OR)) {
+    try {
+      const { lecture, modele } = await demanderQwen(image, mime, note, essais);
+      await journal({ image: lecture, modele, direct: true });
+      return json({ lecture, modele, ia: "qwen", ms: Date.now() - debut });
+    } catch (e) {
+      const msg = String((e as Error).message || e);
+      if (ia === "qwen") {
+        await journal({ erreur: msg.slice(0, 800) });
+        console.error(msg);
+        return json({ erreur: msg === "non_configure" ? "non_configure" : "service_qwen" }, msg === "non_configure" ? 503 : 502);
+      }
+      essais.push(msg.slice(0, 300)); // « auto » : on passe à Gemini…
+      // …seulement s'il reste assez de temps avant la coupure de Supabase (150 s).
+      if (Date.now() - debut > 25_000) { await journal({ erreur: msg.slice(0, 800) }); return json({ erreur: "occupe" }, 502); }
+    }
+  }
+  if (!Deno.env.get("GEMINI_API_KEY") && !Deno.env.get("GOOGLE_SA_JSON")) { await journal({ erreur: "gemini non configuré" }); return json({ erreur: "non_configure" }, 503); }
+
   let liste = await listeModeles(cle);
   if (liste.some(m => !exclure.has(m))) liste = liste.filter(m => !exclure.has(m)); // modèle qui vient d'échouer : un autre d'abord
 
   // a) Lecture longue en arrière-plan (AI Studio seulement).
-  if (cle && Deno.env.get("GEMINI_ARRIERE_PLAN") !== "0") {
+  if (cle && ARRIERE_PLAN) {
     for (const modele of liste) {
       try {
         const id = await demarrerInteraction(cle, modele, image, mime, note);
         const { data: ligne, error } = await service.from("assistant_journal")
-          .insert({ user_id: uid, duree_s: 0, texte: "[image]", action: { interaction: id, modele, reflexion: REFLEXION, essais: essais.length ? essais : undefined }, ms: 0 })
+          .insert({ user_id: uid, duree_s: 0, texte: "[image]", action: { interaction: id, modele, ia: "gemini", reflexion: REFLEXION, essais: essais.length ? essais : undefined }, ms: 0 })
           .select("id").single();
         if (error || !ligne) throw new Error("journal: " + (error?.message || "?"));
         return json({ tache: ligne.id, modele });
@@ -360,11 +434,11 @@ Deno.serve(async (req) => {
   // b) Secours : appel direct, limité à 120 s.
   try {
     const { lecture, modele } = await demanderDirect(liste, image, mime, note, essais);
-    await service.from("assistant_journal").insert({ user_id: uid, duree_s: 0, texte: "[image]", action: { image: lecture, modele, direct: true, essais: essais.length ? essais : undefined }, ms: Date.now() - debut });
-    return json({ lecture, modele });
+    await journal({ image: lecture, modele, direct: true });
+    return json({ lecture, modele, ia: "gemini", ms: Date.now() - debut });
   } catch (e) {
     const msg = String((e as Error).message || e);
-    await service.from("assistant_journal").insert({ user_id: uid, duree_s: 0, texte: "[image]", action: { erreur: msg.slice(0, 800) }, ms: Date.now() - debut });
+    await journal({ erreur: msg.slice(0, 800) });
     console.error(msg);
     return json({ erreur: codeErreur(msg) }, msg === "non_configure" ? 503 : 502);
   }

@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { MODELES_KILIFEU as MODELES } from "./kilifeu.js";
-import { boiteMonde, RECIPES, BIENTOT, libellesCotes, buildRecipe, pack, outils, SHEET, holeLocal, HOLE_KINDS, vueFace, depuisLecture } from "./engine/index.js";
+import { boiteMonde, RECIPES, BIENTOT, libellesCotes, buildRecipe, pack, outils, SHEET, holeLocal, HOLE_KINDS, vueFace, depuisLecture, resumeCroquis } from "./engine/index.js";
 import { HCOL, sheetHoles, cncSVG, cncDXF, makeZip, ascii } from "./export/cnc.js";
 import * as cloud from "./cloud/cloud.js";
 import { PHRASES, parler, boutonVoix, chargerVoix, aUnAudio } from "./voix.js";
@@ -2112,13 +2112,67 @@ async function vueAdmin(){
   const reinit=el("section",{class:"panel form"},el("h2",{},"🔑 Code PIN oublié"),el("div",{class:"grid2"},el("div",{class:"field"},el("label",{for:"arTel"},"📱 Numéro du compte"),rTel),el("div",{class:"field"},el("label",{for:"arPin"},"Nouveau code PIN"),rPin)),el("div",{class:"actions"},reset),rSt);
   return [
     el("section",{class:"panel"},el("h2",{},"🛡️ Vue d'ensemble"),kpis,el("div",{class:"actions"},el("button",{type:"button",class:"btn",onclick:()=>renderCompte()},"🔄 Actualiser")),search),
-    creation,reinit,await sectionVoix(),
+    creation,reinit,await sectionVoix(),sectionTestIA(),
     el("section",{class:"panel"},el("h2",{},"🏪 Quincailleries ("+v.quincailleries.length+")"),el("p",{class:"note"},"Réglez la date de fin d'abonnement puis 💾. Après cette date, 7 jours de grâce, puis les commandes sont bloquées. Touchez le statut pour suspendre ou réactiver. Touchez le nombre de menuisiers pour les voir."),
       el("div",{class:"tablewrap"},el("table",{},th("Quincaillerie","Propriétaire","Code","Menuisiers","Commandes","Montant","Abonnement jusqu'au","Note","Statut"),qBody))),
     el("section",{class:"panel"},el("h2",{},"🪚 Menuisiers ("+v.menuisiers.length+")"),
       el("div",{class:"tablewrap"},el("table",{},th("Nom","Téléphone","Quincaillerie","Projets","Commandes","Inscrit le","Dernière activité","Actions"),mBody))),
     sectionCommandesAdmin(v,th,dt),sectionModeles()
   ];
+}
+/* ----- Console : tester les IA de « J'ai ma photo » ----- */
+// La même photo est lue par Gemini et par Qwen3-VL (open source) en même temps ; l'administrateur compare
+// avec la photo et garde la meilleure. Chaque résultat peut s'ouvrir en 3D comme une vraie lecture.
+function faceCroquis(k){
+  // Petit dessin de face : colonnes de gauche à droite, cases du bas vers le haut.
+  const W=200,H=150,NS="http://www.w3.org/2000/svg",svg=document.createElementNS(NS,"svg");
+  svg.setAttribute("viewBox","0 0 "+W+" "+H);svg.setAttribute("class","face-ia");svg.setAttribute("role","img");
+  const add=(tag,a,txt)=>{const n=document.createElementNS(NS,tag);Object.entries(a).forEach(([x,y])=>n.setAttribute(x,y));if(txt)n.textContent=txt;svg.append(n);return n};
+  const IC={tiroirs:"🗄️",etageres:"📚",penderie:"👔",vide:""};
+  const zones=(liste,x,w,y0,h)=>{const t=liste.reduce((a,z)=>a+z.f,0)||1;let y=y0+h;
+    liste.forEach(z=>{const zh=h*z.f/t;y-=zh;
+      if(z.sous&&z.sous.length){const tt=z.sous.reduce((a,c)=>a+c.f,0)||1;let xx=x;z.sous.forEach(c=>{const cw=w*c.f/tt;zones(c.zones,xx,cw,y,zh);xx+=cw})}
+      else{add("rect",{x,y,width:w,height:zh,class:"z"});
+        if(z.t==="tiroirs")for(let i=1;i<(z.n||1);i++)add("line",{x1:x,x2:x+w,y1:y+zh*i/(z.n||1),y2:y+zh*i/(z.n||1),class:"t"});
+        const lab=(IC[z.t]||"")+(z.t==="tiroirs"||z.t==="etageres"?(z.n||"")+"":"");if(lab)add("text",{x:x+w/2,y:y+zh/2+4,"text-anchor":"middle"},lab)}
+      if(z.portes)add("text",{x:x+w-3,y:y+11,"text-anchor":"end",class:"p"},z.portes>1?"🚪🚪":"🚪")});};
+  const cols=(k&&k.cols)||[],tot=cols.reduce((a,c)=>a+c.f,0)||1;let x=4;
+  cols.forEach(c=>{const w=(W-8)*c.f/tot;zones(c.zones,x,w,4,H-8);x+=w});
+  add("rect",{x:4,y:4,width:W-8,height:H-8,class:"cadre"});
+  return svg;
+}
+function sectionTestIA(){
+  const IAS=[["gemini","🔵 Gemini (Google)"],["qwen","🟣 Qwen3-VL (open source)"]];
+  const fichier=el("input",{type:"file",accept:"image/*",id:"testIAFichier"}),apercu=el("div",{class:"test-ia-photo"}),res=el("div",{class:"test-ia-res"});
+  const lancer=el("button",{type:"button",class:"btn primary"},"🧪 Lancer les deux IA");lancer.disabled=true;
+  let img=null,url=null;
+  fichier.onchange=async()=>{const f=fichier.files[0];if(!f)return;res.replaceChildren();
+    try{img=await imp3d.reduireImage(f)}catch(e){apercu.replaceChildren(el("p",{class:"status err"},"Image illisible."));return}
+    if(url)URL.revokeObjectURL(url);url=URL.createObjectURL(img.blob);apercu.replaceChildren(el("img",{src:url,alt:"Photo à tester"}));lancer.disabled=false};
+  const carte=([ia,nom])=>{
+    const etat=el("p",{class:"status",role:"status"},"⏳ Lecture…"),corps=el("div",{}),t0=Date.now();
+    const tic=setInterval(()=>{if(!etat.isConnected||!etat.textContent.startsWith("⏳"))return clearInterval(tic);etat.textContent="⏳ Lecture… "+Math.round((Date.now()-t0)/1000)+" s"},1000);
+    cloud.testerLecture(img.blob,ia).then(r=>{
+      const lu=depuisLecture(r.lecture);
+      etat.className="status ok";etat.textContent="✅ "+Math.round(r.ms/1000)+" s · "+r.modele;
+      if(!lu.ok){corps.replaceChildren(el("p",{class:"note"},"Pas de meuble reconnu. "+lu.remarque));return}
+      const R=resumeCroquis(lu.croquis),d=lu.dims,cote=v=>v?v+" cm":"—";
+      const ligne=(e,l,v)=>el("div",{class:"ia-ligne"},el("span",{},e+" "+l),el("b",{},String(v)));
+      corps.replaceChildren(el("b",{},"🪄 "+lu.nom+" · confiance "+Math.round(lu.confiance*100)+" %"),faceCroquis(lu.croquis),
+        ligne("▥","Colonnes",R.colonnes),ligne("▦","Cases",R.cases),ligne("🚪","Portes",R.portes),ligne("🗄️","Tiroirs",R.tiroirs),
+        ligne("📚","Étagères",R.etageres),ligne("👔","Penderies",R.penderies),ligne("⬜","Niches ouvertes",R.niches),
+        ligne("📏","Cotes lues (L × H × P)",cote(d.L)+" × "+cote(d.H)+" × "+cote(d.P)),
+        lu.remarque?el("p",{class:"note"},"💬 "+lu.remarque):null,
+        el("button",{type:"button",class:"btn",onclick:()=>{
+          const id="t"+Date.now().toString(36);photosURL.set(id,url);imp3d.garderLocal(id,img.blob).catch(()=>{});
+          appliquerLecture(lu,{id,nom:"test-"+ia,l:img.l,h:img.h,cadre:[0,0,1,1],visible:1,chemin:null},null);go("concevoir")}},"🧊 Voir en 3D"));
+    }).catch(e=>{etat.className="status err";etat.textContent="❌ "+e.message+" ("+Math.round((Date.now()-t0)/1000)+" s)"});
+    return el("div",{class:"test-ia-carte"},el("h3",{},nom),etat,corps);
+  };
+  lancer.onclick=()=>{if(!img)return;res.replaceChildren(...IAS.map(carte))};
+  return el("section",{class:"panel"},el("h2",{},"🧪 Tester les IA de « J'ai ma photo »"),
+    el("p",{class:"note"},"Choisissez une photo de meuble : Gemini et Qwen3-VL la lisent en même temps. Comparez avec la photo (colonnes, cases, portes, tiroirs) et le temps. Chaque essai compte dans la limite du jour."),
+    el("div",{class:"field"},el("label",{for:"testIAFichier"},"📷 Photo du meuble"),fichier),apercu,el("div",{class:"actions"},lancer),res);
 }
 /* ----- Console : commandes récentes ----- */
 function sectionCommandesAdmin(v,th,dt){

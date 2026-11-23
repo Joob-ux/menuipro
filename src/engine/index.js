@@ -24,7 +24,7 @@ export { holeLocal, HOLE_KINDS, computeHoles } from "./percages.js";
 export { vueFace } from "./facade.js";
 export { TISSUS, teinte, COMPOSITIONS } from "./rembourre.js";
 export { normaliserModele, etirerPanneau } from "./modele3d.js";
-export { depuisLecture } from "./lecture.js";
+export { depuisLecture, resumeCroquis } from "./lecture.js";
 export { hauteurSocle, croquisDefaut, normaliserCroquis, lireTrait, appliquerTrait, appliquerOutil, deplacerLigne, enleverLigne, bordsColonnes, bordsZones, bordsSous } from "./croquis.js";
 
 export function buildRecipe(id, p, opts) {

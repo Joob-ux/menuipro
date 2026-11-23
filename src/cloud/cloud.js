@@ -163,13 +163,14 @@ export async function envoyerModele3D(nomFichier, blob) {
 }
 export async function telechargerModele3D(chemin) { return ok(await sb.storage.from("modeles3d").download(chemin)); }
 
-/* ---------- Lire une image de meuble (fonction serveur « lire-image », Gemini) ---------- */
+/* ---------- Lire une image de meuble (fonction serveur « lire-image » : Gemini ou Qwen3-VL) ---------- */
 const ERREURS_IMAGE = {
   non_configure: "La lecture automatique des images n'est pas encore activée.", non_connecte: "Connectez-vous pour que l'appli lise l'image.",
   limite: "Limite du jour atteinte pour la lecture d'images. Réessayez demain.", image_invalide: "Image vide ou trop lourde.",
   service_google: "Le service de lecture ne répond pas. Réessayez.",
   occupe: "Le service de lecture est très chargé en ce moment. Réessayez dans une minute.",
-  tache_inconnue: "Cette lecture est perdue. Relancez-la."
+  tache_inconnue: "Cette lecture est perdue. Relancez-la.",
+  service_qwen: "Qwen ne répond pas. Réessayez."
 };
 /* Lecture d'une image. Le serveur lance une lecture longue chez Google et rend un numéro de tâche :
    on redemande le résultat toutes les 4 secondes, sans limite de temps (l'IA réfléchit autant qu'il faut).
@@ -248,3 +249,13 @@ export async function connecterCarte(cle) {
 export const nouvelleCarte = (user, quinc) => appelQR({ action: "nouvelle_carte", ...(user ? { user } : {}), ...(quinc ? { quinc } : {}) });
 export async function quincailleriesOuvertes() { return ok(await sb.rpc("quincailleries_ouvertes")) || []; }
 export async function choisirQuincaillerie(id) { return ok(await sb.rpc("choisir_quincaillerie", { p_quinc: id })); }
+
+/* Écran de test de l'administrateur : la même image lue par une IA choisie ("gemini" ou "qwen").
+   Renvoie { lecture, modele, ia, ms } (ms : temps mesuré par l'appli, attente réseau comprise). */
+export async function testerLecture(blob, ia) {
+  const image = await versBase64(blob), mime = String(blob.type || "image/jpeg").split(";")[0], debut = Date.now();
+  let d = await appelImage({ image, mime, ia });
+  while (!d.lecture && d.tache != null) { await new Promise(ok => setTimeout(ok, 4000)); d = await appelImage({ tache: d.tache }); }
+  if (!d.lecture) throw Object.assign(new Error(ERREURS_IMAGE.service_google), { code: "service_google" });
+  return { lecture: d.lecture, modele: d.modele || "", ia: d.ia || ia, ms: Date.now() - debut };
+}

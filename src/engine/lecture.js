@@ -44,3 +44,19 @@ export function depuisLecture(r) {
     confiance: Math.max(0, Math.min(1, num(r.confiance, 0.5)))
   };
 }
+
+// Résumé d'un dessin lu (pour comparer deux IA) : nombre de colonnes, cases, portes, tiroirs, étagères, penderies.
+export function resumeCroquis(k) {
+  const r = { colonnes: 0, cases: 0, portes: 0, tiroirs: 0, etageres: 0, penderies: 0, niches: 0 };
+  const zone = z => {
+    r.portes += Math.max(0, Math.round(num(z.portes)));
+    if (z.sous && z.sous.length) { z.sous.forEach(c => (c.zones || []).forEach(zone)); return; }
+    r.cases++;
+    if (z.t === "tiroirs") r.tiroirs += Math.max(1, Math.round(num(z.n, 1)));
+    else if (z.t === "etageres") r.etageres += Math.max(0, Math.round(num(z.n)));
+    else if (z.t === "penderie") r.penderies++;
+    else if (!num(z.portes)) r.niches++;
+  };
+  ((k && k.cols) || []).forEach(c => { r.colonnes++; (c.zones || []).forEach(zone); });
+  return r;
+}
