@@ -4,6 +4,10 @@ import { add, add3d, hw, caisse, portes, plateau, panneauV, voile, piedsAchetes,
 /* ===================== RECETTES ===================== */
 export const RECIPES = [];
 export const rec = r => RECIPES.push(r);
+// Noms des 3 cotes à l'écran : toujours « Largeur, Hauteur, Longueur », sauf pour la cuisine
+// (caissons à hauteur et profondeur fixes) qui garde ses propres noms.
+export const COTES = ["Largeur", "Hauteur", "Longueur"];
+export const libellesCotes = r => (r && r.cat === "Cuisine" && r.dimLabels) || COTES;
 export const stp = (k, label, icon, def, min, max, step = 1) => ({ k, label, icon, def, min, max, step });
 export const chx = (k, label, options, def) => ({ k, label, options, def, choice: true });
 export const TYPE_PORTE = chx("type", "Type de portes", [["battante", "Battantes"], ["coulissante", "Coulissantes"], ["vitree", "Vitrées"]], "battante");

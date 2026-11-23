@@ -2,6 +2,7 @@
 // Le serveur transcrit la note vocale wolof (Google Chirp 3) puis Gemini propose une action ;
 // ici on prépare le catalogue envoyé au serveur et on contrôle l'action reçue avant de l'appliquer.
 
+import { libellesCotes } from "./engine/recettes.js";
 export const REPONSES = ["compris", "modifie", "pas_compris", "limite", "choisir", "cotes", "options", "resultat", "vue3d", "plan", "achat", "commander", "devis", "bois"];
 export const ACTIONS = ["meuble", "modifier", "aide", "inconnu"];
 export const DUREE_MAX_S = 30;
@@ -10,7 +11,7 @@ export const DUREE_MAX_S = 30;
 export function catalogueIA(recettes) {
   return recettes.map(r => ({
     id: r.id, nom: r.nom, cat: r.cat,
-    cotes: (r.dimLabels || ["Largeur", "Hauteur", "Profondeur"]).map((l, i) => l + " (défaut " + r.dims[i] + " cm)"),
+    cotes: libellesCotes(r).map((l, i) => l + " (défaut " + r.dims[i] + " cm)"),
     options: r.opts.map(x => x.choice ? { k: x.k, nom: x.label, choix: x.options.map(o => o[0]) } : { k: x.k, nom: x.label, min: x.min, max: x.max })
   }));
 }

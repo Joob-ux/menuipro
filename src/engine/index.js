@@ -15,7 +15,7 @@ RECIPES.push({ id: "croquis", nom: "Mon dessin", e: "✏️", cat: "Mes dessins"
 RECIPES.push({ id: "modele3d", nom: "Ma 3D", e: "📤", cat: "Mes dessins", importe: true, dims: [100, 100, 50], dimMin: [10, 10, 5],
   opts: [{ k: "panneaux", label: "Panneaux lus dans la 3D", modele: true, def: null }], build: construireModele });
 
-export { RECIPES, BIENTOT } from "./recettes.js";
+export { RECIPES, BIENTOT, COTES, libellesCotes } from "./recettes.js";
 export { modulesMur, ELECTRO } from "./cuisine.js";
 export { boiteMonde } from "./blocs.js";
 export { pack, SHEET } from "./decoupe.js";

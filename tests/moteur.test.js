@@ -681,3 +681,11 @@ describe("Système de caisson bas unique (82 cm, 46 cm façades comprises)", () 
     for (const p of cotes) expect(p.cut).toEqual([820, 442]);
   });
 });
+
+import { libellesCotes } from "../src/engine/recettes.js";
+describe("Noms des cotes", () => {
+  it("hors cuisine : Largeur, Hauteur, Longueur ; la cuisine garde ses cotes fixes", () => {
+    for (const r of RECIPES.filter(x => x.cat !== "Cuisine")) expect(libellesCotes(r)).toEqual(["Largeur", "Hauteur", "Longueur"]);
+    expect(libellesCotes(RECIPES.find(x => x.id === "cuisine"))[1]).toContain("fixe");
+  });
+});

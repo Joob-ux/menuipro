@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { MODELES_KILIFEU as MODELES } from "./kilifeu.js";
-import { boiteMonde, RECIPES, BIENTOT, buildRecipe, pack, outils, SHEET, holeLocal, HOLE_KINDS, vueFace, depuisLecture } from "./engine/index.js";
+import { boiteMonde, RECIPES, BIENTOT, libellesCotes, buildRecipe, pack, outils, SHEET, holeLocal, HOLE_KINDS, vueFace, depuisLecture } from "./engine/index.js";
 import { HCOL, sheetHoles, cncSVG, cncDXF, makeZip, ascii } from "./export/cnc.js";
 import * as cloud from "./cloud/cloud.js";
 import { PHRASES, parler, boutonVoix, chargerVoix, aUnAudio } from "./voix.js";
@@ -136,7 +136,7 @@ function renderControls(){
   const r=R(st.id),c=cfg();
   const mod=modeleActif();
   $("current").replaceChildren(el("span",{class:"e","aria-hidden":"true"},r.e),el("div",{},el("b",{},mod?mod.nom:r.nom),el("div",{class:"note"},mod?r.nom:r.cat)));
-  const labels=r.dimLabels||["Largeur","Hauteur","Profondeur"];
+  const labels=libellesCotes(r);
   $("dims").replaceChildren(...["L","H","P"].map((k,i)=>{const inp=el("input",{id:"d"+k,type:"number",inputmode:"numeric",min:String((r.dimMin||[10,10,10])[i]),max:"2000"});
     // Cote fixe (ex. caissons de cuisine : 82 cm de haut, 46 cm de profondeur) : affichée, non modifiable.
     if(r.fixes&&r.fixes[i]){c[k]=r.dims[i];inp.readOnly=true;inp.classList.add("fixe")}
@@ -528,7 +528,7 @@ function renderFacade(ctx){
   if(!v){$("facade").replaceChildren();$("facadeInfo").textContent="";return}
   $("facade").innerHTML=svgFacade(v);
   const c=v.cotes;
-  $("facadeInfo").textContent="Cotes en cm · largeur "+cm(c.largeur)+" × hauteur "+cm(c.hauteur)+" × profondeur "+cm(c.profondeur)+" (façades comprises)"+(c.sol?" · posé à "+cm(c.sol)+" cm du sol":"")+". En haut : largeur des ouvertures ; à droite : hauteur des niveaux.";
+  $("facadeInfo").textContent="Cotes en cm · largeur "+cm(c.largeur)+" × hauteur "+cm(c.hauteur)+" × longueur "+cm(c.profondeur)+" (façades comprises)"+(c.sol?" · posé à "+cm(c.sol)+" cm du sol":"")+". En haut : largeur des ouvertures ; à droite : hauteur des niveaux.";
 }
 // Image du plan : en-tête de l'atelier, nom du meuble, plan, profondeur.
 async function imageFacade(W=1080){
@@ -544,7 +544,7 @@ async function imageFacade(W=1080){
   c.fillStyle=DOC.encre;c.font=police(700,40);c.fillText(nomMeuble(),60,240);
   c.drawImage(img,60+(iw-sc)/2,280,sc,sc*ratio);
   const k=lastFace.cotes;c.fillStyle=DOC.gris;c.font=police(400,28);
-  c.fillText("Cotes en cm · profondeur "+cm(k.profondeur)+" cm (façades comprises)"+(k.sol?" · à "+cm(k.sol)+" cm du sol":""),60,H-60);
+  c.fillText("Cotes en cm · longueur "+cm(k.profondeur)+" cm (façades comprises)"+(k.sol?" · à "+cm(k.sol)+" cm du sol":""),60,H-60);
   return cv;
 }
 $("facadeImg").onclick=async()=>{
@@ -1059,12 +1059,12 @@ function demanderDimensions(titre,urlImage){
   return new Promise(ok=>{
     const champ=(k,ic,lab,min,max)=>{const i=el("input",{type:"number",inputmode:"decimal",step:"0.1",min:String(min),max:String(max),placeholder:"cm","aria-label":lab,id:"dimImp"+k});
       return {k,i,min,max,bloc:el("label",{class:"imp-dim dim-gros"},el("span",{},ic+" "+lab),i)}};
-    const ch=[champ("L","↔️","Largeur",5,600),champ("H","↕️","Hauteur",5,300),champ("P","↗️","Profondeur",2,120)];
+    const ch=[champ("L","↔️","Largeur",5,600),champ("H","↕️","Hauteur",5,300),champ("P","↗️","Longueur",2,120)];
     const lire=()=>{const d={};ch.forEach(c=>{const v=Math.round(parseFloat(String(c.i.value).replace(",","."))*10)/10;d[c.k]=v>=c.min&&v<=c.max?v:null});return d};
     const fin=d=>{boite.remove();ok(d)};
     const valider=()=>{
       const faux=ch.filter(c=>String(c.i.value).trim()&&lire()[c.k]==null);
-      if(faux.length){faux.forEach(c=>c.i.classList.add("err"));toast("Cote impossible : "+faux.map(c=>c.k==="L"?"largeur":c.k==="H"?"hauteur":"profondeur").join(", ")+".",true);return}
+      if(faux.length){faux.forEach(c=>c.i.classList.add("err"));toast("Cote impossible : "+faux.map(c=>c.k==="L"?"largeur":c.k==="H"?"hauteur":"longueur").join(", ")+".",true);return}
       fin(lire())};
     ch.forEach(c=>c.i.addEventListener("keydown",e=>{if(e.key==="Enter")valider()}));
     const boite=el("div",{class:"attente-lecture",role:"dialog","aria-label":"Dimensions du meuble"},el("div",{class:"attente-boite dims-boite"},
@@ -1221,7 +1221,7 @@ function panneauLecture(c){
     el("div",{class:"lu-tete"},url?el("img",{src:url,alt:"Votre image",class:"lu-image"}):null,
       el("div",{},el("p",{class:"imp-ok"},"🪄 "+c.lu.nom+" reconnu"),el("p",{class:"note"},(k.cols||[]).length+" colonne(s) · "+nz+" case(s)"+(c.lu.cotes.length?" · cotes lues sur l'image":"")))),
     el("p",{class:"imp-titre"},"📏 Dimensions réelles du meuble (cm)"),
-    el("div",{class:"imp-dims"},champ("L","↔️ Largeur"),champ("H","↕️ Hauteur"),champ("P","↗️ Profondeur")),
+    el("div",{class:"imp-dims"},champ("L","↔️ Largeur"),champ("H","↕️ Hauteur"),champ("P","↗️ Longueur")),
     c.lu.cotes.length<3?el("p",{class:"warn"},"Certaines cotes ne sont pas écrites sur l'image : vérifiez-les."):null,
     c.lu.remarque?el("p",{class:"note"},"ℹ️ "+c.lu.remarque):null,
     el("div",{class:"actions"},
@@ -1297,8 +1297,8 @@ function majBarreImport(){
     const m=c.o.panneaux,n=(m&&m.list.length)||0;
     parts.push(
       el("p",{class:"imp-titre"},"📏 Dimensions réelles du meuble (cm)"),
-      el("div",{class:"imp-dims"},champ("L","↔️ Largeur"),champ("H","↕️ Hauteur"),champ("P","↗️ Profondeur")),
-      el("p",{class:"note"},"Changer la largeur garde les proportions. Changez ensuite la hauteur ou la profondeur si besoin."),
+      el("div",{class:"imp-dims"},champ("L","↔️ Largeur"),champ("H","↕️ Hauteur"),champ("P","↗️ Longueur")),
+      el("p",{class:"note"},"Changer la largeur garde les proportions. Changez ensuite la hauteur ou la longueur si besoin."),
       el("p",{class:n>=2?"imp-ok":"warn"},n>=2?"✂️ "+n+" pièces à couper lues dans votre 3D.":"Pas de panneaux trouvés dans cette 3D : pour la découpe, dessinez le meuble ✏️."),
       el("div",{class:"actions"},
         n>=2?el("button",{type:"button",class:"btn primary",onclick:()=>setEtape("acheter")},"✂️ Voir les coupes"):el("button",{type:"button",class:"btn primary",onclick:versDessin},"✏️ Dessiner le meuble"),
