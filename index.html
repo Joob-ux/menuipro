@@ -177,16 +177,17 @@
     <div class="tablewrap"><table class="ptable" id="panTable"></table></div>
     <div class="actions"><button class="btn" type="button" id="addPan">➕ Ajouter un panneau</button></div>
   </section>
-  <section class="panel"><h2>🛍️ Mes articles</h2>
-    <p class="note">Ajoutez vos propres articles (poignées, LED, vernis…) avec leur prix : vos menuisiers les voient et les ajoutent à leurs commandes.</p>
+  <section class="panel"><h2>🛍️ Mes accessoires et articles</h2>
+    <p class="note">C'est vous qui ajoutez vos accessoires (charnières, vis, poignées, coulisses…) et vos prix. L'appli compte les quantités pour chaque meuble ; vos prix s'affichent chez tous vos menuisiers.</p>
     <div class="art-perso" id="persoTable"></div>
     <p class="note" id="persoVide">Aucun article pour l'instant.</p>
     <div class="actions"><button class="btn" type="button" id="addArt">➕ Ajouter un article</button></div>
+    <details class="calc-manque" id="calcManque" hidden><summary>🧮 Accessoires comptés par l'appli, pas encore chez vous : <b id="calcCompte">0</b></summary>
+      <p class="note">Touchez un accessoire pour l'ajouter à vos articles, puis mettez votre prix. Sans article, il apparaît « prix ? » chez le menuisier.</p>
+      <div class="calc-liste" id="calcListe"></div>
+    </details>
   </section>
-  <section class="panel"><h2>Accessoires et quincaillerie</h2>
-    <div class="tablewrap"><table class="ptable" id="artTable"></table></div>
-  </section>
-  <div class="actions"><button class="btn" type="button" id="fillEx">🧪 Remplir avec des prix d'exemple</button><button class="btn" type="button" id="resetCat">↺ Remettre les prix à zéro</button></div>
+  <div class="actions"><button class="btn" type="button" id="fillEx">🧪 Prix d'exemple pour les panneaux</button><button class="btn" type="button" id="resetCat">↺ Remettre les prix à zéro</button></div>
   <p class="note">Les prix sont enregistrés sur ce téléphone. Ils servent à chiffrer la liste d'achat et le devis.</p>
 </div></main>
 
