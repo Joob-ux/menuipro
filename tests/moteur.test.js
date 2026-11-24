@@ -168,7 +168,9 @@ describe("Assistant vocal : contrôle des actions de l'IA", () => {
   it("le catalogue envoyé à l'IA contient tous les meubles et reste léger", () => {
     const c = catalogueIA(RECIPES);
     expect(c.length).toBe(RECIPES.length);
-    expect(JSON.stringify(c).length).toBeLessThan(28000); // la fonction serveur refuse au-delà de 30 000
+    // L'appli n'envoie que les meubles visibles (sans les modèles cachés) : c'est ce volume qui compte.
+    const envoye = catalogueIA(RECIPES.filter(r => !r.cache && !r.dessin && !r.importe));
+    expect(JSON.stringify(envoye).length).toBeLessThan(28000); // la fonction serveur refuse au-delà de 30 000
   });
   it("une demande valide est appliquée, les valeurs hors limites sont bornées", () => {
     const r = RECIPES.find(x => x.id === "armoire-2");
@@ -700,4 +702,67 @@ describe("Résumé d'un dessin lu (comparaison des IA)", () => {
     expect(r).toEqual({ colonnes: 2, cases: 4, portes: 3, tiroirs: 3, etageres: 2, penderies: 1, niches: 1 });
   });
   it("dessin vide", () => { expect(_resume(null).colonnes).toBe(0); });
+});
+
+describe("Agencements relevés en atelier (murs TV, dressing, bureau en L, boutique…)", () => {
+  const def = id => { const o = {}; RECIPES.find(r => r.id === id).opts.forEach(x => (o[x.k] = x.def)); return o; };
+  const b = (id, o = {}, d) => { const r = RECIPES.find(x => x.id === id), [L, H, P] = d || r.dims; return buildRecipe(id, { L: L * 10, H: H * 10, P: P * 10, ep: 18 }, { ...def(id), ...o }); };
+  it("les nouveaux meubles sont dans le catalogue, chacun dans sa famille", () => {
+    const att = { "mur-tv-laque": "Salon", "mur-tv-bibliotheque": "Salon", "mur-tv-colonnes": "Salon", "tete-lit-tasseaux": "Chambre", "lit-chevets-integres": "Chambre", "bureau-direction-l": "Bureau", "agencement-boutique": "Boutique" };
+    for (const [id, cat] of Object.entries(att)) { const r = RECIPES.find(x => x.id === id); expect(r, id).toBeTruthy(); expect(r.cat).toBe(cat); expect(r.cache).toBeFalsy(); }
+  });
+  it("armoire, dressing et commode : les nouvelles formes se choisissent par « Modèle », sans doubler le meuble", () => {
+    for (const [id, val, cache] of [["armoire-2", "colonne", "armoire-colonne-ouverte"], ["dressing", "vitrine", "dressing-vitrine"], ["commode", "armoire", "commode-armoire"]]) {
+      const r = RECIPES.find(x => x.id === id), m = r.opts.find(x => x.k === "modele");
+      expect(m.options.map(x => x[0])).toEqual(["classique", val]);
+      expect(RECIPES.find(x => x.id === cache).cache).toBe(true);
+      // « Tiroirs » est partagé : il garde le bouton (et la valeur) du meuble visible, borné à la forme choisie.
+      const t = RECIPES.find(x => x.id === cache).opts.find(x => x.k === "tiroirs");
+      const avec = b(id, { modele: val }), seul = b(cache, { tiroirs: Math.max(t.min, Math.min(t.max, def(id).tiroirs)) }, r.dims);
+      expect(avec.parts.length).toBe(seul.parts.length);
+      // Ancien projet sans « modèle » : le meuble classique, comme avant.
+      const o = def(id); delete o.modele;
+      expect(buildRecipe(id, { L: r.dims[0] * 10, H: r.dims[1] * 10, P: r.dims[2] * 10, ep: 18 }, o).parts.length).toBe(b(id, { modele: "classique" }).parts.length);
+    }
+    // Les réglages propres à une forme ne s'affichent que pour elle.
+    const a = RECIPES.find(x => x.id === "armoire-2"), vus = o => a.opts.filter(x => !x.si || x.si(o)).map(x => x.k);
+    expect(vus({ ...def("armoire-2") })).not.toContain("etageresColonne");
+    expect(vus({ ...def("armoire-2"), modele: "colonne" })).toContain("etageresColonne");
+    expect(vus({ ...def("armoire-2"), modele: "colonne" })).not.toContain("type");
+  });
+  it("commode + petite armoire : 3 tiroirs et 2 portes", () => {
+    const c = b("commode", { modele: "armoire", tiroirs: 3 });
+    expect(c.parts.filter(p => p.drawer).length).toBe(3); expect(c.parts.filter(p => p.door).length).toBe(2);
+  });
+  it("dressing vitrine : penderie, vitrine éclairée, 3 tiroirs, 5 portes", () => {
+    const c = b("dressing-vitrine");
+    expect(c.parts.filter(p => p.drawer).length).toBe(3); expect(c.parts.filter(p => p.door).length).toBe(5);
+    expect(c.hw.led).toBeTruthy(); expect(c.hw.tringle).toBeTruthy();
+  });
+  it("mur TV laqué : panneaux muraux, meuble bas suspendu à tiroirs, ouverture push possible", () => {
+    const c = b("mur-tv-laque");
+    expect(c.parts.filter(p => /Panneau mural/.test(p.name)).length).toBeGreaterThanOrEqual(5);
+    expect(c.parts.filter(p => p.drawer).length).toBeGreaterThanOrEqual(4);
+    const push = b("mur-tv-laque", { poignee: "push" });
+    expect(push.hw.poignees).toBeFalsy(); expect(push.hw.push.qty).toBe(c.hw.poignees.qty);
+  });
+  it("lit avec chevets intégrés : tête rembourrée, 2 chevets à tiroirs, coffre à couvercle", () => {
+    const c = b("lit-chevets-integres");
+    expect(c.parts.some(p => p.look === "tissu")).toBe(true);
+    expect(c.parts.filter(p => p.drawer && /Chevet/.test(p.name)).length).toBe(4);
+    expect(c.parts.some(p => /Coffre · Couvercle/.test(p.name))).toBe(true); expect(c.hw.verins).toBeTruthy();
+    expect(b("lit-chevets-integres", { coffre: 0 }).parts.some(p => /Coffre/.test(p.name))).toBe(false);
+  });
+  it("boutique : un bas à portes et une vitrine en verre par module, comptoir en option", () => {
+    const c = b("agencement-boutique");
+    expect(c.parts.filter(p => / · Bas · Porte/.test(p.name)).length).toBe(8); // 4 modules de 80 cm × 2 portes
+    expect(c.hw.verre.qty).toBeGreaterThan(0);
+    expect(c.parts.some(p => /Comptoir/.test(p.name))).toBe(true);
+    expect(b("agencement-boutique", { comptoir: 0 }).parts.some(p => /Comptoir/.test(p.name))).toBe(false);
+  });
+  it("bureau en L : le retour reste plus long que la profondeur du bureau", () => {
+    const c = b("bureau-direction-l", { retour: 100 });
+    const ret = c.parts.find(p => p.name === "Plateau retour");
+    expect(ret.box[5]).toBeGreaterThanOrEqual(300);
+  });
 });

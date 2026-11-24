@@ -14,9 +14,9 @@ export const TISSUS = [
   ["moutarde", "Jaune moutarde", "#c99a2e"], ["blanc", "Blanc cassé", "#f0ece3"]
 ];
 export const teinte = id => (TISSUS.find(t => t[0] === id) || TISSUS[0])[2];
-const CHX_TISSU = def => chx("tissu", "Couleur du tissu", TISSUS.map(t => [t[0], t[1]]), def || "beige");
+export const CHX_TISSU = def => chx("tissu", "Couleur du tissu", TISSUS.map(t => [t[0], t[1]]), def || "beige");
 const CHX_PIEDS = def => chx("pieds", "Pieds", [["bois", "Bois"], ["metal", "Métal"], ["socle", "Socle (sans pieds)"]], def || "bois");
-const CHX_VUE = chx("vue", "Voir en 3D", [["habille", "Meuble fini"], ["structure", "Structure bois"]], "habille");
+export const CHX_VUE = chx("vue", "Voir en 3D", [["habille", "Meuble fini"], ["structure", "Structure bois"]], "habille");
 const HAUT_PIEDS = { bois: 150, metal: 170, socle: 60 };
 
 // Repère d'un élément posé dans la pièce : rot 0 = dos au fond (regarde vers l'avant),
@@ -46,7 +46,7 @@ function atelier(c, o, T, pre) {
 }
 
 // Mousse, tissu et fournitures, à partir des surfaces (mm²).
-function fournitures(c, S, piedsSorte) {
+export function fournitures(c, S, piedsSorte) {
   const m2 = v => Math.round(v / 1e4) / 100;
   if (S.mousse12) hw(c, "mousse12", "🟨", "Mousse d'assise 12 cm (densité 35)", m2(S.mousse12), "m²");
   if (S.mousse5) hw(c, "mousse5", "🟨", "Mousse 5 cm (dossier, accoudoirs, tête de lit)", m2(S.mousse5), "m²");
@@ -267,7 +267,7 @@ export function salon(c, p, o) {
 /* ===================== RECETTES ===================== */
 const ACC = def => chx("accoudoirs", "Accoudoirs", [["droits", "Droits"], ["arrondis", "Arrondis (épais)"], ["fins", "Fins"], ["aucun", "Sans accoudoirs"]], def || "droits");
 const DOS = def => chx("dossier", "Dossier", [["coussins", "Coussins"], ["fixe", "Fixe (lisse)"], ["capitonne", "Capitonné"], ["bas", "Bas"]], def || "coussins");
-const TETE = def => chx("tete", "Tête de lit", [["capitonne", "Capitonnée (boutons)"], ["bandes-v", "Bandes verticales"], ["bandes-h", "Bandes horizontales"], ["arches", "Arches"], ["arc", "Arc"], ["quilte", "Matelassée"], ["simple", "Lisse"]], def || "capitonne");
+export const TETE = def => chx("tete", "Tête de lit", [["capitonne", "Capitonnée (boutons)"], ["bandes-v", "Bandes verticales"], ["bandes-h", "Bandes horizontales"], ["arches", "Arches"], ["arc", "Arc"], ["quilte", "Matelassée"], ["simple", "Lisse"]], def || "capitonne");
 const DIMS_CANAPE = ["Largeur", "Hauteur du dossier", "Profondeur"];
 
 rec({ id: "canape-tissu", nom: "Canapé rembourré", e: "🛋️", cat: "Salon", rembourre: true, dims: [220, 85, 95], dimMin: [80, 60, 60], dimLabels: DIMS_CANAPE,

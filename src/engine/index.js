@@ -4,6 +4,7 @@ import { RECIPES } from "./recettes.js";
 import "./rembourre.js"; // enregistre les meubles rembourrés dans RECIPES
 import "./cuisine.js"; // cuisine en I ou en L
 import "./chambre.js"; // chambre à coucher complète (après rembourre.js : elle utilise le lit rembourré)
+import "./agencement.js"; // agencements relevés en atelier (murs TV, dressings, bureau en L, boutique…)
 import { computeHoles } from "./percages.js";
 import { construireCroquis } from "./croquis.js";
 import { construireModele } from "./modele3d.js";
