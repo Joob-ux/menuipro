@@ -766,3 +766,29 @@ describe("Agencements relevés en atelier (murs TV, dressing, bureau en L, bouti
     expect(ret.box[5]).toBeGreaterThanOrEqual(300);
   });
 });
+
+describe("Lit plateforme", () => {
+  const r = RECIPES.find(x => x.id === "lit-plateforme"), def = {}; r.opts.forEach(x => (def[x.k] = x.def));
+  const b = o => buildRecipe("lit-plateforme", { L: 1600, H: 1000, P: 2000, ep: 18 }, { ...def, ...o });
+  it("socle en retrait éclairé, grande tête en 2 panneaux, 2 chevets suspendus à tiroir", () => {
+    const c = b({});
+    expect(c.parts.filter(p => /^Tête de lit \d\/\d$/.test(p.name)).length).toBe(2);
+    expect(c.parts.filter(p => /^Chevet/.test(p.name) && p.drawer).length).toBe(2);
+    expect(c.hw.led).toBeTruthy();
+    const tete = c.parts.filter(p => /^Tête de lit \d/.test(p.name)), larg = Math.max(...tete.map(p => p.box[0] + p.box[3])) - Math.min(...tete.map(p => p.box[0]));
+    expect(larg).toBeGreaterThan(1600 + 2 * 450); // passe derrière les chevets
+  });
+  it("variantes : tasseaux, cadre lumineux, lamelles, chevets posés ou sans", () => {
+    expect(b({ tete: "tasseaux" }).parts.some(p => /Tasseau/.test(p.name))).toBe(true);
+    expect(b({ tete: "cadre" }).hw.led.qty).toBeGreaterThan(b({ tete: "panneau" }).hw.led.qty);
+    expect(b({ caisse: "lamelles" }).parts.filter(p => /Lamelle/.test(p.name)).length).toBeGreaterThan(50);
+    expect(b({ chevets: "aucun" }).parts.some(p => /Chevet/.test(p.name))).toBe(false);
+    expect(b({ chevets: "poses" }).parts.find(p => /Chevet droit · Côté gauche/.test(p.name)).box[1]).toBe(0);
+  });
+  it("proposé dans la chambre complète, sans chevets en double", () => {
+    const ch = RECIPES.find(x => x.id === "chambre"), d = {}; ch.opts.forEach(x => (d[x.k] = x.def));
+    const c = buildRecipe("chambre", { L: 1600, H: 1100, P: 2000, ep: 18 }, { ...d, modeleLit: "plateforme" });
+    expect(c.parts.some(p => /^Lit · Socle/.test(p.name))).toBe(true);
+    expect(c.parts.some(p => /^Lit · Chevet/.test(p.name))).toBe(false);
+  });
+});

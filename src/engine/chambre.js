@@ -12,7 +12,9 @@ const ECART = 400; // passage entre deux meubles (mm)
 export const MODELES_LIT = {
   panneau: { nom: "🟫 Tête en panneau", id: "lit-double", o: () => ({}) },
   tiroirs: { nom: "🗄️ À tiroirs", id: "lit-tiroirs", o: o => ({ tiroirs: o.tiroirsLit || 2 }) },
-  capitonne: { nom: "🛋️ Capitonné", id: "lit-rembourre", dH: 150, o: o => (o.tissu ? { tissu: o.tissu } : {}) }
+  capitonne: { nom: "🛋️ Capitonné", id: "lit-rembourre", dH: 150, o: o => (o.tissu ? { tissu: o.tissu } : {}) },
+  // Plateforme : la chambre pose ses propres chevets, le lit vient donc sans chevets ni tête élargie.
+  plateforme: { nom: "💡 Plateforme (socle LED)", id: "lit-plateforme", o: () => ({ chevets: "aucun", largeTete: 0 }) }
 };
 
 // Construit un meuble existant à part, puis le pose dans la chambre à partir de x (dos contre le mur, z = 0).

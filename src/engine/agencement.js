@@ -273,3 +273,72 @@ variantes("dressing", "👗 Classique", [
 variantes("commode", "🗄️ Classique", [
   { val: "armoire", nom: "🚪 Avec petite armoire", id: "commode-armoire", partages: ["tiroirs"] }
 ]);
+
+/* ----- Lit plateforme (socle en retrait éclairé, grande tête de lit, chevets suspendus) ----- */
+/* p : L = largeur du matelas, H = hauteur de la tête de lit, P = longueur du matelas.
+   Variantes des photos : tête lisse en 2 panneaux, tête à tasseaux, tête à cadre lumineux ;
+   tête large (derrière les chevets) ou à la largeur du lit ; chevets suspendus, posés ou sans ;
+   caisse lisse ou habillée de lamelles ; LED sous le socle. */
+rec({ id: "lit-plateforme", nom: "Lit plateforme (socle LED, grande tête)", e: "🛏️", cat: "Chambre", dims: [160, 100, 200], dimMin: [90, 60, 180],
+  opts: [
+    chx("tete", "Tête de lit", [["panneau", "🟫 Lisse (2 panneaux)"], ["tasseaux", "🎋 Tasseaux au centre"], ["cadre", "💡 Cadre lumineux"]], "panneau"),
+    stp("largeTete", "Tête large derrière les chevets", "↔️", 1, 0, 1),
+    chx("chevets", "Chevets", [["suspendus", "🪝 Suspendus à la tête"], ["poses", "🌙 Posés au sol"], ["aucun", "Sans"]], "suspendus"),
+    { ...stp("tiroirChevet", "Tiroir par chevet (0 = niches)", "🗄️", 1, 0, 1), si: o => o.chevets !== "aucun" },
+    chx("caisse", "Côtés du lit", [["lisse", "Lisses"], ["lamelles", "🎋 Habillés de lamelles"]], "lisse"),
+    stp("led", "LED sous le socle", "💡", 1, 0, 1)
+  ],
+  build(c, p, o) {
+    const E = c.E, L = p.L, Lg = p.P, W = L + 2 * E, hs = 120, r = 100, Hc = 260, yc = hs, CW = 450, ecartC = 60;
+    /* Socle en retrait (ombre + LED), puis caisse du lit posée dessus. */
+    add(c, "Socle · Côté gauche", "caisson", [r, 0, r, E, hs, Lg - 2 * r], { edge: 0 });
+    add(c, "Socle · Côté droit", "caisson", [W - r - E, 0, r, E, hs, Lg - 2 * r], { edge: 0 });
+    add(c, "Socle · Avant", "caisson", [r + E, 0, Lg - r - E, W - 2 * r - 2 * E, hs, E], { edge: 0 });
+    add(c, "Socle · Arrière", "caisson", [r + E, 0, r, W - 2 * r - 2 * E, hs, E], { edge: 0 });
+    add(c, "Socle · Traverse centrale", "caisson", [r + E, 0, Lg / 2, W - 2 * r - 2 * E, hs, E], { edge: 0 });
+    add(c, "Plancher de la caisse", "dos", [0, yc - 5, 0, W, 5, Lg]);
+    if (W > 1200) c.parts.pop(), [0, 1].forEach(i => add(c, "Plancher de la caisse " + (i + 1) + "/2", "dos", [i * W / 2, yc - 5, 0, W / 2, 5, Lg]));
+    panneauV(c, "Côté de lit gauche", 0, yc, 0, Hc, Lg, Lg);
+    panneauV(c, "Côté de lit droit", W - E, yc, 0, Hc, Lg, Lg);
+    add(c, "Pied de lit", "caisson", [0, yc, Lg, W, Hc, E], { edge: 2 * W });
+    add(c, "Traverse de tête", "caisson", [E, yc, 0, L, Hc - 60, E], { edge: 0 });
+    // Lattes sur tasseaux d'appui, poutre centrale pour les grands lits.
+    const nl = Math.round(Lg / 90);
+    for (let i = 0; i < nl; i++) add3d(c, "massif", [E, yc + Hc - 80, E + 40 + i * (Lg - 80 - E) / (nl - 1) - 35, L, 20, 70]);
+    hw(c, "lattes", "🪵", "Lattes de lit " + Math.round(L / 10) + " cm", nl);
+    hw(c, "tasseaux", "🪵", "Tasseaux d'appui des lattes", 2 * Lg / 1000, "m");
+    if (L > 1000) { add(c, "Poutre centrale (bande de panneau)", "caisson", [E + L / 2 - E / 2, yc, E, E, Hc - 80, Lg - E], { edge: 0 }); hw(c, "pieds", "🦵", "Pieds réglables sous la poutre", 2); }
+    hw(c, "equerres", "📐", "Équerres d'assemblage", 12);
+    if (o.led) { add3d(c, "led", [r - 15, 20, r, 10, 10, Lg - 2 * r]); add3d(c, "led", [W - r + 5, 20, r, 10, 10, Lg - 2 * r]); add3d(c, "led", [r, 20, Lg - r + 5, W - 2 * r, 10, 10]); hw(c, "led", "💡", "Ruban LED + alimentation (sous le socle)", Math.ceil((2 * Lg + W) / 1000), "m"); }
+    /* Habillage en lamelles des côtés et du pied. */
+    if (o.caisse === "lamelles") {
+      const lw = 30, le = 15, z = Lg + E;
+      const nPied = Math.floor((W + le) / (lw + le)), dx = (W - (nPied * lw + (nPied - 1) * le)) / 2;
+      for (let i = 0; i < nPied; i++) add(c, "Lamelle pied " + (i + 1), "caisson", [dx + i * (lw + le), yc, z, lw, Hc, E], { edge: 2 * Hc });
+      const nCote = Math.floor((Lg + E + le) / (lw + le));
+      [-E, W].forEach((x, s) => { for (let i = 0; i < nCote; i++) add(c, "Lamelle côté " + (s ? "droit " : "gauche ") + (i + 1), "caisson", [x, yc, i * (lw + le), E, Hc, lw], { edge: 2 * Hc }); });
+      hw(c, "colle", "🧴", "Colle à bois", 1);
+      hw(c, "pointes", "🔨", "Pointes sans tête", 2 * (nPied + 2 * nCote));
+    }
+    /* Tête de lit : à la largeur du lit, ou large derrière les chevets. */
+    const avecC = o.chevets !== "aucun", large = o.largeTete && avecC, Wt = large ? W + 2 * (CW + ecartC) : W, xt = (W - Wt) / 2, zt = -E;
+    if (o.tete === "panneau" || o.tete === "tasseaux") {
+      const n = Math.max(2, Math.ceil(Wt / FEUILLE_L));
+      for (let i = 0; i < n; i++) add(c, "Tête de lit " + (i + 1) + "/" + n, "caisson", [xt + i * Wt / n, 0, zt, Wt / n - 2, p.H, E], { edge: Wt / n + 2 * p.H / n });
+      if (o.tete === "tasseaux") tasseaux(c, "Tête de lit", 0, W, yc + Hc, p.H - yc - Hc, 0, { larg: 30, ecart: 15 });
+    } else {
+      // Cadre lumineux : panneau de fond, panneau avant en retrait de 5 cm, ruban LED caché entre les deux.
+      panneauMural(c, "Tête de lit · Fond", "caisson", xt, 0, zt - E, Wt, p.H, E, { edge: 2 * Wt });
+      const m = 50; tasseaux(c, "Tête de lit · Centre", m, W - m, yc + Hc, p.H - yc - Hc - m, zt, { larg: 30, ecart: 15 });
+      add3d(c, "led", [xt + 10, p.H - 15, zt - 5, Wt - 20, 10, 10]); add3d(c, "led", [xt + 10, 0, zt - 5, 10, p.H - 20, 10]); add3d(c, "led", [xt + Wt - 20, 0, zt - 5, 10, p.H - 20, 10]);
+      hw(c, "led", "💡", "Ruban LED + alimentation (cadre de la tête)", Math.ceil((Wt + 2 * p.H) / 1000), "m");
+    }
+    hw(c, "fixmur", "🔩", "Fixations murales + chevilles (tête de lit)", 6);
+    /* Chevets. */
+    if (avecC) {
+      const susp = o.chevets === "suspendus", hC = susp ? 260 : 500, y = susp ? 380 : 0, D = 400;
+      const zones = o.tiroirChevet ? [{ t: "etageres", n: 0 }, { t: "tiroirs", n: 1, h: susp ? 120 : 180 }] : [{ t: "etageres", n: susp ? 0 : 1 }];
+      [W + ecartC, -ecartC - CW].forEach((x, i) => caisse(c, x, y, 0, CW, hC, D, { nom: "Chevet " + (i ? "gauche" : "droit"), dos: false, socle: susp ? 0 : 60, colonnes: [zones] }));
+      if (susp) hw(c, "fixChevet", "🔩", "Équerres cachées pour chevets suspendus", 4);
+    }
+  } });
