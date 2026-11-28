@@ -841,3 +841,26 @@ describe("Lit plateforme", () => {
     expect(c.parts.some(p => /^Lit · Chevet/.test(p.name))).toBe(false);
   });
 });
+
+import { calculChants, detecterType, chantsCtx } from "../src/engine/index.js";
+describe("chants 20 / 40", () => {
+  it("devine le type depuis le nom", () => {
+    expect(detecterType({ nom: "Côté gauche" })).toBe("cote");
+    expect(detecterType({ nom: "Façade tiroir 1" })).toBe("facade_tiroir");
+    expect(detecterType({ nom: "Porte" })).toBe("porte");
+    expect(detecterType({ nom: "Dos" })).toBe("fond");
+  });
+  it("calcule les mètres et le prix", () => {
+    const r = calculChants([{ nom: "Côté", L: 2000, l: 500, qte: 2 }], { 20: 250, 40: 400 }, 50);
+    expect(r.chant40.metres).toBe(8.2); // 2 × 2 × 2050
+    expect(r.chant20.metres).toBe(1.1); // 2 × 550
+    expect(r.totalPrix).toBe(Math.round(8.2 * 400 + 1.1 * 250));
+  });
+  it("s'applique à tous les meubles sans erreur", () => {
+    RECIPES.filter(r => !r.dessin && !r.importe).forEach(r => {
+      const o = {}; r.opts.forEach(x => (o[x.k] = x.def));
+      const c = chantsCtx(build(r, o));
+      expect(Number.isFinite(c.chant20.metres + c.chant40.metres)).toBe(true);
+    });
+  });
+});

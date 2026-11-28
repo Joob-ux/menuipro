@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { MODELES_KILIFEU as MODELES } from "./kilifeu.js";
-import { boiteMonde, RECIPES, BIENTOT, libellesCotes, buildRecipe, pack, outils, SHEET, holeLocal, HOLE_KINDS, vueFace, depuisLecture, resumeCroquis } from "./engine/index.js";
+import { boiteMonde, RECIPES, BIENTOT, libellesCotes, buildRecipe, pack, outils, SHEET, holeLocal, HOLE_KINDS, vueFace, depuisLecture, resumeCroquis, chantsCtx } from "./engine/index.js";
 import { HCOL, sheetHoles, cncSVG, cncDXF, makeZip, ascii } from "./export/cnc.js";
 import * as cloud from "./cloud/cloud.js";
 import { PHRASES, parler, boutonVoix, chargerVoix, aUnAudio } from "./voix.js";
@@ -275,8 +275,9 @@ function renderPlan(){
 /* ----- Export CNC (état courant) ----- */
 function allSheets(){return [...lastRes.caisson.sheets.map((s,i)=>({s,label:"panneau-"+st.ep+"mm-"+(i+1),mat:"Panneau "+st.ep+" mm"})),...lastRes.dos.sheets.map((s,i)=>({s,label:"contreplaque-5mm-"+(i+1),mat:"Contreplaqué 5 mm"}))]}
 function debitCSV(){
-  const rows=[["Piece","Quantite","Longueur_mm","Largeur_mm","Matiere","Chant_m","Percages"]];
-  lastCtx.parts.filter(p=>p.mat).forEach(p=>rows.push([p.name.replace(/ \(×2\)/,""),p.qty,p.cut[0],p.cut[1],ascii(matiere(p)),p.edge?(p.edge*p.qty/1000).toFixed(2):"0",(p.holes||[]).length]));
+  const rows=[["Piece","Quantite","Longueur_mm","Largeur_mm","Matiere","Chant20_m","Chant40_m","Percages"]];
+  const chd=chantsCtx(lastCtx).detail;let ci=0;
+  lastCtx.parts.filter(p=>p.mat).forEach(p=>{const d=p.mat!=="massif"?chd[ci++]:null;rows.push([p.name.replace(/ \(×2\)/,""),p.qty,p.cut[0],p.cut[1],ascii(matiere(p)),d?d.chant20_m.toFixed(2):"0",d?d.chant40_m.toFixed(2):"0",(p.holes||[]).length])});
   return "﻿"+rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(";")).join("\r\n");
 }
 function slug(){return ascii(nomMeuble()).toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")}
@@ -299,8 +300,10 @@ $("zipBtn").onclick=()=>{const all=allSheets();if(!all.length)return;const files
   offer(slug()+"-cnc.zip",makeZip(files),{name:all[sel]?slug()+"-"+all[sel].label+".dxf":"feuille.dxf",text:all[sel]?cncDXF(all[sel]):""});
 };
 
+const texteChant=d=>!d||!(d.chant20_m||d.chant40_m)?"—":[d.chant20_m?"20 : "+d.chant20_m+" m":"",d.chant40_m?"40 : "+d.chant40_m+" m":""].filter(Boolean).join(" · ");
 function renderDebit(ctx){
-  const rows=ctx.parts.filter(p=>p.mat).map(p=>el("tr",{},el("td",{},p.name.replace(/ \(×2\)/,"")),el("td",{class:"n"},String(p.qty)),el("td",{class:"n"},p.cut[0]+" × "+p.cut[1]),el("td",{},matiere(p)),el("td",{class:"n"},p.edge?((p.edge*p.qty/1000).toFixed(2)+" m"):"—"),el("td",{class:"n"},(p.holes||[]).length?String(p.holes.length):"—")));
+  const chd=chantsCtx(ctx).detail;let ci=0;
+  const rows=ctx.parts.filter(p=>p.mat).map(p=>{const d=p.mat!=="massif"?chd[ci++]:null;return el("tr",{},el("td",{},p.name.replace(/ \(×2\)/,"")),el("td",{class:"n"},String(p.qty)),el("td",{class:"n"},p.cut[0]+" × "+p.cut[1]),el("td",{},matiere(p)),el("td",{class:"n"},texteChant(d)),el("td",{class:"n"},(p.holes||[]).length?String(p.holes.length):"—"))});
   $("debit").replaceChildren(el("thead",{},el("tr",{},el("th",{},"Pièce"),el("th",{},"Qté"),el("th",{},"Cotes (mm)"),el("th",{},"Matière"),el("th",{},"Chant"),el("th",{},"Perçages"))),el("tbody",{},rows));
 }
 
@@ -311,7 +314,7 @@ function matiere(p){if(p.mat==="dos")return "Contreplaqué 5 mm";return "Panneau
 /* ===================== CATALOGUE, PRIX, ATELIER ===================== */
 // Liste des accessoires calculés : voir src/articles.js (sans aucun prix : c'est la quincaillerie qui les fixe).
 const EX_JOUR=10000; // prix de journée d'exemple (FCFA)
-const EX_PRIX={mela18:22000,mela16:20000,cp18:25000,mdf18:20000,cp5:9000,chant:300,vis440:1500,vis3516:1500,tourillons:1500,charn:750,charnv:2500,poignees:500,coulisses:2500,taquets:25,tringle:1500,supports:250,rail:3000,galets:5000,cuvettes:500,verre:15000,miroir:10000,pieds:2000,piedsreg:750,pdt:15000,roulettes:500,lattes:1000,tasseaux:750,poutre:1500,equerres:150,fixmur:1000,fixhaut:1000,kitfrigo:6000,aeration:1500,pointes:1000,vasque:25000,
+const EX_PRIX={mela18:22000,mela16:20000,cp18:25000,mdf18:20000,cp5:9000,chant:300,chant20:250,chant40:400,vis440:1500,vis3516:1500,tourillons:1500,charn:750,charnv:2500,poignees:500,coulisses:2500,taquets:25,tringle:1500,supports:250,rail:3000,galets:5000,cuvettes:500,verre:15000,miroir:10000,pieds:2000,piedsreg:750,pdt:15000,roulettes:500,lattes:1000,tasseaux:750,poutre:1500,equerres:150,fixmur:1000,fixhaut:1000,kitfrigo:6000,aeration:1500,pointes:1000,vasque:25000,
   paumelles:500,serrure:6000,espagnolette:3500,pattes:150,boulons:300,visbois:1500,chevilles:50,colle:2500,patins:100,sangles:500,mousse:12000,tissu:3000,led:2500,moraillon:500,supinv:1500,mastic:3500,vernis:6000,
   lame:2500,latte:2000,planche:6000,chevron:5000,madrier:15000,
   mousse12:15000,mousse5:6000,ouate:1500,toile:800,agrafes:1500,colleContact:4000,boutons:100,piedsBois:1000,piedsMetal:2500};
@@ -336,7 +339,8 @@ function buyLines(ctx){
   const add=(e,label,detail,qty,unit)=>L.push({e,label,detail,qte:qty,pu:unit||null,total:unit?qty*unit:null});
   if(n18)add("🟫",panLabel(),n18+" feuille"+(n18>1?"s":"")+" 244 × 122",n18,pn?pn.prix:0);
   if(n5)add("🟫","Contreplaqué 5 mm",n5+" feuille"+(n5>1?"s":"")+" (dos, fonds, parements)",n5,dos.prix);
-  if(chant>0){const m=Math.ceil(chant*1.1);add("🎞️",artNom("chant","Bande de chant")+" "+COLORS[st.color][0].toLowerCase(),m+" m (marge comprise)",m,artPrice("chant"))}
+  const ch=chantsCtx(ctx),coul=COLORS[st.color][0].toLowerCase();
+  [[20,ch.chant20],[40,ch.chant40]].forEach(([t,c])=>{if(c.metres>0){const m=Math.ceil(c.metres);add("🎞️",artNom("chant"+t,"Chant "+t+" mm")+" "+coul,m+" m (marge comprise)",m,artPrice("chant"+t)||artPrice("chant"))}});
   const hc={};ctx.parts.forEach(p=>(p.holes||[]).forEach(h=>hc[h.kind]=(hc[h.kind]||0)+p.qty));
   const small=(ctx.hw.charn?ctx.hw.charn.qty:0)*4+Object.keys(ctx.hw).filter(k=>k.startsWith("coulisses")).reduce((t,k)=>t+ctx.hw[k].qty*8,0);
   if(hc.vis){const b=Math.ceil(hc.vis/100);add("🔩",artNom("vis440","Vis 4 × 40"),hc.vis+" vis → "+b+" boîte"+(b>1?"s":"")+" de 100",b,artPrice("vis440"))}

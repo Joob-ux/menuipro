@@ -21,6 +21,7 @@ export { modulesMur, ELECTRO } from "./cuisine.js";
 export { boiteMonde } from "./blocs.js";
 export { pack, SHEET } from "./decoupe.js";
 export { outils, vis } from "./outils.js";
+export { REGLES, detecterType, attribuerChants, calculChants, resumeChants, piecesDepuisCtx, chantsCtx } from "./chants.js";
 export { holeLocal, HOLE_KINDS, computeHoles } from "./percages.js";
 export { vueFace } from "./facade.js";
 export { TISSUS, teinte, COMPOSITIONS } from "./rembourre.js";
