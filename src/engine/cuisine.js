@@ -240,7 +240,7 @@ const CUISINE = ({ id: "cuisine", nom: "Cuisine en I, en L ou en U", e: "🍳", 
     { ...cm("mur1", "Mur du fond (cm)", "↔️", 300, 100, 800), labelL: "Mur 1 · du fond (cm)" },
     { ...cm("mur2", "Mur 2 (cm)", "↕️", 240, 100, 800), si: o => o.forme !== "I", labelU: "Mur 2 · de gauche (cm)" },
     { ...cm("mur3", "Mur 3 · de droite (cm)", "↕️", 240, 100, 800), si: o => o.forme === "U" },
-    { ...stp("auto", "Remplir les murs automatiquement", "✨", 1, 0, 1), titre: "🧩 2. Les caissons" },
+    { ...stp("auto", "Remplir les murs automatiquement", "✨", 0, 0, 1), titre: "🧩 2. Les caissons" }, // par défaut : le menuisier compte ses caissons, comme avant
     { ...stp("bas1", "Caissons en bas", "⬇️", 4, 0, 12), si: o => !+o.auto, labelL: "Caissons en bas · mur 1" },
     { ...stp("bas2", "Caissons en bas · mur 2", "⬇️", 2, 0, 12), si: o => !+o.auto && o.forme !== "I" },
     { ...stp("bas3", "Caissons en bas · mur 3", "⬇️", 2, 0, 12), si: o => !+o.auto && o.forme === "U" },
@@ -275,7 +275,9 @@ const CUISINE = ({ id: "cuisine", nom: "Cuisine en I, en L ou en U", e: "🍳", 
       const bas = mods => mods.filter(x => x.type === "bas" || x.type === "tiroirs");
       return "📏 " + k.modules.map((mods, i) => { const b = bas(mods); return "Mur " + (i + 1) + " : " + b.length + " caisson" + (b.length > 1 ? "s" : "") + (b.length ? " de " + Math.round(b[0].W / 10) + " cm" : "") + (mods.some(x => x.type === "fileur") ? " + fileur" : ""); }).join(" · ");
     }
-    return "📏 Mur 1 : " + m(k.mur1) + (k.mur2 ? " · Mur 2 : " + m(k.mur2) + " (après le coin)" : "") + (k.mur3 ? " · Mur 3 : " + m(k.mur3) : "") + (ordre(k.modules[0]) ? " · " + ordre(k.modules[0]) : "") + (k.modules[1] && ordre(k.modules[1]) ? " · mur 2 : " + ordre(k.modules[1]) : "");
+    // Caissons comptés à la main : on prévient si un mur de caissons dépasse le mur mesuré.
+    const trop = [1, 2, 3].filter(i => k["mur" + i] && k.murs[i] && k["mur" + i] > k.murs[i] + 5).map(i => "⚠️ Mur " + i + " : " + m(k["mur" + i]) + " de caissons pour " + m(k.murs[i]) + " de mur");
+    return (trop.length ? trop.join(" · ") + " · " : "") + "📏 Mur 1 : " + m(k.mur1) + (k.mur2 ? " · Mur 2 : " + m(k.mur2) + " (après le coin)" : "") + (k.mur3 ? " · Mur 3 : " + m(k.mur3) : "") + (ordre(k.modules[0]) ? " · " + ordre(k.modules[0]) : "") + (k.modules[1] && ordre(k.modules[1]) ? " · mur 2 : " + ordre(k.modules[1]) : "");
   },
   build: construireCuisine });
 // En tête de la famille Cuisine.

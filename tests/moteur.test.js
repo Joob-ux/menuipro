@@ -535,6 +535,13 @@ describe("Cuisine en I ou en L", () => {
   const cui = o => buildRecipe("cuisine", P, { ...def, auto: 0, frigoArmoire: "non", ...o });
   const nb = (ctx, re) => ctx.parts.filter(p => re.test(p.name)).length;
   const chevauchent = (a, b) => [0, 1, 2].every(i => a[i] < b[i] + b[i + 3] - 1 && b[i] < a[i] + a[i + 3] - 1);
+  it("par défaut, les caissons se comptent à la main (système d'avant) et on prévient si ça dépasse le mur", () => {
+    expect(def.auto).toBe(0);
+    const ok = buildRecipe("cuisine", P, { ...def, mur1: 800 });
+    expect(r.resume(ok)).not.toMatch(/⚠️/);
+    const trop = buildRecipe("cuisine", P, { ...def, mur1: 150 });
+    expect(r.resume(trop)).toMatch(/⚠️ Mur 1/);
+  });
   it("est en tête de la famille Cuisine, l'ancienne cuisine est cachée", () => {
     expect(RECIPES.find(x => x.cat === "Cuisine").id).toBe("cuisine");
     expect(RECIPES.find(x => x.id === "cuisine-complete").cache).toBe(true);
