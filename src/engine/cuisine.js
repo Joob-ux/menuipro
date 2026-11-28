@@ -1,18 +1,23 @@
-// MenuiPro — cuisine en I (un mur) ou en L (deux murs), caissons comptés par le menuisier, électroménager placé.
+// MenuiPro — cuisine en I (un mur), en L (deux murs) ou en U (trois murs), électroménager placé.
 /* Le menuisier choisit :
-   1. la forme : en I ou en L (retour à gauche ou à droite) ;
+   0. les mesures de la pièce (longueur de chaque mur) : l'appli remplit alors les murs toute seule
+      (« Remplir les murs » = Oui), sinon il compte lui-même ses caissons ;
+   1. la forme : en I, en L (retour à gauche ou à droite) ou en U (retours à gauche et à droite) ;
    2. les dimensions d'un caisson bas (cotes du meuble) et d'un caisson haut (options) ;
    3. le nombre de caissons en bas et en haut, mur par mur ;
    4. l'électroménager : cuisinière ou plaque + four, hotte, frigo, lave-vaisselle, micro-ondes.
    L'appli place tout sans trou : évier, lave-vaisselle à côté, cuisson à l'écart de l'évier, frigo au bout,
    caisson d'angle dans le coin du L ; les caissons hauts s'alignent en évitant hotte, frigo et (par défaut) l'évier.
 
-   Mur 1 : le long de x, dos contre le mur (z = 0). Mur 2 (retour du L) : construit dans son propre repère
+   Le frigo peut être rangé dans une armoire (colonne toute hauteur, caisson au-dessus), avec ou sans porte habillée.
+
+   Mur 1 : le long de x, dos contre le mur (z = 0). En U : mur 2 à gauche, mur 3 à droite.
+   Mur 2 (retour du L) : construit dans son propre repère
    comme un mur droit, puis tourné de 90° (champ « rep » des pièces : la 3D le place, les perçages
    ne mélangent pas les deux murs). L'électroménager est en 3D seulement : il n'entre ni dans la découpe
    ni dans la liste d'achat (le client l'achète). */
-import { add3d, hw, caisse, planTravail } from "./blocs.js";
-import { RECIPES, stp, chx, basCuisine, hautCuisine, evierCuisine, traversesHaut, CAISSON_BAS, HAUT_FINI, PDT_CUISINE, profCorps, DIMS_CAISSON } from "./recettes.js";
+import { add, add3d, hw, caisse, planTravail } from "./blocs.js";
+import { RECIPES, stp, chx, cm, basCuisine, hautCuisine, evierCuisine, traversesHaut, CAISSON_BAS, HAUT_FINI, PDT_CUISINE, profCorps, DIMS_CAISSON } from "./recettes.js";
 
 const PDT = PDT_CUISINE; // épaisseur du plan de travail (mm)
 export const ELECTRO = {
@@ -26,8 +31,16 @@ export const ELECTRO = {
 /* ---------- Placement des modules d'un mur ----------
    n : caissons de rangement ; o : options. Renvoie [{ type, W }] dans l'ordre, du début à la fin du mur.
    Types : bas, tiroirs, evier, lv (lave-vaisselle), cuisson, frigo, angle. */
+export function largeurFrigo(o) {
+  if (o.frigo === "aucun" || !ELECTRO[o.frigo]) return 0;
+  return ELECTRO[o.frigo].W + (o.frigoArmoire && o.frigoArmoire !== "non" ? 2 * (o.E || 18) + 20 : 0);
+}
+// Mur qui reçoit le frigo : en I et en L le bout libre du mur 1 ; en U le bout libre du mur 2 ou du mur 3.
+export const murFrigo = o => o.forme === "U" ? (o.frigoU === "mur3" ? 3 : 2) : 1;
 export function modulesMur(n, o, mur) {
-  const L = o.forme === "L", Wb = o.Wb, cuissonIci = o.cuisson !== "aucune" && (mur === 2 ? L && o.murCuisson === "mur2" : !L || o.murCuisson !== "mur2");
+  const L = o.forme === "L" || o.forme === "U", U = o.forme === "U", Wb = o.Wb;
+  const mc = o.murCuisson === "mur3" && !U ? "mur2" : o.murCuisson;
+  const cuissonIci = o.cuisson !== "aucune" && (mur === 1 ? !L || (mc !== "mur2" && mc !== "mur3") : L && mc === "mur" + mur);
   const core = Array.from({ length: Math.max(0, n) }, () => ({ type: "bas", W: Wb }));
   let ie = -1;
   if (mur === 1 && +o.evier > 0) {
@@ -50,8 +63,11 @@ export function modulesMur(n, o, mur) {
     }
   }
   // Mur 1 : caisson d'angle du côté du retour, frigo à l'autre bout (en I : frigo à gauche).
-  const angle = { type: "angle", W: o.Pt + 400 }, frigo = o.frigo !== "aucun" && mur === 1 ? { type: "frigo", W: ELECTRO[o.frigo].W } : null;
-  if (mur === 1) {
+  if (o.fileur > 0) core.push({ type: "fileur", W: o.fileur });
+  const angle = { type: "angle", W: o.Pt + 400 }, frigo = o.frigo !== "aucun" && mur === murFrigo(o) ? { type: "frigo", W: largeurFrigo(o) } : null;
+  if (mur !== 1 && frigo) core.push(frigo); // au bout du retour, loin du coin
+  if (mur === 1 && U) { core.unshift({ ...angle, cote: "gauche" }); core.push({ ...angle, cote: "droite" }); }
+  else if (mur === 1) {
     if (L && o.retour === "droite") { if (frigo) core.unshift(frigo); core.push(angle); }
     else if (L) { core.unshift(angle); if (frigo) core.push(frigo); }
     else if (frigo) core.unshift(frigo);
@@ -93,6 +109,20 @@ function frigo(c, x, W, H) {
   if (W >= 900) { add3d(c, "noir", [x + W / 2 - 2, 20, 640, 4, H - 40, 2]); [-1, 1].forEach(s => add3d(c, "metal", [x + W / 2 + s * 40 - 10, H / 2 - 300, 650, 20, 600, 30])); }
   else { add3d(c, "noir", [x + 20, H * 0.62, 640, W - 40, 4, 2]); add3d(c, "metal", [x + W - 70, H * 0.68, 650, 20, 380, 30]); add3d(c, "metal", [x + W - 70, H * 0.35, 650, 20, 300, 30]); }
 }
+/* Armoire frigo : colonne toute hauteur (jusqu'au haut des caissons hauts) avec un caisson à porte au-dessus.
+   « niche » : le frigo (posé) reste visible, sa porte s'ouvre dans l'armoire ;
+   « porte » : frigo intégrable caché derrière une porte de la même finition que la cuisine. */
+function armoireFrigo(c, x, W, Htot, o, nm) {
+  const E = c.E, porte = o.frigoArmoire === "porte" && o.frigo === "frigo", Hf = 1800, D = porte ? 560 : 660;
+  const zones = porte ? [{ t: "niche", h: Hf + 30, portes: { n: 1 } }, { t: "etageres", n: 0, portes: { n: 1 } }] : [{ t: "niche", h: Hf + 30 }, { t: "etageres", n: 0, portes: { n: W > 700 ? 2 : 1 } }];
+  caisse(c, x, 0, 0, W, Htot, D, { nom: nm + "Armoire frigo", socle: porte ? CAISSON_BAS.socle : 0, colonnes: [zones] });
+  if (porte) {
+    add3d(c, "electro", [x + E + 10, CAISSON_BAS.socle + E, 20, W - 2 * E - 20, Hf - 30, D - 60]);
+    hw(c, "kitfrigo", "🧊", "Kit glissières porte frigo intégrable", 1);
+    hw(c, "piedsreg", "🦵", "Pieds réglables de cuisine", 4);
+  } else frigo(c, x + E + 10, W - 2 * E - 20, Hf);
+  hw(c, "aeration", "🌬️", "Grilles d'aération armoire frigo", 2);
+}
 function laveVaisselle(c, x, H, D) {
   add3d(c, "electro", [x + 2, 100, D - 20, 596, H - PDT - 110, 20]);
   add3d(c, "noir", [x + 2, H - PDT - 110, D, 596, 80, 4]);
@@ -108,18 +138,19 @@ function construireMur(c, mods, o, nHauts, mur, nm) {
   const ouvrir = x => { if (!pdt.length || pdt[pdt.length - 1][1] !== null) pdt.push([x, null]); };
   const fermer = x => { if (pdt.length && pdt[pdt.length - 1][1] === null) pdt[pdt.length - 1][1] = x; };
   for (const m of mods) {
-    if (m.type === "frigo") { fermer(m.x); frigo(c, m.x, m.W, 1800); continue; }
+    if (m.type === "frigo") { fermer(m.x); if (o.frigoArmoire && o.frigoArmoire !== "non") armoireFrigo(c, m.x, m.W, yHaut + Hh, o, nm); else frigo(c, m.x, m.W, 1800); continue; }
     if (m.type === "cuisson" && o.cuisson !== "plaque") { fermer(m.x); cuisiniere(c, m.x, m.W, H); continue; }
     ouvrir(m.x);
     if (m.type === "evier") evierCuisine(c, m.x, m.W, { nom: nm + "Caisson évier" });
     else if (m.type === "lv") laveVaisselle(c, m.x, H, D);
+    else if (m.type === "fileur") add(c, nm + "Fileur", "caisson", [m.x, CAISSON_BAS.socle, D, m.W, H - CAISSON_BAS.socle, c.E], { edge: 2 * m.W });
     else if (m.type === "cuisson") plaqueFour(c, m.x, m.W, H, D);
     else if (m.type === "angle") {
       // Caisson d'angle : la partie contre le retour est cachée (façade fixe), une porte sur la partie libre.
-      const gauche = o.retour !== "droite", Wl = m.W - Pt;
+      const gauche = m.cote ? m.cote === "gauche" : o.retour !== "droite", Wl = m.W - Pt;
       c._debutCaisson = c.parts.length;
-      caisse(c, m.x, 0, 0, m.W, H - PDT, D, { nom: "Caisson d'angle", socle: CAISSON_BAS.socle, dessus: false, colonnes: gauche ? [[{ t: "etageres", n: 1 }], [{ t: "etageres", n: 1, portes: { n: 1 } }]] : [[{ t: "etageres", n: 1, portes: { n: 1 } }], [{ t: "etageres", n: 1 }]], largeurs: gauche ? [Pt, Wl] : [Wl, Pt] });
-      traversesHaut(c, m.x, m.W, H - PDT, D, "Caisson d'angle · ");
+      caisse(c, m.x, 0, 0, m.W, H - PDT, D, { nom: "Caisson d'angle" + (m.cote ? " " + m.cote : ""), socle: CAISSON_BAS.socle, dessus: false, colonnes: gauche ? [[{ t: "etageres", n: 1 }], [{ t: "etageres", n: 1, portes: { n: 1 } }]] : [[{ t: "etageres", n: 1, portes: { n: 1 } }], [{ t: "etageres", n: 1 }]], largeurs: gauche ? [Pt, Wl] : [Wl, Pt] });
+      traversesHaut(c, m.x, m.W, H - PDT, D, "Caisson d'angle" + (m.cote ? " " + m.cote : "") + " · ");
     }
     else basCuisine(c, m.x, m.W, { nom: nm + "Caisson bas " + (++nb), tiroirs: m.type === "tiroirs" ? 3 : 0 });
   }
@@ -132,14 +163,17 @@ function construireMur(c, mods, o, nHauts, mur, nm) {
   // Mur 1 d'un L à droite : on remplit depuis le coin (fin du mur) vers la gauche.
   // Mur 2 : les hauts commencent dans le coin, juste devant ceux du mur 1 (x négatif dans le repère du retour).
   const sens = mur === 1 && o.forme === "L" && o.retour === "droite" ? -1 : 1;
-  let x = sens > 0 ? (mur === 2 ? Dh - Pt : 0) : fin, nh = 0, micro = !!o.micro;
-  for (let k = 0; k < nHauts; k++) {
+  let x = sens > 0 ? (mur !== 1 ? Dh - Pt : 0) : fin, nh = 0, micro = !!o.micro;
+  // Remplissage automatique : autant de caissons hauts que le mur en accepte (nHauts = Infinity).
+  const auto = !isFinite(nHauts), dehors = a => sens > 0 ? a + Wh > fin + 1 : a < -1;
+  for (let k = 0; k < Math.min(nHauts, 40); k++) {
     for (let g = 0; g < 50; g++) {
       const a = sens > 0 ? x : x - Wh, b = a + Wh, gene = bloque.find(([u, v]) => a < v - 1 && b > u + 1);
       if (!gene) break;
       x = sens > 0 ? gene[1] : gene[0];
     }
     const a = sens > 0 ? x : x - Wh;
+    if (auto && dehors(a)) break;
     if (micro && mur === 1) {
       // Micro-ondes : le premier caisson haut garde une niche ouverte en bas.
       caisse(c, a, yHaut, 0, Wh, Hh, Dh, { nom: nm + "Caisson haut micro-ondes", colonnes: [[{ t: "niche", h: 330 }, { t: "etageres", n: 0, portes: { n: Wh > 600 ? 2 : 1 } }]] });
@@ -151,51 +185,83 @@ function construireMur(c, mods, o, nHauts, mur, nm) {
   return fin;
 }
 
+/* Remplissage automatique d'un mur de longueur Lmur (mm) : on place d'abord ce qui a une largeur fixe
+   (évier, lave-vaisselle, cuisson, frigo, angles), puis on partage le reste en caissons bas de largeur égale,
+   proche de la largeur choisie. Un reste trop petit pour un caisson (< 30 cm) devient un fileur. */
+function remplirMur(o, mur, Lmur) {
+  const fixe = modulesMur(0, o, mur).reduce((t, m) => t + m.W, 0), reste = Math.max(0, Math.round(Lmur - fixe));
+  if (reste < 300) return modulesMur(0, { ...o, fileur: reste > 5 ? reste : 0 }, mur);
+  const n = Math.max(1, Math.round(reste / o.Wb)), W = Math.floor(reste / n), surplus = reste - n * W;
+  const mods = modulesMur(n, { ...o, Wb: W }, mur);
+  const der = mods.map(m => m.type).lastIndexOf("bas") >= 0 ? mods.map(m => m.type).lastIndexOf("bas") : mods.map(m => m.type).lastIndexOf("tiroirs");
+  if (surplus && der >= 0) { mods[der] = { ...mods[der], W: mods[der].W + surplus }; let x = 0; mods.forEach(m => { m.x = x; x += m.W; }); }
+  return mods;
+}
+
 export function construireCuisine(c, p, o0) {
   const o = {
     // Système de caisson unique : hauteur et profondeur fixes, seule la largeur vient des cotes.
-    ...o0, H: HAUT_FINI, D: profCorps(c), Pt: CAISSON_BAS.plan, Wb: p.L,
+    ...o0, H: HAUT_FINI, D: profCorps(c), Pt: CAISSON_BAS.plan, Wb: p.L, E: c.E,
     Wh: (+o0.largeurHaut || 60) * 10, Hh: (+o0.hauteurHaut || 70) * 10, Dh: (+o0.profHaut || 33) * 10
   };
-  const L = o.forme === "L";
-  const m1 = modulesMur(o.bas1, o, 1);
-  const l1 = construireMur(c, m1, o, o.hauts1, 1, L ? "Mur 1 · " : "");
-  c.cuisine = { mur1: l1, mur2: 0, modules: [m1] };
+  const L = o.forme === "L" || o.forme === "U", U = o.forme === "U", auto = !!+o.auto;
+  // Murs mesurés (cm → mm). Les retours commencent devant le plan de travail du mur 1.
+  const mesure = k => Math.max(0, (+o[k] || 0) * 10);
+  const murs = { 1: mesure("mur1"), 2: Math.max(0, mesure("mur2") - o.Pt), 3: Math.max(0, mesure("mur3") - o.Pt) };
+  const mods = mur => auto ? remplirMur(o, mur, murs[mur]) : modulesMur(mur === 1 ? o.bas1 : mur === 2 ? o.bas2 : o.bas3, o, mur);
+  const hauts = mur => auto ? (o.hautsAuto ? Infinity : 0) : mur === 1 ? o.hauts1 : mur === 2 ? o.hauts2 : o.hauts3;
+  const m1 = mods(1);
+  const l1 = construireMur(c, m1, o, hauts(1), 1, L ? "Mur 1 · " : "");
+  c.cuisine = { mur1: l1, mur2: 0, mur3: 0, modules: [m1], auto, murs };
   if (!L) return;
-  // Retour : construit droit, puis tourné. Il commence au bout du plan de travail du mur 1 (coin).
-  const debut = c.parts.length, m2 = modulesMur(o.bas2, o, 2);
-  const l2 = construireMur(c, m2, o, o.hauts2, 2, "Mur 2 · ");
-  // Gauche : on tourne de +90° (la façade regarde vers +x) ; l'origine du repère est au bout du retour.
-  // Droite : -90° (façade vers -x), origine contre le mur de droite, juste après le coin.
-  const rep = o.retour === "droite" ? { x: l1, z: o.Pt, rot: -90 } : { x: 0, z: o.Pt + l2, rot: 90 };
-  if (o.retour !== "droite") {
-    // Le repère tourné de +90° fait courir x vers le fond : on retourne le mur pour que son début soit dans le coin.
-    for (const part of c.parts.slice(debut)) if (part.box) { part.box = part.box.slice(); part.box[0] = l2 - part.box[0] - part.box[3]; if (part.hingeLeft !== undefined) part.hingeLeft = !part.hingeLeft; if (part.tiroir) part.tiroir = { ...part.tiroir, x: l2 - part.tiroir.x - part.tiroir.w }; for (const h of part.holes) h.p = [l2 - h.p[0], h.p[1], h.p[2]]; }
-  }
-  for (const part of c.parts.slice(debut)) part.rep = rep;
-  c.cuisine.mur2 = l2; c.cuisine.modules.push(m2);
+  // Retour gauche : construit droit, puis tourné de +90° (façade vers +x), origine au bout du retour.
+  // Retour droit : -90° (façade vers -x), origine contre le mur de droite, juste après le coin.
+  const poser = (mur, cote) => {
+    const debut = c.parts.length, m = mods(mur);
+    const l = construireMur(c, m, o, hauts(mur), mur, "Mur " + mur + " · ");
+    const rep = cote === "droite" ? { x: l1, z: o.Pt, rot: -90 } : { x: 0, z: o.Pt + l, rot: 90 };
+    if (cote !== "droite") {
+      // Le repère tourné de +90° fait courir x vers le fond : on retourne le mur pour que son début soit dans le coin.
+      for (const part of c.parts.slice(debut)) if (part.box) { part.box = part.box.slice(); part.box[0] = l - part.box[0] - part.box[3]; if (part.hingeLeft !== undefined) part.hingeLeft = !part.hingeLeft; if (part.tiroir) part.tiroir = { ...part.tiroir, x: l - part.tiroir.x - part.tiroir.w }; for (const h of part.holes) h.p = [l - h.p[0], h.p[1], h.p[2]]; }
+    }
+    for (const part of c.parts.slice(debut)) part.rep = rep;
+    c.cuisine["mur" + mur] = l; c.cuisine.modules.push(m);
+  };
+  if (U) { poser(2, "gauche"); poser(3, "droite"); }
+  else poser(2, o.retour);
 }
 
-const CUISINE = ({ id: "cuisine", nom: "Cuisine en I ou en L", e: "🍳", cat: "Cuisine", dims: [60, 82, 46], dimMin: [30, 82, 46],
+const CUISINE = ({ id: "cuisine", nom: "Cuisine en I, en L ou en U", e: "🍳", cat: "Cuisine", dims: [60, 82, 46], dimMin: [30, 82, 46],
   ...DIMS_CAISSON, dimLabels: ["Largeur d'un caisson bas", "Hauteur (fixe)", "Profondeur façades comprises (fixe)"],
+  mesuresDabord: "auto", // les murs de la pièce se saisissent avant les cotes du caisson (voir main.js)
   opts: [
-    chx("forme", "Forme de la cuisine", [["I", "▬ En I (un mur)"], ["L", "⌐ En L (deux murs)"]], "I"),
+    { ...chx("forme", "Forme de la cuisine", [["I", "▬ En I (un mur)"], ["L", "⌐ En L (deux murs)"], ["U", "⊔ En U (trois murs)"]], "I"), titre: "📏 1. La pièce" },
     { ...chx("retour", "Le 2e mur est", [["gauche", "⬅️ À gauche"], ["droite", "➡️ À droite"]], "gauche"), si: o => o.forme === "L" },
-    { ...stp("bas1", "Caissons en bas", "⬇️", 4, 0, 12), titre: "⬇️ En bas", labelL: "Caissons en bas · mur 1" },
-    { ...stp("bas2", "Caissons en bas · mur 2", "⬇️", 2, 0, 12), si: o => o.forme === "L" },
+    { ...cm("mur1", "Mur du fond (cm)", "↔️", 300, 100, 800), labelL: "Mur 1 · du fond (cm)" },
+    { ...cm("mur2", "Mur 2 (cm)", "↕️", 240, 100, 800), si: o => o.forme !== "I", labelU: "Mur 2 · de gauche (cm)" },
+    { ...cm("mur3", "Mur 3 · de droite (cm)", "↕️", 240, 100, 800), si: o => o.forme === "U" },
+    { ...stp("auto", "Remplir les murs automatiquement", "✨", 1, 0, 1), titre: "🧩 2. Les caissons" },
+    { ...stp("bas1", "Caissons en bas", "⬇️", 4, 0, 12), si: o => !+o.auto, labelL: "Caissons en bas · mur 1" },
+    { ...stp("bas2", "Caissons en bas · mur 2", "⬇️", 2, 0, 12), si: o => !+o.auto && o.forme !== "I" },
+    { ...stp("bas3", "Caissons en bas · mur 3", "⬇️", 2, 0, 12), si: o => !+o.auto && o.forme === "U" },
     stp("tiroirs", "Dont caissons à tiroirs", "🗄️", 1, 0, 12),
     chx("evier", "Caisson évier", [[0, "Sans"], [800, "80 cm"], [1000, "100 cm"], [1200, "120 cm (2 bacs)"]], 1000),
     { ...chx("position", "Place de l'évier", [["gauche", "⬅️ À gauche"], ["milieu", "🚰 Au milieu"], ["droite", "➡️ À droite"]], "milieu"), si: o => +o.evier > 0 },
-    { ...stp("hauts1", "Caissons en haut", "⬆️", 3, 0, 12), titre: "⬆️ En haut", labelL: "Caissons en haut · mur 1" },
-    { ...stp("hauts2", "Caissons en haut · mur 2", "⬆️", 2, 0, 12), si: o => o.forme === "L" },
+    { ...stp("hautsAuto", "Caissons en haut", "⬆️", 1, 0, 1), si: o => !!+o.auto, titre: "⬆️ En haut" },
+    { ...stp("hauts1", "Caissons en haut", "⬆️", 3, 0, 12), si: o => !+o.auto, titre: "⬆️ En haut", labelL: "Caissons en haut · mur 1" },
+    { ...stp("hauts2", "Caissons en haut · mur 2", "⬆️", 2, 0, 12), si: o => !+o.auto && o.forme !== "I" },
+    { ...stp("hauts3", "Caissons en haut · mur 3", "⬆️", 2, 0, 12), si: o => !+o.auto && o.forme === "U" },
     stp("largeurHaut", "Largeur d'un caisson haut (cm)", "↔️", 60, 30, 120, 5),
     stp("hauteurHaut", "Hauteur d'un caisson haut (cm)", "↕️", 70, 30, 100, 5),
     stp("profHaut", "Profondeur d'un caisson haut (cm)", "⤢", 33, 20, 45, 1),
     { ...stp("hautEvier", "Caisson haut au-dessus de l'évier", "🪟", 0, 0, 1), si: o => +o.evier > 0 },
     { ...chx("cuisson", "Cuisson", [["aucune", "Aucune"], ["cuisiniere60", "🔥 Cuisinière 60"], ["cuisiniere90", "🔥 Cuisinière 90"], ["plaque", "🍳 Plaque + four"]], "cuisiniere60"), titre: "🔌 Électroménager" },
     { ...chx("murCuisson", "Cuisson sur le", [["mur1", "Mur 1"], ["mur2", "Mur 2"]], "mur2"), si: o => o.forme === "L" && o.cuisson !== "aucune" },
+    { ...chx("murCuisson", "Cuisson sur le", [["mur1", "Mur 1"], ["mur2", "Mur 2"], ["mur3", "Mur 3"]], "mur2"), si: o => o.forme === "U" && o.cuisson !== "aucune" },
     { ...stp("hotte", "Hotte au-dessus de la cuisson", "💨", 1, 0, 1), si: o => o.cuisson !== "aucune" },
     chx("frigo", "Réfrigérateur", [["aucun", "Aucun"], ["frigo", "🧊 60 cm"], ["americain", "🧊 Américain 90 cm"]], "frigo"),
+    { ...chx("frigoArmoire", "Le frigo est rangé", [["non", "Posé seul"], ["niche", "🗄️ Dans une armoire"], ["porte", "🚪 Armoire + porte habillée"]], "niche"), si: o => o.frigo !== "aucun" },
+    { ...chx("frigoU", "Armoire frigo au bout du", [["mur2", "⬅️ Mur de gauche"], ["mur3", "➡️ Mur de droite"]], "mur2"), si: o => o.forme === "U" && o.frigo !== "aucun" },
     { ...stp("lv", "Lave-vaisselle (à côté de l'évier)", "🍽️", 0, 0, 1), si: o => +o.evier > 0 },
     stp("micro", "Micro-ondes (dans un caisson haut)", "📻", 0, 0, 1)
   ],
@@ -204,7 +270,12 @@ const CUISINE = ({ id: "cuisine", nom: "Cuisine en I ou en L", e: "🍳", cat: "
     const k = c.cuisine; if (!k) return "";
     const m = v => (v / 1000).toFixed(2).replace(".", ",") + " m", noms = { evier: "évier", lv: "lave-vaisselle", cuisson: "cuisson", frigo: "frigo", angle: "angle" };
     const ordre = mods => mods.map(x => noms[x.type] || null).filter((v, i, a) => v && a.indexOf(v) === i).join(" → ");
-    return "📏 Mur 1 : " + m(k.mur1) + (k.mur2 ? " · Mur 2 : " + m(k.mur2) + " (après le coin)" : "") + (ordre(k.modules[0]) ? " · " + ordre(k.modules[0]) : "") + (k.modules[1] && ordre(k.modules[1]) ? " · mur 2 : " + ordre(k.modules[1]) : "");
+    if (k.auto) {
+      // Remplissage automatique : nombre et largeur des caissons bas posés sur chaque mur.
+      const bas = mods => mods.filter(x => x.type === "bas" || x.type === "tiroirs");
+      return "📏 " + k.modules.map((mods, i) => { const b = bas(mods); return "Mur " + (i + 1) + " : " + b.length + " caisson" + (b.length > 1 ? "s" : "") + (b.length ? " de " + Math.round(b[0].W / 10) + " cm" : "") + (mods.some(x => x.type === "fileur") ? " + fileur" : ""); }).join(" · ");
+    }
+    return "📏 Mur 1 : " + m(k.mur1) + (k.mur2 ? " · Mur 2 : " + m(k.mur2) + " (après le coin)" : "") + (k.mur3 ? " · Mur 3 : " + m(k.mur3) : "") + (ordre(k.modules[0]) ? " · " + ordre(k.modules[0]) : "") + (k.modules[1] && ordre(k.modules[1]) ? " · mur 2 : " + ordre(k.modules[1]) : "");
   },
   build: construireCuisine });
 // En tête de la famille Cuisine.

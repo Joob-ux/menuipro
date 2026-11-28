@@ -531,7 +531,8 @@ describe("Cuisine en I ou en L", () => {
   const r = RECIPES.find(x => x.id === "cuisine");
   const def = {}; r.opts.forEach(x => (def[x.k] = x.def));
   const P = { L: 600, H: 870, P: 560, ep: 18 };
-  const cui = o => buildRecipe("cuisine", P, { ...def, ...o });
+  // Tests historiques : caissons comptés à la main, frigo posé seul.
+  const cui = o => buildRecipe("cuisine", P, { ...def, auto: 0, frigoArmoire: "non", ...o });
   const nb = (ctx, re) => ctx.parts.filter(p => re.test(p.name)).length;
   const chevauchent = (a, b) => [0, 1, 2].every(i => a[i] < b[i] + b[i + 3] - 1 && b[i] < a[i] + a[i + 3] - 1);
   it("est en tête de la famille Cuisine, l'ancienne cuisine est cachée", () => {
@@ -577,6 +578,47 @@ describe("Cuisine en I ou en L", () => {
     expect(nb(ctx, /^Caisson four · Côté gauche$/)).toBe(1);
     expect(nb(ctx, /^Caisson haut micro-ondes · Côté gauche$/)).toBe(1);
     expect(r.resume(ctx)).toContain("lave-vaisselle");
+  });
+  const corpsMonde = ctx => ctx.parts.filter(p => p.box && p.mat && !p.door && !p.drawer).map(p => ({ b: boiteMonde(p), rep: p.rep }));
+  it("mesures de la pièce d'abord : les murs se remplissent exactement, sans trou", () => {
+    for (const mur1 of [300, 345, 412]) {
+      const ctx = cui({ auto: 1, mur1, frigo: "frigo", frigoArmoire: "niche", lv: 1 });
+      expect(Math.abs(ctx.cuisine.mur1 - mur1 * 10)).toBeLessThanOrEqual(1);
+      expect(r.resume(ctx)).toContain("Mur 1 :");
+    }
+    // Reste trop court pour un caisson → fileur
+    const m = cui({ auto: 1, mur1: 246, frigo: "frigo", frigoArmoire: "niche", evier: 1000, cuisson: "cuisiniere60" });
+    expect(m.cuisine.modules[0].some(x => x.type === "fileur")).toBe(true);
+  });
+  it("en U : trois murs, deux caissons d'angle, retours contre les murs de gauche et de droite, rien ne se chevauche", () => {
+    const ctx = cui({ auto: 1, forme: "U", mur1: 320, mur2: 260, mur3: 240, cuisson: "cuisiniere60", murCuisson: "mur3", frigoArmoire: "porte", frigoU: "mur2" });
+    expect(nb(ctx, /^Caisson d'angle gauche · Côté gauche$/)).toBe(1);
+    expect(nb(ctx, /^Caisson d'angle droite · Côté gauche$/)).toBe(1);
+    expect(ctx.cuisine.modules.length).toBe(3);
+    expect(Math.abs(ctx.cuisine.mur2 - (2600 - 500))).toBeLessThanOrEqual(1);
+    expect(Math.abs(ctx.cuisine.mur3 - (2400 - 500))).toBeLessThanOrEqual(1);
+    expect(ctx.cuisine.modules[2].some(x => x.type === "cuisson")).toBe(true);
+    expect(ctx.cuisine.modules[1].at(-1).type).toBe("frigo");
+    const cs = corpsMonde(ctx);
+    for (let i = 0; i < cs.length; i++) for (let j = i + 1; j < cs.length; j++) if (cs[i].rep !== cs[j].rep) expect(chevauchent(cs[i].b, cs[j].b)).toBe(false);
+    const xs = cs.flatMap(c => [c.b[0], c.b[0] + c.b[3]]);
+    expect(Math.min(...xs)).toBeGreaterThanOrEqual(-6);
+    expect(Math.max(...xs)).toBeLessThanOrEqual(3200 + 6);
+    const zs = cs.flatMap(c => [c.b[2] + c.b[5]]);
+    expect(Math.max(...zs)).toBeLessThanOrEqual(2600 + 6);
+  });
+  it("le frigo est rangé dans une armoire toute hauteur (avec ou sans porte habillée)", () => {
+    for (const frigoArmoire of ["niche", "porte"]) {
+      const ctx = cui({ auto: 1, frigo: "frigo", frigoArmoire });
+      expect(nb(ctx, /Armoire frigo · Côté gauche$/)).toBe(1);
+      const cote = ctx.parts.find(p => /Armoire frigo · Côté gauche$/.test(p.name));
+      expect(cote.box[4]).toBeGreaterThan(2000);
+      expect(ctx.parts.filter(p => p.door && /Armoire frigo/.test(p.name)).length).toBe(frigoArmoire === "porte" ? 2 : 1);
+      if (frigoArmoire === "porte") expect(ctx.hw.kitfrigo).toBeTruthy();
+      // Pas de caisson haut au-dessus de l'armoire
+      const fr = ctx.cuisine.modules[0].find(x => x.type === "frigo");
+      for (const h of ctx.parts.filter(p => /Caisson haut \d+ · Côté gauche$/.test(p.name))) expect(h.box[0] >= fr.x + fr.W - 1 || h.box[0] + 600 <= fr.x + 1).toBe(true);
+    }
   });
   it("en L avec tout au maximum : pièces valides et découpe possible", () => {
     const max = { ...def }; r.opts.forEach(x => { if (!x.choice) max[x.k] = x.max; });

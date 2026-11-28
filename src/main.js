@@ -152,7 +152,11 @@ function renderControls(){
   $("optsLabel").textContent=r.dessin?"✏️ Dessinez la façade":r.importe?"📤 Lu dans votre 3D":"Les options";
   editeurActif=null;
   // Options conditionnelles (« si ») et petits titres de groupe (« titre ») : ex. cuisine en I ou en L.
-  const optsUI=r.opts.filter(x=>!x.si||x.si(c.o)).flatMap(x=>{const lab=(x.labelL&&c.o.forme==="L")?x.labelL:x.label,y=lab===x.label?x:{...x,label:lab};return x.titre?[el("div",{class:"opt-titre"},x.titre),y]:[y]});
+  // « mesuresDabord » (cuisine) : les mesures de la pièce passent avant les cotes du caisson, qu'on range sous « 2. Les caissons ».
+  const dimsLab=document.querySelector('[data-voix="cotes"]'),dimsBox=$("dims"),pan=$("optsLabel").parentNode;
+  if(dimsLab.parentNode!==pan){pan.insertBefore(dimsLab,$("optsLabel"));pan.insertBefore(dimsBox,$("optsLabel"))}
+  dimsLab.textContent=r.mesuresDabord?"📐 Taille d'un caisson bas (cm)":"Les cotes (en cm)";
+  const optsUI=r.opts.filter(x=>!x.si||x.si(c.o)).flatMap(x=>{const lab=(x.labelU&&c.o.forme==="U")?x.labelU:(x.labelL&&c.o.forme&&c.o.forme!=="I")?x.labelL:x.label,y=lab===x.label?x:{...x,label:lab};const cotes=r.mesuresDabord===x.k?[dimsLab,dimsBox]:[];return x.titre?[el("div",{class:"opt-titre"},x.titre),...cotes,y]:[...cotes,y]});
   $("opts").replaceChildren(...optsUI.map(x=>{
     if(x.nodeType)return x;
     if(x.modele)return panneauModele(c);
@@ -166,6 +170,13 @@ function renderControls(){
             c.H=Math.max(30,Math.min(300,Math.round(c.L*r)));c.photo.hAuto=1;toast("📐 Hauteur proposée d'après la photo : "+c.H+" cm. Tapez les vraies cotes si besoin.")}
           save();renderControls();compute()}});
       return editeurActif;
+    }
+    if(x.cm){
+      // Mesure au clavier (cm) : longueur d'un mur de cuisine, etc. Recalcul dès que la valeur est valable.
+      const inp=el("input",{type:"number",inputmode:"numeric",min:String(x.min),max:String(x.max),"aria-label":x.label});inp.value=c.o[x.k];
+      inp.addEventListener("input",()=>{const v=parseFloat(inp.value);if(v>=x.min&&v<=x.max){c.o[x.k]=v;compute()}});
+      inp.addEventListener("change",()=>{c.o[x.k]=Math.max(x.min,Math.min(x.max,parseFloat(inp.value)||x.def));inp.value=c.o[x.k];compute()});
+      return el("div",{class:"step"},el("span",{class:"name"},x.icon+" "+x.label),el("div",{class:"num",style:"max-width:120px"},inp));
     }
     if(x.choice)return el("div",{style:"display:grid;gap:6px"},el("span",{class:"name",style:"font-weight:700"},x.label),el("div",{class:"seg"},x.options.map(([v,l])=>el("button",{type:"button","aria-pressed":String(c.o[x.k]===v),onclick:()=>{c.o[x.k]=v;renderControls();compute()}},l))));
     const out=el("output",{},String(c.o[x.k]));
@@ -300,7 +311,7 @@ function matiere(p){if(p.mat==="dos")return "Contreplaqué 5 mm";return "Panneau
 /* ===================== CATALOGUE, PRIX, ATELIER ===================== */
 // Liste des accessoires calculés : voir src/articles.js (sans aucun prix : c'est la quincaillerie qui les fixe).
 const EX_JOUR=10000; // prix de journée d'exemple (FCFA)
-const EX_PRIX={mela18:22000,mela16:20000,cp18:25000,mdf18:20000,cp5:9000,chant:300,vis440:1500,vis3516:1500,tourillons:1500,charn:750,charnv:2500,poignees:500,coulisses:2500,taquets:25,tringle:1500,supports:250,rail:3000,galets:5000,cuvettes:500,verre:15000,miroir:10000,pieds:2000,piedsreg:750,pdt:15000,roulettes:500,lattes:1000,tasseaux:750,poutre:1500,equerres:150,fixmur:1000,fixhaut:1000,pointes:1000,vasque:25000,
+const EX_PRIX={mela18:22000,mela16:20000,cp18:25000,mdf18:20000,cp5:9000,chant:300,vis440:1500,vis3516:1500,tourillons:1500,charn:750,charnv:2500,poignees:500,coulisses:2500,taquets:25,tringle:1500,supports:250,rail:3000,galets:5000,cuvettes:500,verre:15000,miroir:10000,pieds:2000,piedsreg:750,pdt:15000,roulettes:500,lattes:1000,tasseaux:750,poutre:1500,equerres:150,fixmur:1000,fixhaut:1000,kitfrigo:6000,aeration:1500,pointes:1000,vasque:25000,
   paumelles:500,serrure:6000,espagnolette:3500,pattes:150,boulons:300,visbois:1500,chevilles:50,colle:2500,patins:100,sangles:500,mousse:12000,tissu:3000,led:2500,moraillon:500,supinv:1500,mastic:3500,vernis:6000,
   lame:2500,latte:2000,planche:6000,chevron:5000,madrier:15000,
   mousse12:15000,mousse5:6000,ouate:1500,toile:800,agrafes:1500,colleContact:4000,boutons:100,piedsBois:1000,piedsMetal:2500};
